@@ -3,7 +3,7 @@
 // Pure and deterministic. Design §6.1 "Policy".
 
 const S = 1000;
-const IMMEDIATE = ["session_start", "return", "break_over"];
+const IMMEDIATE = ["session_start", "return", "break_over", "agent"];
 
 export function initialPolicy() {
   return { episode: null, cooldownUntil: {}, lastLoudTs: {} };

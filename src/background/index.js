@@ -65,8 +65,10 @@ config().then((cfg) => chrome.idle.setDetectionInterval(cfg.idleAfterSec));
 chrome.alarms.onAlarm.addListener(({ name }) => {
   // The heartbeat looks at the page in front: after sleep it finds the person back
   // even when no tab or idle event comes. Same page, so no switch.
-  if (name === "attention-heartbeat") sense(activeTab);
-  else if (name === "attention-wake") tick();
+  if (name === "attention-heartbeat") {
+    connectBridge();
+    sense(activeTab);
+  } else if (name === "attention-wake") tick();
   else if (name === "distill") distill();
   else if (name === "memory-maintain") maintain();
 });
@@ -163,6 +165,26 @@ async function apply(s, input, cfg) {
 
 const feed = (input) => enqueue(() => process(input));
 const tick = () => feed({ type: "tick", ts: Date.now() });
+
+// A coding agent's status, from the local bridge (bridge/host.mjs), when one is installed.
+const AGENT_STATUS = ["working", "waiting_for_user", "completed", "failed", "unknown"];
+const agentStatus = ({ status, session }) =>
+  AGENT_STATUS.includes(status) ? feed({ type: "agent", ts: Date.now(), status, session }) : null;
+let bridge = null;
+function connectBridge() {
+  if (bridge) return;
+  try {
+    bridge = chrome.runtime.connectNative("com.tuck.bridge");
+    bridge.onMessage.addListener(agentStatus);
+    bridge.onDisconnect.addListener(() => {
+      void chrome.runtime.lastError; // no host installed: nothing changes
+      bridge = null;
+    });
+  } catch {
+    bridge = null;
+  }
+}
+connectBridge();
 
 let wakeTimer = null;
 function scheduleWake(s, cfg) {
@@ -926,6 +948,7 @@ const HANDLERS = {
   },
   "refresh-profile": refreshProfile,
   "reminder-answer": reminderAnswer,
+  "agent-status": agentStatus,
   // What Tuck has learned from answers, for settings. Forgetting one has the page in
   // front judged again.
   "get-labels": async () => (await (await store).recentLabels(50)).filter((l) => labelHolds(l, Date.now())),

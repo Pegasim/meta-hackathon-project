@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0T0HK3PrmmNVqA0WtVZpvHivwdxCK7JawtmsqicT+WUoKVYJm6I8uAHpPzh7iXpSKON2NPome/BVvjzesIlDFLmpx8p3Sz7Yz5MjkBWqBnseLL1z4/G7Tr2W6MlKyPXs72IgK9kqes2jCCKjsCfk2XHstd8ecITHAfGukB1fcXMKNtBZj7IXXkq6ewv0lphoHbuAVph9wIyIUcspv764tU1QgKYecMid3yB9Y/7s+GVn6ynhuq1rnurWGhXgsvOwrObBS5800tkgH63ajHTOm83h5bv/mdk/ZaW7M1v37ctIN2nYB+TZAixrWhaEmXB9i4wbhvgX0eYeQGC65iT1RQIDAQAB",
   "name": "Tuck — focus companion",
   "version": "0.0.1",
   "description": "A little folded companion that knows what you meant to do and notices when you drift.",
@@ -9,7 +10,8 @@
     "alarms",
     "idle",
     "notifications",
-    "scripting"
+    "scripting",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "<all_urls>",

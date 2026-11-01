@@ -19,6 +19,7 @@ export function nudgeText(t) {
     site: siteName(e.host),
     awayMin: Math.round((e.awaySec ?? 0) / 60),
     unsure: !!e.unsure,
+    agent: e.agent,
     task: { title: t.intentTitle, step: t.intentStep },
   });
 }
@@ -47,6 +48,18 @@ export function present({ trigger, loops = [], event, intent }) {
         triggerId: id,
       };
     }
+    // Tuck cannot bring a terminal to the front, so there is nothing to take the person back to.
+    if (kind === "agent")
+      return {
+        tuck: "checkin",
+        bubble: {
+          kind: "nudge",
+          text: nudgeText(trigger),
+          buttons: [{ choice: "dismiss", label: "Got it", primary: true }, ANSWERS.break],
+          dismissable: true,
+        },
+        triggerId: id,
+      };
     // The first word: a visible wave and the message at once. On a page the model is
     // unsure about, Tuck asks instead, and the answer becomes a label.
     if (level === 1) {

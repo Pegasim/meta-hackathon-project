@@ -540,6 +540,31 @@ await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 const driftOff = await waitForNewDrift(driftKnownFeed.id);
 
+// Whose turn it is in a coding agent (#11): while it works the same drifting page is a
+// wait; when it stops Tuck says so, once.
+const agentSays = (status) =>
+  popup.evaluate((s) => chrome.runtime.sendMessage({ type: "agent-status", status: s, session: "s1" }), status);
+const agentTab = await ctx.newPage();
+await agentTab.goto(dockedSocial);
+await agentTab.bringToFront();
+await agentSays("working");
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await agentTab.waitForTimeout(500);
+const beforeWait = await lastTrigger();
+await agentTab.waitForTimeout(6000);
+const duringWait = await lastTrigger();
+const waitStatus = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }));
+await agentSays("waiting_for_user");
+await agentSays("waiting_for_user");
+await agentTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await agentTab.waitForTimeout(500);
+const agentWord = await lastTrigger();
+const agentBubble = await agentTab.locator("#tuck-companion .bubble").innerText();
+await agentTab.close();
+await agentSays("unknown");
+await chatTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+
 // Review I1: changing the goal closes the old one; Done leaves no goal behind.
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
@@ -564,7 +589,9 @@ await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", titl
 const maybeTab = await ctx.newPage();
 await maybeTab.goto(`http://localhost:${port}/maybe`);
 await maybeTab.bringToFront();
-const driftMaybe = await waitForNewDrift(driftOff.id);
+// The chat page in front until now can still get a word first.
+let driftMaybe = await waitForNewDrift(driftOff.id);
+while (!driftMaybe.evidence.url.endsWith("/maybe")) driftMaybe = await waitForNewDrift(driftMaybe.id);
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "respond", choice: "back" }));
 const learned = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-labels" }));
 await maybeTab.close();
@@ -697,6 +724,10 @@ assert.ok(
 );
 assert.equal(drift4.kind, "drift", "drift is still caught after a restart");
 assert.equal(backAfterRestart, repo, "Take me back still works after a restart");
+assert.equal(duringWait.id, beforeWait.id, "no nudge while the agent works");
+assert.equal(waitStatus.engine.state, "agent_working");
+assert.equal(agentWord.kind, "agent");
+assert.match(agentBubble, /Muse is waiting on you\./);
 assert.equal(afterDone.intent, null, "no stale goal after change + done");
 assert.match(reminderText, /Due today\. Still on your list\?/, "the deadline in Tuck's words");
 assert.match(reminderText, /Send the visa papers/);

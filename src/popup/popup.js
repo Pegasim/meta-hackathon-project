@@ -12,6 +12,7 @@ const STATE = {
   focused: "Focused",
   detour: "Short detour",
   drifting: "Drifting",
+  agent_working: "Waiting for the agent",
   away: "Away",
   break: "On a break",
   paused: "Paused",

@@ -22,7 +22,7 @@ blocker. The more you use it, the better it knows which detours are fine for you
 People with ADHD and people who get distracted quickly, working in Chrome on their own
 projects and goals. They know what they want to get done; what they lack is a gentle,
 timely nudge when they slip. The product assumes a Chromium browser and an API key for
-Meta's Model API; it does not monitor anything outside the browser and does not give
+Meta's Model API; apart from a coding agent's status (below) it does not monitor anything outside the browser and does not give
 medical or therapeutic help.
 
 ## Success criteria
@@ -53,7 +53,9 @@ medical or therapeutic help.
 ## Constraints and non-goals
 
 - **Constraint:** deadline Nov 4 2026, 9:00 PM ET; judged on the demo video and the repo.
-- **Constraint:** Chromium MV3 extension, all JavaScript, no separate backend.
+- **Constraint:** Chromium MV3 extension, all JavaScript, no separate backend. One optional
+  local exception (`bridge/`): Muse Code's hooks tell Tuck whether the agent is working or
+  waiting. Status only, never a prompt, a message or terminal output.
 - **Constraint:** Meta models, and `muse-spark-1.3` rather than `-contributor`: Meta may train on what
   Contributor is sent, and Tuck sends people's notes.
 - **Constraint:** `src/memory/` belongs to Safa and is used only through its `Memory` API.
@@ -68,7 +70,7 @@ medical or therapeutic help.
   screenshots. URL and title alone could not tell a work chat from a feed on one site
   (issue #5).
 - **Non-goal:** system-wide or desktop monitoring — the MVP stays in the browser.
-- **Non-goal:** Safa's MCP server and the Muse Code connection — later stages.
+- **Non-goal:** Safa's MCP server — a later stage.
 - **Non-goal:** Chrome Web Store publication — optional bonus only.
 
 ## Open questions

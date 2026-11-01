@@ -609,3 +609,115 @@ test("an answer about one person's chat does not mark another person's", () => {
   r = step(r.state, { type: "response", ts: t0 + S, choice: "related", pageUrl: FEED[0], pageKey: aliKey }, CFG);
   assert.equal(r.state.current.label, "unrelated");
 });
+
+// Whose turn it is in a coding agent (issue #11).
+const agent = (ts, status) => ({ type: "agent", ts, status, session: "s1" });
+const words = (out) => out.filter((o) => o.type === "trigger" && o.kind === "agent");
+
+test("while the agent works, an unrelated page is a wait, not a drift", () => {
+  const { state, out } = run([setIntent(t0), agent(t0, "working"), ctx(t0, VIDEO, "unrelated")], {
+    until: t0 + 300 * S,
+    cfg: withOverrides({ secondLook: false, agentQuietSec: 600, decide: stubDecide }),
+  });
+  assert.equal(state.budgetSec, 0);
+  assert.equal(state.state, "agent_working");
+  assert.equal(out.filter((o) => o.type === "trigger").length, 0);
+});
+
+test("when it stops, Tuck says so once, and drift counts again", () => {
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, decide: stubDecide });
+  const { state, out } = run(
+    [
+      setIntent(t0),
+      agent(t0, "working"),
+      ctx(t0, VIDEO, "unrelated"),
+      agent(t0 + 10 * S, "waiting_for_user"),
+      agent(t0 + 16 * S, "waiting_for_user"), // the Notification after a PermissionRequest
+    ],
+    { until: t0 + 40 * S, cfg },
+  );
+  assert.equal(words(out).length, 1);
+  assert.equal(words(out)[0].evidence.agent, "waiting_for_user");
+  assert.ok(state.budgetSec > 20);
+});
+
+test("a word comes for each stop, once work has started again", () => {
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, decide: stubDecide });
+  const { out } = run(
+    [
+      setIntent(t0),
+      agent(t0, "working"),
+      agent(t0 + S, "waiting_for_user"),
+      agent(t0 + 2 * S, "working"),
+      agent(t0 + 3 * S, "completed"),
+    ],
+    { until: t0 + 5 * S, cfg },
+  );
+  assert.deepEqual(
+    words(out).map((t) => t.evidence.agent),
+    ["waiting_for_user", "completed"],
+  );
+});
+
+test("a stop while the browser is away is said when the person comes back", () => {
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, decide: stubDecide });
+  let r = step(initialState(), setIntent(t0), cfg);
+  r = step(r.state, agent(t0, "working"), cfg);
+  r = step(r.state, ctx(t0, REPO, "related", { browserFocused: false }), cfg);
+  r = step(r.state, agent(t0 + S, "completed"), cfg);
+  assert.equal(words(r.out).length, 0);
+  r = step(r.state, ctx(t0 + 2 * S, REPO, "related"), cfg);
+  assert.equal(words(r.out).length, 1);
+});
+
+test("an agent that goes quiet stops excusing the wait, and nothing is said", () => {
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 60, decide: stubDecide });
+  const { state, out } = run([setIntent(t0), agent(t0, "working"), ctx(t0, VIDEO, "unrelated")], {
+    until: t0 + 100 * S,
+    cfg,
+  });
+  assert.equal(state.agent.status, "unknown");
+  assert.equal(words(out).length, 0);
+  assert.ok(state.budgetSec > 30);
+});
+
+test("the wake time is never in the past while the agent works", () => {
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, decide: stubDecide });
+  const { state } = run([setIntent(t0), ctx(t0, VIDEO, "unrelated"), agent(t0 + 100 * S, "working")], {
+    until: t0 + 110 * S,
+    cfg,
+  });
+  assert.equal(state.state, "agent_working");
+  assert.ok(nextWakeAt(state, cfg) > state.lastTs);
+});
+
+test("do not disturb logs the word and shows nothing", () => {
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600 });
+  let r = step(initialState(), setIntent(t0), cfg);
+  r = step(r.state, { type: "session", ts: t0, kind: "mode", payload: { mode: "dnd" } }, cfg);
+  r = step(r.state, agent(t0 + S, "working"), cfg);
+  r = step(r.state, agent(t0 + 2 * S, "completed"), cfg);
+  assert.deepEqual(
+    words(r.out).map((t) => [t.level, t.suppressedBy]),
+    [[0, "dnd"]],
+  );
+});
+
+test("the agent's word is not drowned by a drift word: the person gets the tolerance again", () => {
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, decide: stubDecide });
+  const { state, out } = run(
+    [
+      setIntent(t0),
+      ctx(t0, VIDEO, "unrelated"),
+      agent(t0 + 100 * S, "working"), // already well past the tolerance
+      agent(t0 + 110 * S, "completed"),
+    ],
+    { until: t0 + 112 * S, cfg },
+  );
+  const after = out.filter((o) => o.type === "trigger" && o.ts >= t0 + 110 * S);
+  assert.deepEqual(
+    after.map((t) => t.kind),
+    ["agent"],
+  );
+  assert.ok(state.budgetSec < 5);
+});

@@ -125,3 +125,13 @@ test("a replay sees the surface logged on the context input", () => {
   const { triggers } = replay({ version: 1, events: [log.events[0], log.events[1], { ...chat, surface }, tick] });
   assert.deepEqual(triggers[0].evidence.surface, surface);
 });
+
+test("a replay sees the agent's status", () => {
+  const events = [
+    log.events[0],
+    { type: "agent", ts: t0, status: "working", session: "s" },
+    page(t0, "https://www.youtube.com/watch?v=a", "Top 10 F1 crashes", "unrelated"),
+    { type: "tick", ts: t0 + 130 * S },
+  ];
+  assert.equal(replay({ version: 1, events }).triggers.length, 0);
+});

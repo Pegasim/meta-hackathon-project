@@ -1,0 +1,57 @@
+// The real hook script and host, as separate processes, with a throwaway home folder.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const bridge = path.resolve(import.meta.dirname, "../../../bridge");
+
+const hook = (home, input) =>
+  spawnSync(process.execPath, [path.join(bridge, "tuck-hook.mjs")], {
+    input,
+    env: { HOME: home },
+    encoding: "utf8",
+  });
+
+test("a hook's status reaches the host's output, framed for Chrome, with no text", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "tuck-"));
+  hook(home, JSON.stringify({ hook_event_name: "Stop", session_id: "old", last_assistant_message: "x" }));
+  const host = spawn(process.execPath, [path.join(bridge, "host.mjs")], { env: { HOME: home } });
+  let out = Buffer.alloc(0);
+  host.stdout.on("data", (d) => (out = Buffer.concat([out, d])));
+  await new Promise((r) => setTimeout(r, 300));
+
+  const send = (e) => hook(home, JSON.stringify({ session_id: "s1", ...e }));
+  send({ hook_event_name: "UserPromptSubmit", prompt: "hunter2" });
+  hook(home, JSON.stringify({ hook_event_name: "PostToolUse", session_id: "subagent" }));
+  send({ hook_event_name: "Stop", last_assistant_message: "hunter2?" });
+  await new Promise((r) => setTimeout(r, 900));
+  host.stdin.end();
+  await new Promise((r) => host.on("exit", r));
+
+  const messages = [];
+  for (let at = 0; at < out.length;) {
+    const size = out.readUInt32LE(at);
+    messages.push(JSON.parse(out.subarray(at + 4, at + 4 + size).toString()));
+    at += 4 + size;
+  }
+  assert.deepEqual(
+    messages.map((m) => m.status),
+    ["working", "waiting_for_user"],
+    "what came before the host started and the subagent are left out",
+  );
+  assert.doesNotMatch(out.toString(), /hunter2/);
+  assert.doesNotMatch(fs.readFileSync(path.join(home, ".tuck/agent.jsonl"), "utf8"), /hunter2/);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test("the hook never gets in the agent's way: bad input exits 0 and prints nothing", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "tuck-"));
+  const r = hook(home, "not json");
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, "");
+  assert.equal(r.stderr, "");
+  fs.rmSync(home, { recursive: true, force: true });
+});

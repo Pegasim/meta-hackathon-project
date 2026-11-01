@@ -6,6 +6,9 @@
 
 ## Decided
 
+**A small local bridge tells Tuck whose turn it is in Muse Code, status only (2026-11-02, issue #11).**
+While an agent works, time on another page is a wait, not drift, and when it stops the person should hear it where they are. A browser extension cannot hear a hook, so this is the one exception to "no separate backend": the hook appends a status line to a file, and a native messaging host Chrome starts passes it on, so the hook needs nothing running. Prompts, messages and terminal output never leave the hook; whether a turn ended in a question is worked out there. Tuck cannot bring a terminal to the front, so the word offers "Got it", not "Take me back".
+
 **"Take me back" teaches only as the answer to Tuck's question; labels can be forgotten in settings (2026-11-01, issue #8).**
 Counting every "Take me back" was the plan, but the button only appears on a page already judged unrelated, so it adds little, and a page wrongly marked as work never gets a nudge to answer. So a no on a page Tuck was unsure about is remembered at once, for that page's title or that conversation, never the whole site: a repo on the same host can be the work. Settings list what was learned. A later yes takes the no back. Forgetting a label does not remove a preference already written to memory, since a lasting label writes one and `src/memory/` has no way to remove it yet.
 

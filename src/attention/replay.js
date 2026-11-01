@@ -5,7 +5,7 @@
 import { DEFAULTS } from "./config.js";
 import { initialState, step } from "./engine.js";
 
-const INPUTS = new Set(["context", "relevance", "session", "response", "tick"]);
+const INPUTS = new Set(["context", "relevance", "session", "response", "tick", "agent"]);
 
 // What the live worker saw on each page (its second_look answers), by page key. The
 // engine asks again on its own schedule, so each request gets the answer recorded
