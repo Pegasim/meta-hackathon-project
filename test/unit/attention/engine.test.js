@@ -93,7 +93,8 @@ test("related time drains the budget at the decay rate", () => {
   assert.equal(state.budgetSec, 10);
 });
 
-test("hopping between tabs is fragmentation", () => {
+// Hopping: 7 switches in 90 s, 72 s of it on pages labelled unrelated at `confidence`.
+function hop(cfg, { confidence = 0.9, labels } = {}) {
   const pages = [
     VIDEO,
     REPO,
@@ -103,16 +104,34 @@ test("hopping between tabs is fragmentation", () => {
     REPO,
     VIDEO,
   ];
-  const labels = ["unrelated", "related", "unrelated", "related", "unrelated", "related", "unrelated"];
-  const durations = [16, 6, 16, 6, 16, 6, 24]; // 7 switches in 90 s, 72 s of it unrelated
+  labels ??= ["unrelated", "related", "unrelated", "related", "unrelated", "related", "unrelated"];
+  const durations = [16, 6, 16, 6, 16, 6, 24];
   let ts = t0;
   const inputs = [setIntent(t0)];
   pages.forEach((p, i) => {
-    inputs.push(ctx(ts, p, labels[i]));
+    inputs.push(ctx(ts, p, labels[i], labels[i] === "unrelated" ? { confidence } : {}));
     ts += durations[i] * S;
   });
-  const { triggers } = run(inputs, { until: ts, cfg: { ...CFG, toleranceSec: 1000 } });
-  assert.equal(triggers.filter((t) => t.kind === "fragmentation").length, 1);
+  const { triggers } = run(inputs, { until: ts, cfg: { ...cfg, toleranceSec: 1000 } });
+  return triggers.filter((t) => t.kind === "fragmentation").length;
+}
+
+test("hopping between tabs is fragmentation, when it is on", () => {
+  assert.equal(hop({ ...CFG, fragmentation: true }), 1);
+});
+
+test("issue #30: the fragmentation nudge is off by default", () => {
+  assert.equal(hop(CFG), 0);
+});
+
+test("issue #30: fast switching between work tabs is never fragmentation", () => {
+  const work = Array(7).fill("related");
+  assert.equal(hop({ ...CFG, fragmentation: true }, { labels: work }), 0);
+});
+
+test("issue #30: an unsure unrelated verdict is not off-task time", () => {
+  // The same hopping, but each unrelated verdict is below unsureConfidence.
+  assert.equal(hop({ ...CFG, fragmentation: true }, { confidence: 0.4 }), 0);
 });
 
 test("a relevance answer for a page the user left does not relabel the page in front", () => {
@@ -244,6 +263,7 @@ test("session_start greets the first active page of a day once, only without a g
 });
 
 test("one nudge at a time: no fragmentation while a drift is running", () => {
+  const cfg = { ...CFG, fragmentation: true };
   const X = ["https://x.com/home", "Home / X"];
   const inputs = [setIntent(t0), ctx(t0, VIDEO, "unrelated")];
   // Drift starts at 45 s; then hop between unrelated pages while drifting.

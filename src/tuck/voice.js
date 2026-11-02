@@ -51,7 +51,7 @@ export function templateNudge({ kind, level, site, awayMin = 0, unsure = false, 
       if (level >= 2) return `Still on ${site}. Want to get back to it?`;
       return `Still on ${site}? Next up: ${what}.`;
     case "fragmentation":
-      return "Lots of tab switching. Want to pick one thing?";
+      return "These tabs don't look like your task. Want to pick one thing?";
     case "return":
       return `Welcome back. Next up: ${what}.`;
     case "break_over":

@@ -77,7 +77,8 @@ function windowStats(s, ts, cfg) {
     const end = s.timeline[i + 1]?.ts ?? ts;
     if (end <= start) return;
     totalMs += end - start;
-    if (e.label === "unrelated") unrelatedMs += end - start;
+    // Only time the model was sure about: an unsure "unrelated" may be work (#30).
+    if (e.label === "unrelated" && !isUnsure(e, cfg)) unrelatedMs += end - start;
   });
   return { switches: inWindow.length, unrelatedShare: totalMs ? unrelatedMs / totalMs : 0 };
 }
@@ -132,11 +133,15 @@ function applyContext(s, input, candidates, cfg) {
   const pending = !input.label;
   // A title change or load event on the same tab and URL is the same page, not a switch.
   const samePage = s.current && s.current.tabId === input.tabId && s.current.url === input.url;
+  // The confidence too: an unsure "unrelated" is not off-task time (windowStats).
+  const seen = pending
+    ? { label: "neutral", confidence: 0 }
+    : { label: input.label, confidence: input.confidence ?? 1 };
   if (samePage && s.current.key !== input.key) {
     const last = s.timeline.at(-1);
-    if (last) Object.assign(last, { key: input.key, label: pending ? "neutral" : input.label });
+    if (last) Object.assign(last, { key: input.key, ...seen });
   } else if (!samePage) {
-    s.timeline.push({ ts: input.ts, key: input.key, label: pending ? "neutral" : input.label });
+    s.timeline.push({ ts: input.ts, key: input.key, ...seen });
     // Keep the window, plus the entry running into it.
     const firstIn = s.timeline.findIndex((e) => e.ts >= input.ts - cfg.fragWindowSec * S);
     if (firstIn > 0) s.timeline = s.timeline.slice(firstIn - 1);
@@ -181,7 +186,7 @@ function applyRelevance(s, input) {
     source: input.source ?? null,
   });
   const last = s.timeline.at(-1);
-  if (last?.key === input.key) last.label = input.label;
+  if (last?.key === input.key) Object.assign(last, { label: input.label, confidence: input.confidence });
   rememberRelated(s, input.ts);
 }
 
@@ -396,6 +401,7 @@ export function step(prev, input, cfg = DEFAULTS) {
   }
   // One nudge at a time: hopping during a drift is part of that drift.
   if (
+    cfg.fragmentation &&
     core !== "drifting" &&
     s.intent &&
     !s.away &&

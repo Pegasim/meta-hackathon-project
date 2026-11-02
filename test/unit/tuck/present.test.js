@@ -62,7 +62,7 @@ test("L2 and L3 drift: thinking, with the message and the three answers", () => 
 test("fragmentation at L2 is a nudge too", () => {
   const v = present({ trigger: trigger("fragmentation", 2) });
   assert.equal(v.tuck, "thinking");
-  assert.equal(v.bubble.text, "Lots of tab switching. Want to pick one thing?");
+  assert.equal(v.bubble.text, "These tabs don't look like your task. Want to pick one thing?");
 });
 
 test("return and break_over: a check-in wave with a nudge", () => {
