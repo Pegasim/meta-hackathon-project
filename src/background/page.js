@@ -92,8 +92,8 @@ export function readRegion() {
 // fromFocus (the person is typing there), else the conversation last touched (watchRegion),
 // else around the middle of the window, into any open shadow root there. Never reads form
 // values or drafts, and reads nothing when a password field is visible, also inside open
-// shadow roots and same-origin frames. Returns { password, text }, or null when the tab
-// has moved on from url.
+// shadow roots and same-origin frames. Returns { password, text, from }, from: where it
+// read ("conversation", "focus" or "view"), or null when the tab has moved on from url.
 export function readExcerpt(url, maxChars, minChars, fromFocus) {
   if (location.href !== url) return null;
   const shown = (el) => {
@@ -155,5 +155,7 @@ export function readExcerpt(url, maxChars, minChars, fromFocus) {
     if (draft) text = flat(text.replace(draft, " "));
   }
   // Next to a text field, or in a conversation, the newest lines are at the end.
-  return { password: false, text: typing || chat ? text.slice(-maxChars) : text.slice(0, maxChars) };
+  const from =
+    chat || (typing && region?.isConnected && region.contains(focus)) ? "conversation" : typing ? "focus" : "view";
+  return { password: false, text: typing || chat ? text.slice(-maxChars) : text.slice(0, maxChars), from };
 }
