@@ -454,8 +454,9 @@ function excerptVerdict(need, from) {
 }
 
 // {label, confidence, source} from the excerpt, or {skipped: why}. from: "focus" (the
-// field the person types in) or "view" (the middle of the window). A verdict counts for
-// cfg.lookHoldMin minutes, so a page is not read again on every drift word.
+// field the person types in) or "view" (the conversation last touched, else the middle of
+// the window). A verdict counts for cfg.lookHoldMin minutes, so a page is not read again
+// on every drift word.
 async function judgeExcerpt(need, from) {
   const generation = memoryGeneration;
   const cfg = await config();
