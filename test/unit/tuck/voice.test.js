@@ -33,7 +33,7 @@ test("template lines in Tuck's voice", () => {
     ],
     [{ kind: "drift", level: 2, site: "LinkedIn", awayMin: 1 }, "Still on LinkedIn. Want to get back to it?"],
     [{ kind: "drift", level: 1, site: "YouTube", unsure: true }, "Is this page part of your task?"],
-    [{ kind: "fragmentation", level: 2 }, "Lots of tab switching. Want to pick one thing?"],
+    [{ kind: "fragmentation", level: 2 }, "These tabs don't look like your task. Want to pick one thing?"],
     [{ kind: "return", level: 2 }, "Welcome back. Next up: testing the extension."],
     [{ kind: "break_over", level: 2 }, "Break's over. Ready to get back to it?"],
     [{ kind: "session_start", level: 2 }, "Hi. What are we working on today?"],

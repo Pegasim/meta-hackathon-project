@@ -31,7 +31,8 @@ The human types `arm smoke` in the conversation. Approval covers one run.
 4. Press *Take me back* — expect the last related tab in front.
 5. Open a borderline page and press *This is for my task* — revisit it later and
    expect no nudge.
-6. Hop quickly between unrelated tabs — expect the fragmentation nudge.
+6. Hop quickly between unrelated tabs — expect no fragmentation nudge (off by default,
+   #30); with `fragmentation: true` in the attention config, expect it.
 7. Switch to Do Not Disturb and drift — expect no intervention, and a suppressed
    trigger in the event log.
 8. Export the event log from the options page — expect every step above in it.

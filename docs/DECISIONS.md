@@ -6,6 +6,9 @@
 
 ## Decided
 
+**The tab-hopping nudge is off by default, and counts only time the model was sure about (2026-11-02, issue #30).**
+It fired during real work: six tabs in two minutes is normal (docs, repo, chat, a PR), and the pattern looks the same whether someone is working or not, so the nudge read as a false accusation. Sustained off-task time already reaches the drift nudge in about 45 s, whatever the switch count; what is lost is quick hopping between work and off-task tabs, where the work tabs keep draining the budget. Behind `fragmentation: true` it still works, now counting only confident "unrelated" time and with wording about the tabs, not the switching. The thresholds (6 switches, 50%) are unchanged: they are guesses, and changing them without replaying real sessions would swap one guess for another.
+
 **The to-do list is read from the open loops by a model at import; what is urgent stays in code (2026-11-02, issue #29).**
 Memory counts every entry with a next action as an open loop, and on a real brain that was 225 items, 9 of them todos. Rules on kind or age cannot tell "send the papers" from "keep an eye on the bill", or see that a later note closed a task, so a model reads each candidate once, with the other notes on its topic, and says whether it is a task, still open, and its title in 10 words. It never orders them: the deadline is read from the text and the queue keeps memory's order, as INTENT.md asks. Verdicts are cached by entry and content, so a re-import asks only about what changed (on that brain, 15 calls the first time, then none). A task closed on another topic, or never written down, stays listed; Not a task and Done take it out for good.
 
