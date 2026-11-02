@@ -15,6 +15,9 @@ export function watchTyping() {
   return true;
 }
 
+// Is Tuck on this page? A reload keeps the tab and URL but wipes what was injected.
+export const tuckThere = () => !!window.__tuckInstalled;
+
 // Is the person typing on this page: is the focus in a field that takes text, and did
 // they type within recentMs? A field left focused while scrolling is not typing. Reads
 // no text. Tuck's own bubble does not count.

@@ -246,6 +246,17 @@ const clickState = await tuck.locator("svg.tuck").getAttribute("data-state");
 await tuck.locator(".bubble .close").click();
 await repoTab.waitForTimeout(1500);
 
+// A reload keeps the tab and URL but wipes what was injected: Tuck comes back, resting,
+// without a new greeting or the goal form (issue #22).
+await repoTab.reload();
+await tuck.waitFor({ state: "attached", timeout: 10000 });
+const afterReload = {
+  state: await tuck.locator("svg.tuck").getAttribute("data-state"),
+  formOpen: await tuck.locator("input[name=goal]").isVisible(),
+  shown: await tuck.locator(".dock.in").count(),
+  hosts: await repoTab.locator("#tuck-companion").count(),
+};
+
 // The popup (opened as a tab) shows the goal set on the page.
 const popup = await ctx.newPage();
 watch(popup);
@@ -594,6 +605,11 @@ assert.deepEqual(errors, []);
 assert.equal(greeting, "Hi. What are we working on today?");
 assert.equal(greetState, "checkin");
 assert.equal(restState, "resting", "Tuck rests on the page once the goal is set");
+assert.deepEqual(
+  afterReload,
+  { state: "resting", formOpen: false, shown: 1, hosts: 1 },
+  "after a reload Tuck is back on the page, resting, once",
+);
 assert.equal(clickState, "checkin", "clicking Tuck is a check-in");
 assert.ok(dragged.x < 100, `dragged to the left: ${dragged.x}`);
 assert.ok(bubbleAfterDrag.x >= dragged.x, "on the left, the bubble opens rightwards");

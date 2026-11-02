@@ -271,7 +271,12 @@
     place();
     setState(v.tuck);
     drawBubble(v.bubble);
-    requestAnimationFrame(() => dock().classList.add("in"));
+    if (v.instant) {
+      // Back after a reload: already there, not sliding in again.
+      dock().style.transition = "none";
+      dock().classList.add("in");
+      requestAnimationFrame(() => (dock().style.transition = ""));
+    } else requestAnimationFrame(() => dock().classList.add("in"));
     if (v.settle) later(1400, () => setState(v.settle));
     if (v.closeBubbleAfterMs) later(v.closeBubbleAfterMs, closeBubble);
   }
