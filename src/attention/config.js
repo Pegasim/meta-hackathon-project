@@ -26,6 +26,7 @@ export const DEFAULTS = Object.freeze({
   maxHolds: 2, // per drift; then the word comes anyway (the first one at L1)
   lookHoldMin: 5, // an excerpt's verdict counts for the page this long
   typingRecentSec: 60, // a key pressed this recently, with the focus in a text field = typing
+  regionWaitMs: 500, // the page has this long to say where the person works on it (background surfaceOf)
   labelMin: 30, // "This is for my task" on a whole site lasts this long…
   labelDays: 3, // …until it has been given on this many different days
   dayBoundaryHour: 4,

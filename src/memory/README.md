@@ -26,9 +26,13 @@ maintain() (every 15 min): consolidate + prune activity older than 7 days + expo
 | `due.js` | Deadlines derived from entry text, and day arithmetic (see Entry format) |
 | `activity.js` | Tab events → time spans → per-site summary |
 | `distill.js` | Prompt and parser for turning activity into entries (the model call is passed in) |
+| `paste.js` | Prompt and parser for turning a pasted assistant memory into entries: redacted and capped first, one call per paste (the model call is passed in). An entry is dated today, or earlier when its own text names an earlier date, so a deadline already missed still reads as one |
+| `markdown.js` | Any Markdown folder (Obsidian, plain notes) → `todo` entries for unchecked `- [ ]` items (with Obsidian's `📅` and `due::` deadlines) and a document per file. Pure; `sources.js` reads the folder with `readTextFiles` |
+| `sources.js` | Origins and the folder readers by kind (`READERS`: `brain`, `md`) |
 | `model.js` | OpenAI-compatible client; provider presets; settings storage |
 | `db.js` | IndexedDB stores: `entries`, `notes`, `activity`, `meta` |
-| `connector.js` | Brain folder access (File System Access API): read, permissions, write into `inbox/` |
+| `connector.js` | Folder access (File System Access API): read the brain or any folder of `.md` files, permissions, write into the brain's `inbox/` |
+| `sources.js` | Where memory comes from: `origin`, and the reader for each kind of folder |
 | `index.js` | The `Memory` API below |
 
 ## API
@@ -37,6 +41,13 @@ maintain() (every 15 min): consolidate + prune activity older than 7 days + expo
 import { Memory } from "../memory/index.js";
 import { modelClient, loadModelSettings } from "../memory/model.js";
 const memory = await Memory.open();
+
+// Sources (see Sources below)
+await memory.importEntries({ origin, name, entries, documents }); // an adapter's output; replaces that origin only
+await memory.connectFolder(dirHandle, { kind, origin?, name?, read? }); // remember a read-only folder and import it
+await memory.syncSource(origin, { prompt });   // re-read a connected folder, the brain included
+await memory.sources();                         // [{ origin, kind, name, entries, documents, openLoops, connected, lastImport }]
+await memory.removeSource(origin);              // drop all of it; { entries, notes }
 
 // Brain
 await memory.connectBrain(dirHandle);           // remember the folder and import it
@@ -77,6 +88,26 @@ await memory.version();                        // the stamp of the last write by
 // entryKey(entry): its date, topic and title, the second way remove() finds it
 import { redact, entryKey } from "../memory/index.js";
 ```
+
+## Sources
+
+Every entry and document carries an `origin`, where it came from (`sources.js`):
+
+| Origin | What | Written to |
+|---|---|---|
+| `brain` | The second-brain folder (`connectBrain`) | Yes: `exportPending()` writes the extension's own entries into its `inbox/` |
+| `md:<folder name>` | Any folder of `.md` files (`connectFolder(dir, { kind: "md" })`), read by `markdown.js` | Never |
+| `paste:<id>` | What an assistant said it knows, turned into entries once (`importEntries`) | Never |
+| none | The extension's own entries (`add()`, `distill()`) | Into the brain, once each |
+
+`source` is another field: who wrote the entry (claude-code, distill, extension).
+
+- **One source at a time.** An import replaces what the last import of that origin brought, and nothing else: a brain sync leaves a Markdown folder and a pasted memory as they are. `importFiles(files)` is the brain's (`origin: "brain"`); `importEntries()` takes any adapter's entries and documents.
+- **Records from before origins** have none: with a `path` they count as the brain's, without one as the extension's own.
+- **Ids and paths.** Outside the brain, an entry's id is `<origin>|<id>` and a document's path `<origin>/<path>`, so one note in two folders is two records. Entries that fail validation are skipped and reported in `skipped`; the brain's are kept as read.
+- **Removing a source** drops its entries, its documents and its folder. A later `syncSource()` finds no folder (`{ connected: false }`), also when the removal came from the other instance while it was reading. Connecting the folder again, or importing that origin again, brings it back: that is the explicit way back. Removing the brain keeps the extension's own entries, and nothing is exported until a brain is connected again.
+- **Removing one entry** (`remove()`, below) works in every source, and a later import of that source does not bring it back.
+- **A new kind of folder** adds a reader to `READERS` in `sources.js`: `read(dirHandle) -> { entries, documents, skipped }`. `connectFolder` and `syncSource` find it by the origin's kind, in the options page and in the worker alike. `readTextFiles(dir)` in `connector.js` returns every `.md` file as `{ path, text, lastModified }`, hidden folders skipped.
 
 ## Entry format
 

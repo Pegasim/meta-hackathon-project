@@ -158,6 +158,11 @@ export async function judgeBatch(complete, items, { clean, now = Date.now } = {}
   }
 }
 
+// An unchecked "- [ ]" in a Markdown folder is a task by construction, still open until it
+// is checked or marked Done: listed under its own title with no call (taskList keeps an
+// entry with no verdict as it is).
+export const taskByConstruction = (e) => e.source === "markdown" && e.kind === "todo";
+
 // candidates: open loops (memory.taskQueue). sample: memory.profileSample, newest first.
 // cache: { [taskKey]: verdict } from the last run. Only entries that are new, or whose
 // text or later notes changed, are sent; a batch that fails leaves its entries out of the
@@ -169,6 +174,7 @@ export async function extractTasks(
   const next = {};
   const todo = [];
   for (const entry of candidates) {
+    if (taskByConstruction(entry)) continue;
     const later = laterOnTopic(entry, sample);
     const hash = taskHash(entry, later);
     const key = taskKey(entry);

@@ -130,6 +130,14 @@ const server = http.createServer((req, res) => {
         `<title>Updates | Social</title><main style="padding-bottom:300px">${feedText}</main>` +
           chatRoot("dock-box", "position:fixed;bottom:0;right:0;width:190px;background:#eee"),
       );
+  // The same again under another title (its own verdicts), for a region read that runs out (#38).
+  if (req.url === "/dock-feed-slow")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(
+        `<title>Digest | Social</title><main style="padding-bottom:300px">${feedText}</main>` +
+          chatRoot("slow-box", "position:fixed;bottom:0;right:0;width:190px;background:#eee"),
+      );
   // An article about chat with a feedback box: not a conversation.
   if (req.url === "/docs/chat-api")
     return res
@@ -215,7 +223,13 @@ const server = http.createServer((req, res) => {
           : /Top 10 F1 crashes|\| Social/.test(messages.at(-1).content)
             ? { label: "unrelated", confidence: 0.9, reason: "Not the checkout bug." }
             : { label: "related", confidence: 0.9, reason: "The shop repo." };
-    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }));
+    // Issue #38: this page's own verdict takes a while, as a real model's can (4-13 s), so
+    // the person is in the chat before the first look at the page is read.
+    const slow = excerpt === undefined && /Page title: Digest \| Social/.test(prompt);
+    setTimeout(
+      () => res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] })),
+      slow ? 2500 : 0,
+    );
   });
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
@@ -232,6 +246,7 @@ const dockedSocial = `http://localhost:${port}/docked-social`;
 const knownChat = `http://localhost:${port}/known-chat`;
 const centreChat = `http://localhost:${port}/centre-chat`;
 const dockFeed = `http://localhost:${port}/dock-feed`;
+const dockFeedSlow = `http://localhost:${port}/dock-feed-slow`;
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "ext-e2e-"));
 const ctx = await chromium.launchPersistentContext(profile, {
@@ -633,14 +648,39 @@ await dockTab.mouse.move(100, 300);
 await dockTab.mouse.wheel(0, 100);
 const driftDockFeed = await waitForNewDrift(afterDockChat.id);
 await dockTab.close();
+
+// Issue #38: the same, with the page too slow to say where the person works. The chat it
+// reads says nothing about the feed under it: scrolling the feed still drifts.
+await settingsPage.evaluate(async () => {
+  const { attentionConfig } = await chrome.storage.local.get("attentionConfig");
+  await chrome.storage.local.set({ attentionConfig: { ...attentionConfig, regionWaitMs: 0 } });
+});
+await workTab.bringToFront();
+await workTab.waitForTimeout(2500);
+const slowTab = await ctx.newPage();
+await slowTab.goto(dockFeedSlow);
+await slowTab.bringToFront();
+await slowTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await slowTab.click("#slow-box");
+await slowTab.waitForTimeout(6000);
+const afterSlowChat = await lastTrigger();
+await slowTab.mouse.move(100, 300);
+await slowTab.mouse.wheel(0, 100);
+const driftSlowFeed = await waitForNewDrift(afterSlowChat.id);
+await slowTab.close();
 await workTab.close();
+await settingsPage.evaluate(async () => {
+  const { attentionConfig } = await chrome.storage.local.get("attentionConfig");
+  delete attentionConfig.regionWaitMs;
+  await chrome.storage.local.set({ attentionConfig });
+});
 
 // Review: reading turned off. The chat's earlier "work" verdict no longer counts, and
 // nothing is read: the chat page is a drift again.
 await settingsPage.evaluate(() => chrome.storage.local.set({ pageReading: { enabled: false } }));
 await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
-const driftOff = await waitForNewDrift(driftDockFeed.id);
+const driftOff = await waitForNewDrift(driftSlowFeed.id);
 
 // Whose turn it is in a coding agent (#11): while it works the same drifting page is a
 // wait; when it stops Tuck says so, once.
@@ -978,6 +1018,7 @@ assert.ok(
 assert.equal(afterDockChat.id, beforeDock.id, "no nudge while the person is in the chat");
 assert.equal(driftDockFeed.evidence.surface?.kind, "page", "scrolling the feed ends the conversation");
 assert.equal(driftDockFeed.evidence.url, dockFeed, "the feed with a chat left open is still judged as a feed");
+assert.equal(driftSlowFeed.evidence.url, dockFeedSlow, "a region read that runs out does not make the feed work (#38)");
 assert.ok(!looks.some((m) => /Sign in \| Social/.test(m.at(-1).content)), "the login page was not read");
 assert.ok(
   log.events.some((e) => e.type === "second_look" && e.skipped === "password"),

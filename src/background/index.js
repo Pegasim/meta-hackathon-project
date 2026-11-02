@@ -249,7 +249,7 @@ async function contextJob(getTab, { idleState, forceUnfocused = false } = {}) {
   const ts = Date.now();
   const cfg = await config();
   const s = await engineState(cfg, ts);
-  const surface = await surfaceOf(tab.id, url, flags);
+  const surface = await surfaceOf(tab.id, url, flags, cfg);
   return process({
     type: "context",
     ts,
@@ -267,14 +267,16 @@ async function contextJob(getTab, { idleState, forceUnfocused = false } = {}) {
 
 // Where on the page the person is working. Logged raw on the context input, so a replay
 // sees it. Runs inside the engine's queue, so a page that does not answer (loading,
-// frozen) must not hold it up: it then counts as a page.
+// frozen) must not hold it up: it then counts as a page, and the second look keeps what
+// it reads in a chat away from that page (judgeExcerpt).
 const PLAIN_PAGE = { kind: "page", labels: [] };
-const REGION_WAIT_MS = 500;
-async function surfaceOf(tabId, url, { browserFocused }) {
+async function surfaceOf(tabId, url, { browserFocused }, cfg) {
   if (!url || !browserFocused || !mayRead(url, await readingNow())) return PLAIN_PAGE;
   // Installed here, not when Tuck appears: a reload wipes it with the tab and URL unchanged.
   const look = inPage(tabId, watchRegion).then(() => inPage(tabId, readRegion));
-  const region = await Promise.race([look, sleep(REGION_WAIT_MS)]);
+  const region = await Promise.race([look, sleep(cfg.regionWaitMs).then(() => "late")]);
+  // Too late to tell: judged as the page, and marked so the log shows it (#38).
+  if (region === "late") return { ...PLAIN_PAGE, late: true };
   return region ?? PLAIN_PAGE;
 }
 
@@ -504,6 +506,10 @@ async function judgeExcerpt(need, from) {
   const page = await inPage(need.tabId, readExcerpt, [need.url, EXCERPT_CHARS, EXCERPT_MIN_CHARS, from === "focus"]);
   if (!page) return { skipped: "unreadable" };
   if (page.password) return { skipped: "password" };
+  // A verdict counts only where it was read. A chat read while the engine has the page in
+  // front (the region read ran out), or the page read while it has the chat, says nothing
+  // of what is in front: neither kept nor given to it, so a chat never makes a feed work (#38).
+  if ((page.from === "conversation") !== (need.surface?.kind === "conversation")) return { skipped: "elsewhere" };
   const { text, count } = redact(page.text);
   if (!text) return { skipped: "empty" };
   const intent = (await st.activeIntent()) ?? (await loadEngine()).intent;
@@ -1016,9 +1022,16 @@ const HANDLERS = {
     showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
   "tuck-change": async (_msg, sender) => showTuck(sender?.tab?.id, present({ event: "card", intent: null })),
   maintain,
+  // The brain, then every other connected folder (read only); none of them asks for
+  // permission from here. Returns the brain's result, with the folders' under `folders`.
   "sync-brain": async () => {
-    const r = await (await memory).syncBrain();
-    if (r.connected && !r.needsPermission) {
+    const m = await memory;
+    const r = await m.syncBrain();
+    const folders = [];
+    for (const { origin } of (await m.sources()).filter((x) => x.connected && x.kind !== "brain"))
+      folders.push({ origin, ...(await m.syncSource(origin).catch((err) => ({ error: err.message }))) });
+    r.folders = folders;
+    if ((r.connected && !r.needsPermission) || folders.some((f) => f.entries != null)) {
       await memoryChanged();
       refreshProfile().catch(() => {});
       refreshTaskList().catch(() => {});
