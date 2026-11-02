@@ -26,7 +26,9 @@ maintain() (every 15 min): consolidate + prune activity older than 7 days + expo
 | `due.js` | Deadlines derived from entry text, and day arithmetic (see Entry format) |
 | `activity.js` | Tab events → time spans → per-site summary |
 | `distill.js` | Prompt and parser for turning activity into entries (the model call is passed in) |
-| `paste.js` | Prompt and parser for turning a pasted assistant memory into entries: redacted and capped first, one call per paste (the model call is passed in) |
+| `paste.js` | Prompt and parser for turning a pasted assistant memory into entries: redacted and capped first, one call per paste (the model call is passed in). An entry is dated today, or earlier when its own text names an earlier date, so a deadline already missed still reads as one |
+| `markdown.js` | Any Markdown folder (Obsidian, plain notes) → `todo` entries for unchecked `- [ ]` items (with Obsidian's `📅` and `due::` deadlines) and a document per file. Pure; `sources.js` reads the folder with `readTextFiles` |
+| `sources.js` | Origins and the folder readers by kind (`READERS`: `brain`, `md`) |
 | `model.js` | OpenAI-compatible client; provider presets; settings storage |
 | `db.js` | IndexedDB stores: `entries`, `notes`, `activity`, `meta` |
 | `connector.js` | Folder access (File System Access API): read the brain or any folder of `.md` files, permissions, write into the brain's `inbox/` |
@@ -94,7 +96,7 @@ Every entry and document carries an `origin`, where it came from (`sources.js`):
 | Origin | What | Written to |
 |---|---|---|
 | `brain` | The second-brain folder (`connectBrain`) | Yes: `exportPending()` writes the extension's own entries into its `inbox/` |
-| `md:<folder name>` | Any folder of `.md` files (`connectFolder(dir, { kind: "md" })`) | Never |
+| `md:<folder name>` | Any folder of `.md` files (`connectFolder(dir, { kind: "md" })`), read by `markdown.js` | Never |
 | `paste:<id>` | What an assistant said it knows, turned into entries once (`importEntries`) | Never |
 | none | The extension's own entries (`add()`, `distill()`) | Into the brain, once each |
 

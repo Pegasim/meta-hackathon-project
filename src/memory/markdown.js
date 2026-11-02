@@ -2,7 +2,7 @@
 // the same shapes a second-brain checkout gives (brain.js). Open checkbox tasks become
 // `todo` entries, so Tuck knows what the person owes; every file becomes a document for
 // recall. Pure over [{ path, text, lastModified }], so it runs under node; the folder is
-// read in the browser by readMarkdownFolder. Nothing is written back to the folder.
+// read in the browser by connector.js readTextFiles. Nothing is written back to the folder.
 import { makeEntry } from "./entry.js";
 import { entryId, entryKey } from "./consolidate.js";
 import { localDate } from "./due.js";
@@ -132,20 +132,4 @@ export function fromMarkdownFolder(files, { today = localDate(), folderName = ""
   }
   entries.sort((a, b) => b.date.localeCompare(a.date) || a.title.localeCompare(b.title));
   return { entries, documents, skipped };
-}
-
-// Reads a folder the person picked (File System Access API): every .md file under it with
-// its text and lastModified, skipping dot-folders. The browser side of fromMarkdownFolder.
-export async function readMarkdownFolder(dir, prefix = "") {
-  const files = [];
-  for await (const [name, handle] of dir.entries()) {
-    if (name.startsWith(".")) continue;
-    const path = prefix + name;
-    if (handle.kind === "directory") files.push(...(await readMarkdownFolder(handle, path + "/")));
-    else if (/\.md$/i.test(name)) {
-      const file = await handle.getFile();
-      files.push({ path, text: await file.text(), lastModified: file.lastModified });
-    }
-  }
-  return files;
 }

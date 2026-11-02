@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fromMarkdownFolder, readMarkdownFolder, slug } from "../../../src/memory/markdown.js";
+import { fromMarkdownFolder, slug } from "../../../src/memory/markdown.js";
+import { readTextFiles } from "../../../src/memory/connector.js";
 import { validate } from "../../../src/memory/entry.js";
 import { dueOf } from "../../../src/memory/due.js";
 import { taskQueue } from "../../../src/memory/context.js";
@@ -136,8 +137,8 @@ function dirHandle(tree) {
   };
 }
 
-test("readMarkdownFolder reads .md files with their dates and skips dot-folders", async () => {
-  const files = await readMarkdownFolder(
+test("readTextFiles reads .md files with their dates and skips dot-folders", async () => {
+  const files = await readTextFiles(
     dirHandle({
       "a.md": "- [ ] one",
       ".obsidian": { "b.md": "- [ ] hidden" },

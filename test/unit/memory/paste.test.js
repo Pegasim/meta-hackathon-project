@@ -143,3 +143,11 @@ test("an instruction inside the paste is sent as data, and only valid entries co
 test("the question to ask an assistant is ready to copy", () => {
   assert.match(ASK_YOUR_ASSISTANT, /deadlines with dates/);
 });
+
+test("a deadline already missed in the paste still reads as one: the entry takes that earlier date", () => {
+  const missed = { ...todo, title: "Send the grant report", next: "Send the report, due 2026-10-28" };
+  const { entries } = parsePasted(reply([missed, todo]), { today: TODAY });
+  assert.equal(entries[0].date, "2026-10-28");
+  assert.equal(dueOf(entries[0]), "2026-10-28");
+  assert.equal(entries[1].date, TODAY, "a later date does not move the entry's own date");
+});

@@ -1,5 +1,5 @@
 import { stillOpen, taskList, taskKey } from "../attention/reminders.js";
-import { Memory, redact } from "../memory/index.js";
+import { Memory, redact, previewPaste, importPasted, ASK_YOUR_ASSISTANT, MAX_PASTE_CHARS } from "../memory/index.js";
 import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks } from "../agent/tasks.js";
@@ -74,9 +74,10 @@ $("test").onclick = async () => {
 async function brainStatus(r = {}) {
   if (r.needsPermission || r.permission === "prompt") return "Chrome needs your permission again: press Sync now.";
   if (!r.connected) return "Not connected.";
-  const s = await memory.stats();
+  // The brain's own counts: the other sources are listed in their card.
+  const b = (await memory.sources()).find((x) => x.kind === "brain") ?? {};
   return (
-    `${r.name ? `Folder: ${r.name}\n` : ""}${s.entries} entries, ${s.notes} notes, ${s.openLoops} open loops` +
+    `${r.name ? `Folder: ${r.name}\n` : ""}${b.entries ?? 0} entries, ${b.documents ?? 0} notes, ${b.openLoops ?? 0} open loops` +
     (r.skipped?.length ? `\n${r.skipped.length} files skipped` : "")
   );
 }
@@ -114,6 +115,122 @@ $("sync").onclick = async () => {
 };
 
 $("brain-status").textContent = await brainStatus(await memory.brainState().catch(() => ({ connected: false })));
+
+// ---- Other memory --------------------------------------------------------
+
+const KINDS = { md: "Notes folder", paste: "Pasted memory" };
+
+// After an import or a removal, as after a brain sync: the worker judges pages again, and
+// the profile and the tasks are read again.
+async function sourcesChanged() {
+  await chrome.runtime.sendMessage({ type: "memory-changed" });
+  await showSources();
+  $("profile-status").textContent = "Reading…";
+  const note = await readProfile();
+  await showProfile(note, await readTasks());
+}
+
+function sourceText(s) {
+  const read = s.lastImport ? `, read ${new Date(s.lastImport).toLocaleString()}` : "";
+  return `${KINDS[s.kind] ?? s.kind} "${s.name}": ${s.entries} entries, ${s.openLoops} open, ${s.documents} notes${read}`;
+}
+
+// Every source but the brain, which has its own card.
+async function showSources() {
+  const list = (await memory.sources()).filter((s) => s.kind !== "brain");
+  $("source-list").replaceChildren(
+    ...(list.length
+      ? list.map((s) => {
+          const row = listRow(sourceText(s), "Remove", async () => {
+            if (!confirm(`Remove "${s.name}" from Tuck's memory? Nothing in the folder or your assistant changes.`))
+              return;
+            await memory.removeSource(s.origin);
+            $("source-status").textContent = `Removed "${s.name}".`;
+            await sourcesChanged();
+          });
+          if (s.kind === "md")
+            row.append(
+              button("Sync", async () => {
+                $("source-status").textContent = "Reading…";
+                const r = await memory.syncSource(s.origin, { prompt: true });
+                if (r.needsPermission) return ($("source-status").textContent = "Chrome needs your permission again.");
+                $("source-status").textContent = folderStatus(s.name, r);
+                await sourcesChanged();
+              }),
+            );
+          return row;
+        })
+      : [Object.assign(document.createElement("p"), { className: "small muted", textContent: "Nothing yet." })]),
+  );
+}
+
+const folderStatus = (name, r) =>
+  `Read "${name}": ${r.entries} tasks and ${r.notes} notes` +
+  (r.skipped?.length ? `, ${r.skipped.length} skipped` : "");
+
+$("add-folder").onclick = async () => {
+  try {
+    const dir = await showDirectoryPicker({ mode: "read" });
+    $("source-status").textContent = "Reading…";
+    const r = await memory.connectFolder(dir, { kind: "md" });
+    $("source-status").textContent = folderStatus(dir.name, r);
+    await sourcesChanged();
+  } catch (err) {
+    if (err.name !== "AbortError") $("source-status").textContent = `Failed: ${err.message}`;
+  }
+};
+
+$("ask-text").textContent = ASK_YOUR_ASSISTANT;
+$("copy-ask").onclick = async () => {
+  await navigator.clipboard.writeText(ASK_YOUR_ASSISTANT);
+  $("paste-status").textContent = "Copied.";
+};
+
+// Nothing is sent before the person has seen it: a change to the text needs a new preview.
+$("paste-text").oninput = () => {
+  $("import-paste").disabled = true;
+  $("paste-preview").hidden = true;
+};
+$("preview-paste").onclick = () => {
+  const p = previewPaste($("paste-text").value);
+  if (!p.text) return ($("paste-status").textContent = "Paste your assistant's answer first.");
+  $("paste-preview").textContent = p.text;
+  $("paste-preview").hidden = false;
+  $("paste-status").textContent =
+    "This is what will be sent." +
+    (p.redactions ? ` ${p.redactions} secrets removed.` : "") +
+    (p.cut ? ` Cut to the first ${MAX_PASTE_CHARS.toLocaleString()} characters.` : "");
+  $("import-paste").disabled = false;
+};
+$("import-paste").onclick = async () => {
+  $("import-paste").disabled = true;
+  try {
+    const settings = await loadModelSettings();
+    if (!settings) return ($("paste-status").textContent = "Set up a model above first.");
+    $("paste-status").textContent = "Reading…";
+    const r = await importPasted(modelClient(privateSettings(settings)), $("paste-text").value, {
+      today: localDate(),
+      topics: (await memory.profile().catch(() => null))?.topics ?? [],
+    });
+    if (!r.entries.length) return ($("paste-status").textContent = "Nothing in it could be read as memory.");
+    const stored = await memory.importEntries({
+      origin: `paste:${crypto.randomUUID().slice(0, 8)}`,
+      name: `Pasted ${localDate()}`,
+      entries: r.entries,
+    });
+    const dropped = r.dropped + stored.skipped.length;
+    $("paste-status").textContent =
+      `${stored.entries} entries imported` +
+      (dropped ? `, ${dropped} left out` : "") +
+      (r.redactions ? `, ${r.redactions} secrets removed first` : "") +
+      ".";
+    $("paste-text").value = "";
+    $("paste-preview").hidden = true;
+    await sourcesChanged();
+  } catch (err) {
+    $("paste-status").textContent = `Failed: ${err.message}`;
+  }
+};
 
 // ---- What Tuck knows -----------------------------------------------------
 
@@ -271,6 +388,7 @@ $("reread").onclick = async () => {
 };
 
 await showProfile();
+await showSources();
 
 // ---- Page reading --------------------------------------------------------
 

@@ -26,7 +26,7 @@ export async function readTextFiles(dir, { ext = ".md", prefix = "" } = {}) {
     const path = prefix + name;
     if (handle.kind === "directory") {
       files.push(...(await readTextFiles(handle, { ext, prefix: path + "/" })));
-    } else if (name.endsWith(ext)) {
+    } else if (name.toLowerCase().endsWith(ext)) {
       const file = await handle.getFile();
       files.push({ path, text: await file.text(), lastModified: file.lastModified });
     }

@@ -373,6 +373,85 @@ const sources = await page.evaluate(async () => {
   };
 });
 
+// A real Markdown folder through the real reader (issue #6, the invented vault in
+// test/fixtures/vault copied into an origin-private folder), and a pasted memory through
+// the paste node with a fake model: what the settings page does, without its clicks.
+const vaultFiles = [];
+const walkVault = (dir, rel = "") => {
+  for (const name of fs.readdirSync(dir)) {
+    const full = path.join(dir, name);
+    if (fs.statSync(full).isDirectory()) walkVault(full, `${rel}${name}/`);
+    else vaultFiles.push({ path: `${rel}${name}`, text: fs.readFileSync(full, "utf8") });
+  }
+};
+walkVault(path.resolve(import.meta.dirname, "../fixtures/vault"));
+const { fromMarkdownFolder } = await import("../../src/memory/markdown.js");
+const expectedVault = fromMarkdownFolder(
+  vaultFiles.map((f) => ({ ...f, lastModified: Date.now() })),
+  {
+    folderName: "Vault-6",
+  },
+);
+const own = await page.evaluate(async (files) => {
+  const { Memory, importPasted } = await import("/memory/index.js");
+  const memory = await Memory.open("browser-test-6");
+  const root = await navigator.storage.getDirectory();
+  const vault = await root.getDirectoryHandle("Vault-6", { create: true });
+  for (const { path: p, text } of files) {
+    const parts = p.split("/");
+    let d = vault;
+    for (const part of parts.slice(0, -1)) d = await d.getDirectoryHandle(part, { create: true });
+    const w = await (await d.getFileHandle(parts.at(-1), { create: true })).createWritable();
+    await w.write(text);
+    await w.close();
+  }
+  const folder = await memory.connectFolder(vault, { kind: "md" });
+  const queue = await memory.taskQueue({ today: "2026-11-02", limit: Infinity });
+  const note = (await memory.recall("cart bug")).find((h) => h.ref.type !== "entry");
+
+  // The paste node with a fake model that answers with one task and one preference.
+  const calls = [];
+  const fake = async (messages) => {
+    calls.push(messages);
+    return JSON.stringify([
+      {
+        kind: "todo",
+        topic: "Pantry",
+        title: "Ship the Pantry beta",
+        context: "Building Pantry with a friend.",
+        result: "The beta has a date.",
+        next: "Ship it, due 2026-11-20",
+      },
+      { kind: "preference", topic: "work", title: "Prefers mornings", context: "Said so.", result: "Mornings." },
+    ]);
+  };
+  const pasted = await importPasted(fake, "- Ship the Pantry beta by 2026-11-20\n- api_key = sk-test1234567890abcdef", {
+    today: "2026-11-02",
+  });
+  const stored = await memory.importEntries({ origin: "paste:p6", name: "Pasted 2026-11-02", entries: pasted.entries });
+  const sent = calls[0].at(-1).content;
+  return {
+    folder,
+    open: queue.filter((e) => e.origin === "md:Vault-6").map((e) => ({ title: e.title, due: e.due })),
+    note: note?.title ?? null,
+    pasted: { entries: stored.entries, redactions: pasted.redactions, calls: calls.length },
+    secretSent: sent.includes("sk-test1234567890abcdef"),
+    kinds: (await memory.sources()).map((x) => [x.origin, x.entries, x.openLoops]),
+    exported: (await memory.exportPending()).exported,
+  };
+}, vaultFiles);
+
+// The settings page loads with its new card, and no script error.
+const settings = await ctx.newPage();
+settings.on("pageerror", (e) => errors.push(String(e)));
+await settings.goto(`chrome-extension://${id}/options/options.html`);
+await settings.waitForSelector("#source-list p, #source-list .row");
+const settingsCard = await settings.evaluate(() => ({
+  ask: document.getElementById("ask-text").textContent,
+  importDisabled: document.getElementById("import-paste").disabled,
+}));
+await settings.close();
+
 await ctx.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
@@ -463,4 +542,27 @@ assert.deepEqual(sources.syncRemoved, { connected: false }, "a removed folder is
 assert.deepEqual(sources.afterMd, ["Close the invoice ticket", "Each invoice goes out monthly"]);
 assert.deepEqual(sources.left, ["brain"]);
 assert.equal(sources.readded, 1, "connecting the folder again brings it back");
+assert.equal(own.folder.entries, expectedVault.entries.length, "every open checkbox in the vault is a task");
+assert.equal(own.folder.entries, 8);
+assert.equal(own.folder.notes, 4, "each .md file is a note; .obsidian/, .trash/ and .txt are not read");
+assert.ok(
+  own.open.some((e) => e.title === "Write the failing test for cart item removal" && e.due === "2026-11-10"),
+  `a 📅 task with its deadline: ${JSON.stringify(own.open)}`,
+);
+assert.ok(
+  !own.open.some((e) => /Set up CI|template|code fence/.test(e.title)),
+  "done, hidden and fenced boxes stay out",
+);
+assert.equal(own.note, "Shop checkout", "recall finds a note from the folder");
+assert.equal(own.pasted.entries, 2);
+assert.equal(own.pasted.calls, 1, "one call for one paste");
+assert.ok(own.pasted.redactions >= 1, "the secret line was redacted");
+assert.equal(own.secretSent, false, "a secret in the paste is removed before it is sent");
+assert.deepEqual(own.kinds, [
+  ["md:Vault-6", 8, 8],
+  ["paste:p6", 2, 1],
+]);
+assert.equal(own.exported, 0, "nothing from a folder or a paste is written anywhere");
+assert.match(settingsCard.ask, /deadlines with dates/);
+assert.equal(settingsCard.importDisabled, true, "nothing is sent before a preview");
 console.log("browser test: ok");

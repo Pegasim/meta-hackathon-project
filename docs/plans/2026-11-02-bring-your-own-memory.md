@@ -27,10 +27,11 @@ Open questions: none blocking. Stale loops are handled by the task node (#29) an
 - The paste is sent once, redacted, to plain Muse Spark, after the person sees it.
 
 ## Done when
-- [ ] Connecting a Markdown folder with `- [ ]` tasks lists them in Settings' tasks and in the greeting, and in `contextPack`.
-- [ ] A pasted assistant memory produces entries with `origin` set, shown as one source in Settings and removable as a group.
-- [ ] A brain sync leaves the other sources as they are; removing a source leaves the others.
-- [ ] Unit tests for the Markdown adapter and the paste parser on invented data; `npm test`, `npm run test:browser` and `npm run test:e2e` pass.
+- [x] Connecting a Markdown folder with `- [ ]` tasks lists them in the task queue (Settings' tasks and the greeting read it), with no model call (browser test on the invented vault; the greeting and `contextPack` themselves are not asserted).
+- [x] A pasted assistant memory produces entries with `origin` set, shown as one source in Settings and removable as a group (browser test with a fake model; the Settings clicks are not driven by a test).
+- [x] A brain sync leaves the other sources as they are; removing a source leaves the others.
+- [x] Unit tests for the Markdown adapter and the paste parser on invented data; `npm test`, `npm run test:browser` and `npm run test:e2e` pass.
 
 ## Order
 A first (everything depends on it). B and C are pure modules written alongside A, then wired in with D once A is in.
+- *Changed while building:* Settings keeps the Brain card as it is and adds an "Other memory" card for folders and pastes, rather than folding the brain into one list: the brain is the one source that is also written to. A pasted entry takes the earliest date its own text names, as a Markdown task does, so a deadline already missed still reads as one. The worker's `sync-brain` also re-reads every connected folder.

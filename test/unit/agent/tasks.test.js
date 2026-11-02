@@ -8,7 +8,9 @@ import {
   judgeBatch,
   extractTasks,
   refreshTasks,
+  taskByConstruction,
 } from "../../../src/agent/tasks.js";
+import { taskList } from "../../../src/attention/reminders.js";
 
 const entry = (id, fields = {}) => ({
   id,
@@ -190,4 +192,21 @@ test("refreshTasks skips goals and answered loops, and stores the verdicts", asy
   assert.match(model.calls[0].at(-1).content, /Task a/);
   assert.doesNotMatch(model.calls[0].at(-1).content, /Task goal|Task done|Task nope/);
   assert.deepEqual(Object.keys(stored.taskVerdicts), ["a"]);
+});
+
+test("a Markdown checkbox is a task by construction: no model call, listed under its own title", async () => {
+  const md = [entry("md:Vault|a", { source: "markdown" }), entry("md:Vault|b", { source: "markdown" })];
+  const model = fakeModel();
+  const r = await extractTasks(model.complete, { candidates: md, sample: [] });
+  assert.equal(model.calls.length, 0);
+  assert.equal(r.calls, 0);
+  assert.ok(md.every(taskByConstruction));
+  assert.deepEqual(
+    taskList(md, { verdicts: r.cache }).map((e) => e.title),
+    ["Task md:Vault|a", "Task md:Vault|b"],
+  );
+  // Next to another source's entry, only that one is sent.
+  const mixed = await extractTasks(model.complete, { candidates: [...md, entry("brain-1")], sample: [] });
+  assert.equal(mixed.calls, 1);
+  assert.equal((model.calls[0].at(-1).content.match(/^\d+\. /gm) ?? []).length, 1);
 });

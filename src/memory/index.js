@@ -16,6 +16,9 @@ import { BRAIN, OWN, READERS, originOf, kindOf } from "./sources.js";
 export { redact, entryKey } from "./consolidate.js";
 // Where an entry or document came from (see sources.js and Sources in README.md).
 export { BRAIN, originOf, kindOf } from "./sources.js";
+// A pasted assistant memory, for the settings page: shown before it is sent, then turned
+// into entries (stored with importEntries under a "paste:<id>" origin).
+export { previewPaste, importPasted, ASK_YOUR_ASSISTANT, MAX_PASTE_CHARS } from "./paste.js";
 
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;

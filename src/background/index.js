@@ -984,9 +984,16 @@ const HANDLERS = {
     showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
   "tuck-change": async (_msg, sender) => showTuck(sender?.tab?.id, present({ event: "card", intent: null })),
   maintain,
+  // The brain, then every other connected folder (read only); none of them asks for
+  // permission from here. Returns the brain's result, with the folders' under `folders`.
   "sync-brain": async () => {
-    const r = await (await memory).syncBrain();
-    if (r.connected && !r.needsPermission) {
+    const m = await memory;
+    const r = await m.syncBrain();
+    const folders = [];
+    for (const { origin } of (await m.sources()).filter((x) => x.connected && x.kind !== "brain"))
+      folders.push({ origin, ...(await m.syncSource(origin).catch((err) => ({ error: err.message }))) });
+    r.folders = folders;
+    if ((r.connected && !r.needsPermission) || folders.some((f) => f.entries != null)) {
       await memoryChanged();
       refreshProfile().catch(() => {});
       refreshTaskList().catch(() => {});

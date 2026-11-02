@@ -5,7 +5,8 @@
 // and the extension's own entries (add(), distill) have none. `source` is something
 // else: who wrote the entry (claude-code, distill, extension).
 import { loadBrain } from "./brain.js";
-import { readBrainFolder } from "./connector.js";
+import { readBrainFolder, readTextFiles } from "./connector.js";
+import { fromMarkdownFolder } from "./markdown.js";
 
 export const BRAIN = "brain";
 export const OWN = "extension";
@@ -22,4 +23,5 @@ export const kindOf = (origin) => origin.split(":")[0];
 // the origin's kind, in the options page and in the worker alike.
 export const READERS = {
   brain: async (dir) => loadBrain(await readBrainFolder(dir)),
+  md: async (dir) => fromMarkdownFolder(await readTextFiles(dir), { folderName: dir.name }),
 };

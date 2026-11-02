@@ -66,6 +66,18 @@ export function pasteMessages({ text, today, topics = [], maxEntries = MAX_PASTE
 }
 
 // { entries, dropped }: items that fail the entry rules are dropped and counted.
+// A paste has no dates of its own, so an entry is dated today, unless its own text holds
+// an earlier date: due.js reads a deadline only from the entry's date on, and a deadline
+// already missed must still read as one (markdown.js uses the same rule).
+const ISO = /\d{4}-\d{2}-\d{2}/g;
+function dateOf(fields, today) {
+  const earliest = fields
+    .filter((f) => typeof f === "string")
+    .flatMap((f) => f.match(ISO) ?? [])
+    .sort()[0];
+  return earliest && earliest < today ? earliest : today;
+}
+
 export function parsePasted(reply, { today, maxEntries = MAX_PASTE_ENTRIES }) {
   const items = extractJsonArray(reply);
   if (!Array.isArray(items)) throw new Error("model reply is not an array");
@@ -76,7 +88,7 @@ export function parsePasted(reply, { today, maxEntries = MAX_PASTE_ENTRIES }) {
       kind: raw?.kind,
       topic: slug(raw?.topic),
       title: typeof raw?.title === "string" ? raw.title.trim().slice(0, 120) : raw?.title,
-      date: today,
+      date: dateOf([raw?.title, raw?.context, raw?.result, raw?.next], today),
       source: "paste",
       context: raw?.context,
       result: raw?.result,
