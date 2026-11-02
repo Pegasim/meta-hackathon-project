@@ -1,7 +1,8 @@
-import { stillOpen } from "../attention/reminders.js";
-import { Memory } from "../memory/index.js";
+import { stillOpen, taskList, taskKey } from "../attention/reminders.js";
+import { Memory, redact } from "../memory/index.js";
 import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
 import { buildProfile } from "../agent/profile.js";
+import { refreshTasks } from "../agent/tasks.js";
 import { privateSettings } from "../agent/relevance.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { NEVER_READ, readingSettings } from "../attention/reading.js";
@@ -88,7 +89,8 @@ $("connect").onclick = async () => {
     await chrome.runtime.sendMessage({ type: "memory-changed" });
     $("brain-status").textContent = await brainStatus({ connected: true, name: dir.name, ...r });
     $("profile-status").textContent = "Reading…";
-    await showProfile(await readProfile());
+    const note = await readProfile();
+    await showProfile(note, await readTasks());
   } catch (err) {
     if (err.name !== "AbortError") $("brain-status").textContent = `Failed: ${err.message}`;
   }
@@ -102,7 +104,10 @@ $("sync").onclick = async () => {
     const exported = r.connected && !r.needsPermission ? await memory.exportPending({ prompt: true }) : null;
     $("brain-status").textContent =
       (await brainStatus(r)) + (exported?.exported ? `\n${exported.exported} new entries written to inbox/` : "");
-    if (r.connected && !r.needsPermission) await showProfile(await readProfile());
+    if (r.connected && !r.needsPermission) {
+      const note = await readProfile();
+      await showProfile(note, await readTasks());
+    }
   } catch (err) {
     $("brain-status").textContent = `Failed: ${err.message}`;
   }
@@ -132,7 +137,28 @@ async function readProfile() {
   }
 }
 
-async function showProfile(note) {
+// Which open loops are real tasks (agent/tasks.js), read here for the same reason as the
+// profile. Only entries that are new or changed since the last read cost a call. Returns
+// a note, and never throws.
+async function readTasks() {
+  $("task-status").textContent = "Reading your tasks…";
+  try {
+    const settings = await loadModelSettings();
+    if (!settings) return null;
+    const r = await refreshTasks(modelClient(privateSettings(settings)), {
+      memory,
+      storage: chrome.storage.local,
+      today: localDate(),
+      clean: (text) => redact(text).text,
+      onProgress: ({ done, total }) => ($("task-status").textContent = `Reading your tasks… ${done} of ${total}`),
+    });
+    return r.failed ? `${r.failed} entries could not be read: ${r.errors.join(" | ")}. Re-read to try again.` : null;
+  } catch (err) {
+    return `Could not read your tasks: ${err.message}`;
+  }
+}
+
+async function showProfile(note, taskNote) {
   const profile = await memory.profile();
   const queue = await memory.taskQueue({ today: localDate(), limit: Infinity });
   const lines = [
@@ -141,9 +167,11 @@ async function showProfile(note) {
     profile?.topics?.length ? `Your topics: ${profile.topics.join(", ")}` : null,
   ].filter(Boolean);
   $("profile-status").textContent = lines.join("\n");
-  await showTasks(queue);
+  await showTasks(queue, taskNote);
   await showLabels();
 }
+
+const button = (label, onclick) => Object.assign(document.createElement("button"), { textContent: label, onclick });
 
 // One line and one button: the tasks left, and what Tuck learned.
 function listRow(text, label, onclick) {
@@ -152,28 +180,64 @@ function listRow(text, label, onclick) {
   const line = document.createElement("span");
   line.className = "small";
   line.textContent = text;
-  const button = document.createElement("button");
-  button.textContent = label;
-  button.onclick = onclick;
-  row.append(line, button);
+  row.append(line, button(label, onclick));
   return row;
 }
 
-// Nothing in the notes marks a task done, so an old "next action" stays until it is
-// marked here or answered in Tuck's bubble.
-async function showTasks(queue) {
-  const { loops = {} } = await chrome.storage.local.get("loops");
+// The first few tasks; the rest behind Show all.
+const FIRST_TASKS = 7;
+let allTasks = false;
+
+// The tasks the node kept, in memory's order (deadline, then recency). Nothing in the
+// notes marks a task done, so one stays until it is marked here or answered in Tuck's
+// bubble. Not a task takes out what the node got wrong; both survive a re-import.
+async function showTasks(queue, note) {
+  const {
+    loops = {},
+    taskVerdicts = {},
+    taskSettings = {},
+  } = await chrome.storage.local.get(["loops", "taskVerdicts", "taskSettings"]);
+  $("hide-personal").checked = !!taskSettings.hidePersonal;
   // Goals set here are not tasks from the notes: they end with Done on the goal itself.
-  const open = stillOpen(queue, loops).filter((e) => e.source !== "extension");
+  const open = stillOpen(
+    taskList(queue, { verdicts: taskVerdicts, hidePersonal: !!taskSettings.hidePersonal }),
+    loops,
+  ).filter((e) => e.source !== "extension");
+  const unread = open.filter((e) => !taskVerdicts[taskKey(e)]).length;
+  const answer = (e, choice) => async () => {
+    await chrome.runtime.sendMessage({ type: "reminder-answer", id: e.id, title: e.title, choice });
+    await showProfile();
+  };
   $("task-list").replaceChildren(
-    ...open.map((e) =>
-      listRow(`${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}`, "Done", async () => {
-        await chrome.runtime.sendMessage({ type: "reminder-answer", id: e.id, title: e.title, choice: "done" });
-        await showProfile();
-      }),
-    ),
+    ...open.slice(0, allTasks ? open.length : FIRST_TASKS).map((e) => {
+      const row = listRow(
+        `${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}`,
+        "Done",
+        answer(e, "done"),
+      );
+      row.append(button("Not a task", answer(e, "not_task")));
+      return row;
+    }),
   );
+  $("all-tasks").hidden = open.length <= FIRST_TASKS;
+  $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${open.length}`;
+  $("task-status").textContent = [
+    note,
+    open.length ? null : "No open tasks.",
+    unread ? `${unread} not read by Tuck yet: press Re-read my memory (needs a model above).` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
+
+$("all-tasks").onclick = async () => {
+  allTasks = !allTasks;
+  await showProfile();
+};
+$("hide-personal").onchange = async () => {
+  await chrome.storage.local.set({ taskSettings: { hidePersonal: $("hide-personal").checked } });
+  await showProfile();
+};
 
 function labelText({ label, host, title, surface, who }) {
   const verdict = label === "unrelated" ? "not work" : "work";
@@ -197,8 +261,10 @@ async function showLabels() {
 
 $("reread").onclick = async () => {
   $("profile-status").textContent = "Reading…";
+  $("task-status").textContent = "Reading your tasks…";
   try {
-    await showProfile(await readProfile());
+    const note = await readProfile();
+    await showProfile(note, await readTasks());
   } catch (err) {
     $("profile-status").textContent = `Failed: ${err.message}`;
   }

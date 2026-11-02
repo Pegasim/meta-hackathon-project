@@ -6,6 +6,9 @@
 
 ## Decided
 
+**The to-do list is read from the open loops by a model at import; what is urgent stays in code (2026-11-02, issue #29).**
+Memory counts every entry with a next action as an open loop, and on a real brain that was 225 items, 9 of them todos. Rules on kind or age cannot tell "send the papers" from "keep an eye on the bill", or see that a later note closed a task, so a model reads each candidate once, with the other notes on its topic, and says whether it is a task, still open, and its title in 10 words. It never orders them: the deadline is read from the text and the queue keeps memory's order, as INTENT.md asks. Verdicts are cached by entry and content, so a re-import asks only about what changed (on that brain, 15 calls the first time, then none). A task closed on another topic, or never written down, stays listed; Not a task and Done take it out for good.
+
 **"Take me back" teaches only as the answer to Tuck's question; labels can be forgotten in settings (2026-11-01, issue #8).**
 Counting every "Take me back" was the plan, but the button only appears on a page already judged unrelated, so it adds little, and a page wrongly marked as work never gets a nudge to answer. So a no on a page Tuck was unsure about is remembered at once, for that page's title or that conversation, never the whole site: a repo on the same host can be the work. Settings list what was learned. A later yes takes the no back. Forgetting a label does not remove a preference already written to memory, since a lasting label writes one and `src/memory/` has no way to remove it yet.
 
