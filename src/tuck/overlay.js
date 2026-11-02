@@ -1,20 +1,22 @@
 // Tuck on the page: draws what background.js decided (see present.js) inside its own
 // Shadow DOM. It reads nothing from the page. Top right by default; the person can
-// drag it anywhere and it stays there on every page. The bubble opens toward the
+// drag it anywhere and it stays there on every page, the open ones too. The bubble opens toward the
 // roomier side (layout.js, injected first). Injected with chrome.scripting, possibly
 // several times into one page, so it installs once.
 (() => {
   if (window.__tuckInstalled) return;
   window.__tuckInstalled = true;
 
-  const { placement, clamp } = globalThis.tuckLayout;
+  const { placement, clamp, anchor, fromAnchor } = globalThis.tuckLayout;
   const HOST_ID = "tuck-companion";
   const OWNER = chrome.runtime.id; // marks our host: another copy of Tuck shares the page's DOM
   const ORPHAN_CHECK_MS = 2000;
   const SIZE = { width: 72, height: 72 };
   const DRAG_THRESHOLD = 4; // px; less is a click
   let root = null;
-  let pos = null; // {x, y} of Tuck, in viewport px
+  let pos = null; // {x, y} of Tuck on screen, in viewport px: saved, fitted to this window
+  let saved = null; // where the person put Tuck (layout.js anchor); fitting never changes it
+  let dragging = false;
   let current = null; // the view on screen
   let timers = [];
 
@@ -27,6 +29,9 @@
     timers.forEach(clearTimeout);
     timers = [];
     window.removeEventListener("resize", place);
+    try {
+      chrome.storage.onChanged.removeListener(follow);
+    } catch {} // no runtime left to ask
     root?.host.remove();
     root = null;
     current = null;
@@ -91,7 +96,7 @@
   const defaultPos = () => ({ x: window.innerWidth - SIZE.width - 16, y: 16 });
 
   function place() {
-    pos = clamp(pos ?? defaultPos(), SIZE, view());
+    pos = clamp(saved ? fromAnchor(saved, SIZE, view()) : defaultPos(), SIZE, view());
     const d = dock();
     d.style.left = `${pos.x}px`;
     d.style.top = `${pos.y}px`;
@@ -102,36 +107,46 @@
 
   async function loadPos() {
     const { tuckPosition } = await chrome.storage.local.get("tuckPosition");
-    if (tuckPosition) pos = tuckPosition;
+    saved = tuckPosition ?? null;
   }
+
+  // Dragged in another tab: this one follows, also while in the background. Our own
+  // drag is already on screen.
+  function follow(changes, area) {
+    if (area !== "local" || !changes.tuckPosition || dragging) return;
+    saved = changes.tuckPosition.newValue ?? null;
+    if (root?.isConnected) place();
+  }
+  chrome.storage.onChanged.addListener(follow);
 
   function makeDraggable(avatar) {
     let start = null;
-    let moved = false;
+    let dragged = false;
     avatar.addEventListener("pointerdown", (e) => {
       start = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
-      moved = false;
+      dragged = false;
       avatar.setPointerCapture(e.pointerId);
     });
     avatar.addEventListener("pointermove", (e) => {
       if (!start) return;
       const dx = e.clientX - start.px;
       const dy = e.clientY - start.py;
-      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-      moved = true;
+      if (!dragged && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      dragged = dragging = true;
       avatar.classList.add("dragging");
-      pos = { x: start.x + dx, y: start.y + dy };
+      saved = anchor(clamp({ x: start.x + dx, y: start.y + dy }, SIZE, view()), SIZE, view());
       place();
     });
     avatar.addEventListener("pointerup", () => {
       if (!start) return;
       start = null;
+      dragging = false;
       avatar.classList.remove("dragging");
-      if (moved) chrome.storage.local.set({ tuckPosition: pos });
+      if (dragged) chrome.storage.local.set({ tuckPosition: saved });
     });
     // A drag ends with a click event too; only a real click counts.
     avatar.addEventListener("click", (e) => {
-      if (moved) return ((moved = false), e.preventDefault());
+      if (dragged) return ((dragged = false), e.preventDefault());
       if (current?.bubble) closeBubble();
       else send({ type: "tuck-click" });
     });

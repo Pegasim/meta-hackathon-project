@@ -14,4 +14,26 @@ globalThis.tuckLayout = {
       y: Math.min(Math.max(y, margin), view.height - size.height - margin),
     };
   },
+  // What is saved for a position: its distance from the nearest corner, so Tuck keeps
+  // its place in a window of another size. {h, v, dx, dy}: h "left" | "right", v "top" |
+  // "bottom", dx and dy the gaps to those edges.
+  anchor({ x, y }, size, view) {
+    const right = view.width - size.width - x;
+    const bottom = view.height - size.height - y;
+    return {
+      h: x <= right ? "left" : "right",
+      v: y <= bottom ? "top" : "bottom",
+      dx: Math.round(Math.min(x, right)),
+      dy: Math.round(Math.min(y, bottom)),
+    };
+  },
+  // The position a saved anchor stands for in this window, before clamping. A position
+  // saved before anchors, {x, y}, is from the top left.
+  fromAnchor(saved, size, view) {
+    if (!saved.h) return { x: saved.x, y: saved.y };
+    return {
+      x: saved.h === "left" ? saved.dx : view.width - size.width - saved.dx,
+      y: saved.v === "top" ? saved.dy : view.height - size.height - saved.dy,
+    };
+  },
 };
