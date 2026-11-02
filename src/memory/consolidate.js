@@ -28,6 +28,10 @@ export function redact(text) {
 
 export const entryKey = (e) => `${e.date}|${e.topic}|${e.title}`;
 
+// removed: { ids, keys } of entries the person took back (Memory.remove). A copy read back
+// from the brain matches by key, since the brain may file it under an id of its own.
+export const isRemoved = (e, removed) => removed.ids.includes(e.id) || removed.keys.includes(entryKey(e));
+
 // FNV-1a 64-bit over key and content, first 10 hex chars.
 export function entryId(e) {
   let h = 0xcbf29ce484222325n;
@@ -67,6 +71,8 @@ export function consolidate(pending, existing) {
       continue;
     }
     const filed = { ...e, id: entryId(e), status: "log" };
+    // Redaction changed the id: keep the one add() returned, so a caller can still remove it.
+    if (raw.id && raw.id !== filed.id) filed.addedAs = raw.id;
     known.set(entryKey(filed), filed);
     accepted.push(filed);
   }

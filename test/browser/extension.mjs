@@ -651,6 +651,45 @@ const labelLines = await settingsPage.locator("#label-list").innerText();
 await settingsPage.locator("#label-list button").first().click();
 await settingsPage.waitForTimeout(300);
 const learnedAfter = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-labels" }));
+
+// "This is for my task" on a third day lasts, and writes a preference to memory; Forget in
+// settings takes that back too, so the model stops reading it (#25). The two earlier days
+// are seeded: a test cannot wait for them.
+const lastingKey = await popup.evaluate(async (url) => {
+  const { openStore } = await import("/attention/store.js");
+  const { labelKeys, hostOf } = await import("/attention/relevance.js");
+  const { dayKey } = await import("/attention/intents.js");
+  const { DEFAULTS } = await import("/attention/config.js");
+  const st = await openStore();
+  const { topic } = await st.activeIntent();
+  const title = "Top 10 F1 crashes - Video";
+  const key = labelKeys(topic, url, title)[0];
+  const day = (n) => dayKey(Date.now() - n * 86400000, DEFAULTS);
+  const ts = Date.now() - 86400000;
+  await st.putLabel({ key, label: "related", topic, host: hostOf(url), title, ts, days: [day(2), day(1)], until: ts });
+  return key;
+}, video);
+const lastingTab = await ctx.newPage();
+await lastingTab.goto(video);
+await lastingTab.bringToFront();
+let driftLasting = await waitForNewDrift(driftMaybe.id);
+while (driftLasting.evidence.url !== video) driftLasting = await waitForNewDrift(driftLasting.id);
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "respond", choice: "related" }));
+const preferences = (key) =>
+  popup.evaluate(async (key) => {
+    const { openStore } = await import("/attention/store.js");
+    const { Memory } = await import("/memory/index.js");
+    const label = await (await openStore()).getLabel(key);
+    const hits = await (await Memory.open()).recall("localhost counts as work");
+    return { label, titles: hits.filter((h) => h.item.kind === "preference").map((h) => h.title) };
+  }, key);
+const lasting = await preferences(lastingKey);
+await lastingTab.close();
+await settingsPage.reload();
+const lastingRow = settingsPage.locator("#label-list .row", { hasText: "Top 10 F1 crashes" });
+await lastingRow.locator("button").click();
+await settingsPage.waitForTimeout(300);
+const forgotten = await preferences(lastingKey);
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
 
 // The exported event log.
@@ -692,7 +731,10 @@ assert.equal(nudgeState, "thinking");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
 const looks = calls.filter((m) => /excerpt/.test(m[0].content));
 const judged = calls.filter((m) => !/excerpt/.test(m[0].content));
-const videoCalls = judged.filter((m) => /Top 10 F1 crashes/.test(m.at(-1).content)).length;
+// Under the first goal: a later goal judges it afresh (the Forget step, #25).
+const videoCalls = judged.filter((m) =>
+  /Goal: Fix the checkout bug[\s\S]*Top 10 F1 crashes/.test(m.at(-1).content),
+).length;
 assert.equal(videoCalls, 1, `the video is judged once, then cached (${videoCalls} calls)`);
 assert.ok(["·", "!"].includes(badge), `badge: ${badge}`);
 assert.equal(cardText, "Still on the video? Back to the failing test.", "L2 uses the drafted line too");
@@ -805,6 +847,13 @@ const no = learned.find((l) => l.label === "unrelated");
 assert.equal(no?.host, "localhost", "the no is remembered");
 assert.match(labelLines, /localhost.*not work/, "settings shows what was learned");
 assert.ok(learnedAfter.length < learned.length, "and can forget it");
+assert.equal(driftLasting.evidence.url, video);
+assert.equal(lasting.label.until, null, "given on a third day, the site label lasts");
+assert.ok(lasting.label.memoryEntry?.id, "the label keeps the memory entry it wrote");
+assert.equal(lasting.titles.length, 1, `one preference written: ${lasting.titles}`);
+assert.match(lasting.titles[0], /^localhost counts as work for /);
+assert.equal(forgotten.label, undefined, "Forget removes the label");
+assert.deepEqual(forgotten.titles, [], "and the preference: recall no longer finds it");
 assert.equal(selfReturn.id, drift5.id);
 assert.equal(selfReturn.resolvedBy, "self", "a drift ends on its own when you go back to work");
 assert.equal(cardAfterSelfReturn, false, "no stale card in the popup");
