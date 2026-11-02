@@ -29,7 +29,7 @@ import { buildProfile } from "../agent/profile.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
-import { watchTyping, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
+import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
 import { present } from "../tuck/present.js";
 
 const memory = Memory.open();
@@ -476,8 +476,9 @@ function excerptVerdict(need, from) {
 }
 
 // {label, confidence, source} from the excerpt, or {skipped: why}. from: "focus" (the
-// field the person types in) or "view" (the middle of the window). A verdict counts for
-// cfg.lookHoldMin minutes, so a page is not read again on every drift word.
+// field the person types in) or "view" (the conversation last touched, else the middle of
+// the window). A verdict counts for cfg.lookHoldMin minutes, so a page is not read again
+// on every drift word.
 async function judgeExcerpt(need, from) {
   const generation = memoryGeneration;
   const cfg = await config();
@@ -681,12 +682,17 @@ const restTuck = () => hideTuck("tuck-rest");
 
 // While there is a goal, Tuck rests on every page (not on a break, paused or off).
 async function presence(prev, s, input) {
+  if (!s.current?.url) return;
   const changed = prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
-  if (!changed || !s.current?.url) return;
   const away = ["break", "paused"].includes(s.state);
+  // A reload keeps the tab and URL but wipes Tuck from the page: it comes back at once,
+  // where it was. A page that cannot be scripted answers null, not false.
+  const reloaded = !changed && s.intent && !away && (await inPage(input.tabId, tuckThere)) === false;
+  if (!changed && !reloaded) return;
   // Typing is noted from the start of the page (its time only), for the second look.
   if (s.intent && !away) await inPage(input.tabId, watchTyping);
-  if (s.intent && !away) await showTuck(input.tabId, present({ event: "presence" }));
+  if (s.intent && !away)
+    await showTuck(input.tabId, { ...present({ event: "presence" }), ...(reloaded && { instant: true }) });
   else if (away) await chrome.tabs.sendMessage(input.tabId, { type: "tuck-hide" }).catch(() => {});
 }
 

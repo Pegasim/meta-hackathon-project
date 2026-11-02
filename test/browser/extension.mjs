@@ -98,6 +98,37 @@ const server = http.createServer((req, res) => {
             '<div id="known-box" role="textbox" contenteditable="true" style="height:40px;width:200px"></div></div>';
         </script>`,
     );
+  // Issue #23: a chat in an open shadow root, nothing typed. In the middle of the window (the
+  // lookup at that point returns only its host), with an unsent draft in its box.
+  const feedText =
+    "<p>Promoted: is your brand visible in AI answers? Get a free analysis today.</p>" +
+    "<p>Deniz started a new role as head of growth at Acme. Congratulations on the move!</p>" +
+    "<p>Five lessons I learned from running my first marathon in the rain last spring.</p>" +
+    "<p>Ten cats that look like famous paintings, ranked by a museum curator on a slow day.</p>" +
+    "<p>Hiring: senior designer, remote, apply before Friday to join a small friendly team.</p>";
+  const chatRoot = (box, style) =>
+    `<div id="outlet" style="${style}"></div><script>
+          document.getElementById("outlet").attachShadow({ mode: "open" }).innerHTML =
+            '<div role="dialog" aria-label="Messaging"><h2>Ali Demir</h2>' +
+            '<p>Ali: did you find why the checkout drops the last item?</p>' +
+            '<p>Me: yes, cart.js splices the wrong index when the quantity is zero.</p>' +
+            '<div id="${box}" role="textbox" contenteditable="true" style="height:40px">${DRAFT}</div></div>';
+        </script>`;
+  if (req.url === "/centre-chat")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(
+        `<title>Network | Social</title><main style="height:3000px">${feedText}</main>` +
+          chatRoot("centre-box", "position:fixed;top:280px;left:40px;width:340px;background:#eee"),
+      );
+  // The same chat docked at the bottom, under a feed in the middle.
+  if (req.url === "/dock-feed")
+    return res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+      .end(
+        `<title>Updates | Social</title><main style="padding-bottom:300px">${feedText}</main>` +
+          chatRoot("dock-box", "position:fixed;bottom:0;right:0;width:190px;background:#eee"),
+      );
   // An article about chat with a feedback box: not a conversation.
   if (req.url === "/docs/chat-api")
     return res
@@ -177,6 +208,8 @@ const docked = `http://localhost:${port}/docked`;
 const thread = `http://localhost:${port}/messaging/thread/1`;
 const dockedSocial = `http://localhost:${port}/docked-social`;
 const knownChat = `http://localhost:${port}/known-chat`;
+const centreChat = `http://localhost:${port}/centre-chat`;
+const dockFeed = `http://localhost:${port}/dock-feed`;
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "ext-e2e-"));
 const ctx = await chromium.launchPersistentContext(profile, {
@@ -245,6 +278,17 @@ await tuck.locator(".bubble .text", { hasText: "Fix the checkout bug" }).waitFor
 const clickState = await tuck.locator("svg.tuck").getAttribute("data-state");
 await tuck.locator(".bubble .close").click();
 await repoTab.waitForTimeout(1500);
+
+// A reload keeps the tab and URL but wipes what was injected: Tuck comes back, resting,
+// without a new greeting or the goal form (issue #22).
+await repoTab.reload();
+await tuck.waitFor({ state: "attached", timeout: 10000 });
+const afterReload = {
+  state: await tuck.locator("svg.tuck").getAttribute("data-state"),
+  formOpen: await tuck.locator("input[name=goal]").isVisible(),
+  shown: await tuck.locator(".dock.in").count(),
+  hosts: await repoTab.locator("#tuck-companion").count(),
+};
 
 // The popup (opened as a tab) shows the goal set on the page.
 const popup = await ctx.newPage();
@@ -533,12 +577,45 @@ await surfaceAt(knownChat, "page");
 const driftKnownFeed = await waitForNewDrift(afterKnown.id);
 await knownTab.close();
 
+// Issue #23: a chat in an open shadow root, nothing typed. In the middle of the window and
+// never touched, its text is what the excerpt reads, not the page around it; the draft in
+// its box never reaches the model.
+const workTab = await ctx.newPage();
+await workTab.goto(repo);
+await workTab.bringToFront();
+await workTab.waitForTimeout(2500); // work first: the budget from the last page runs out
+const beforeCentre = await lastTrigger();
+const centreTab = await ctx.newPage();
+await centreTab.goto(centreChat);
+await centreTab.bringToFront();
+await centreTab.waitForTimeout(6000);
+const afterCentre = await lastTrigger();
+await centreTab.close();
+
+// The chat docked under a feed: touched, not typed in, it is where the person works, so
+// its text is read. Touching the feed ends that, and the page is judged by the feed.
+await workTab.bringToFront();
+await workTab.waitForTimeout(2500);
+const beforeDock = await lastTrigger();
+const dockTab = await ctx.newPage();
+await dockTab.goto(dockFeed);
+await dockTab.bringToFront();
+await dockTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await dockTab.click("#dock-box");
+await dockTab.waitForTimeout(6000);
+const afterDockChat = await lastTrigger();
+await dockTab.mouse.move(100, 300);
+await dockTab.mouse.wheel(0, 100);
+const driftDockFeed = await waitForNewDrift(afterDockChat.id);
+await dockTab.close();
+await workTab.close();
+
 // Review: reading turned off. The chat's earlier "work" verdict no longer counts, and
 // nothing is read: the chat page is a drift again.
 await settingsPage.evaluate(() => chrome.storage.local.set({ pageReading: { enabled: false } }));
 await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
-const driftOff = await waitForNewDrift(driftKnownFeed.id);
+const driftOff = await waitForNewDrift(driftDockFeed.id);
 
 // Whose turn it is in a coding agent (#11): while it works the same drifting page is a
 // wait; when it stops Tuck says so, once.
@@ -621,6 +698,11 @@ assert.deepEqual(errors, []);
 assert.equal(greeting, "Hi. What are we working on today?");
 assert.equal(greetState, "checkin");
 assert.equal(restState, "resting", "Tuck rests on the page once the goal is set");
+assert.deepEqual(
+  afterReload,
+  { state: "resting", formOpen: false, shown: 1, hosts: 1 },
+  "after a reload Tuck is back on the page, resting, once",
+);
 assert.equal(clickState, "checkin", "clicking Tuck is a check-in");
 assert.ok(dragged.x < 100, `dragged to the left: ${dragged.x}`);
 assert.ok(bubbleAfterDrag.x >= dragged.x, "on the left, the bubble opens rightwards");
@@ -713,6 +795,21 @@ assert.ok(
   log.events.some((e) => e.type === "second_look" && e.skipped === "settings"),
   "with reading off, nothing is read",
 );
+const centreLooks = looks.filter((m) => /Page title: Network \| Social/.test(m.at(-1).content));
+assert.ok(
+  centreLooks.some((m) => /Page excerpt: .*splices the wrong index/.test(m.at(-1).content)),
+  "a chat in a shadow root in the middle of the window is read, nothing typed",
+);
+assert.ok(!centreLooks.some((m) => /Five lessons/.test(m.at(-1).content)), "and not the page around it");
+assert.equal(afterCentre.id, beforeCentre.id, "a work chat in the middle of the window gets no nudge");
+const dockLooks = looks.filter((m) => /Page title: Updates \| Social/.test(m.at(-1).content));
+assert.ok(
+  dockLooks.some((m) => /Page excerpt: .*splices the wrong index/.test(m.at(-1).content)),
+  "the chat last touched is read, nothing typed",
+);
+assert.equal(afterDockChat.id, beforeDock.id, "no nudge while the person is in the chat");
+assert.equal(driftDockFeed.evidence.surface?.kind, "page", "scrolling the feed ends the conversation");
+assert.equal(driftDockFeed.evidence.url, dockFeed, "the feed with a chat left open is still judged as a feed");
 assert.ok(!looks.some((m) => /Sign in \| Social/.test(m.at(-1).content)), "the login page was not read");
 assert.ok(
   log.events.some((e) => e.type === "second_look" && e.skipped === "password"),
