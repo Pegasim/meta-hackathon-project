@@ -6,6 +6,9 @@
 
 ## Decided
 
+**While Muse waits, Tuck asks again, and only asks (2026-11-02, issue #11).**
+One command can ask many times on one hook (its stages), and no hook marks an approval being answered: `PreToolUse` fires before `PermissionRequest`, and the next event is `PostToolUse`, once the tool has run. So Tuck cannot tell "still waiting" from "approved and running". One word per status left the person browsing while Muse waited. Tuck now asks again after 30 s in the browser, then 60, 120 and so on; time in the terminal does not count. The wording is a question because it can be wrong, and the gaps grow because a wrong question must stay cheap. Tuck counts drift as usual meanwhile: time on an unrelated page after an approval may still be a wait, which remains an open limit.
+
 **"Muse is done" waits for Muse's answer to be on screen (2026-11-02, issue #11).**
 Muse fires `Stop`, runs its internal helpers, and only then shows the answer: 3.2 s and 5.9 s later in two timed headless runs, with helpers up to 2.7 s apart. Tuck said "done" while the person still saw it working. No hook marks the answer being shown, so the bridge holds the end of a turn until hooks from every session have been quiet for 3.5 s, 15 s at most, so the word can trail the answer by that much. An approval goes at once, since Muse shows it already. The wait lives in the bridge: it is about Muse's timing, and the engine stays unaware of it.
 

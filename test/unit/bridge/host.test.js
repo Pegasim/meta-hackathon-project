@@ -78,6 +78,25 @@ test("Muse's answer on screen comes first: a turn's end waits, an approval does 
   fs.rmSync(home, { recursive: true, force: true });
 });
 
+test("a host restarted during a turn still follows that turn", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "tuck-"));
+  const send = (e) => hook(home, JSON.stringify({ session_id: "s1", ...e }));
+  send({ hook_event_name: "UserPromptSubmit" });
+  hook(home, JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "s2" }));
+  send({ hook_event_name: "UserPromptSubmit" });
+  const host = spawn(process.execPath, [path.join(bridge, "host.mjs")], { env: { HOME: home } });
+  let out = Buffer.alloc(0);
+  host.stdout.on("data", (d) => (out = Buffer.concat([out, d])));
+  await new Promise((r) => setTimeout(r, 300));
+  send({ hook_event_name: "PermissionRequest" });
+  await new Promise((r) => setTimeout(r, 900));
+  host.stdin.end();
+  await new Promise((r) => host.on("exit", r));
+  assert.match(out.toString(), /waiting_for_user/);
+  assert.doesNotMatch(out.toString(), /working/, "what came before it started is still left out");
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
 test("the hook never gets in the agent's way: bad input exits 0 and prints nothing", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "tuck-"));
   const r = hook(home, "not json");

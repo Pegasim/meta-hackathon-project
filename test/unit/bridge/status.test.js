@@ -10,7 +10,6 @@ test("each hook maps to whose turn it is", () => {
   assert.equal(status(event("UserPromptSubmit", { prompt: "secret" })), "working");
   assert.equal(status(event("PostToolUse")), "working");
   assert.equal(status(event("PermissionRequest")), "waiting_for_user");
-  assert.equal(status(event("Notification", { notification_type: "permission_prompt" })), "waiting_for_user");
   assert.equal(status(event("Stop", { last_assistant_message: "All done." })), "completed");
   assert.equal(status(event("StopFailure")), "failed");
   assert.equal(status(event("SessionEnd")), "unknown");
@@ -113,4 +112,9 @@ test("a newer turn end replaces the held one", () => {
   const second = settle(first.held, asks, 100);
   assert.deepEqual(second.send, []);
   assert.equal(second.held.line, asks);
+});
+
+test("the approval's Notification, about 6 s later, is not news: the person may have answered by then", () => {
+  assert.equal(lineFor(event("Notification", { notification_type: "permission_prompt" }), 1), null);
+  assert.equal(status(event("PermissionRequest")), "waiting_for_user");
 });

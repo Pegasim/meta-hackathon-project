@@ -645,7 +645,8 @@ test("while the agent works, an unrelated page is a wait, not a drift", () => {
 });
 
 test("when it stops, Tuck says so once, and drift counts again", () => {
-  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, decide: stubDecide });
+  // Asking again while it waits has its own tests below.
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, agentAskAgainSec: 600, decide: stubDecide });
   const { state, out } = run(
     [
       setIntent(t0),
@@ -948,4 +949,180 @@ test("after the last word Tuck stays quiet on that page; a new page starts over,
     [195, 1],
     [225, 2],
   ]);
+});
+
+// From the review of #37.
+test("one drift: words keep coming when off-task time is mixed with work", () => {
+  // 20 s off task, 10 s on work, over and over: the budget hovers, the time off task does not.
+  const inputs = [setIntent(t0), ctx(t0, VIDEO, "unrelated")];
+  for (let c = 0; c < 6; c++) {
+    inputs.push(ctx(t0 + (50 + c * 30) * S, REPO, "related"));
+    inputs.push(ctx(t0 + (60 + c * 30) * S, VIDEO, "unrelated"));
+  }
+  const { triggers } = run(inputs, { until: t0 + 180 * S, cfg: WORDS });
+  assert.deepEqual(
+    driftWords(triggers).map(([, level]) => level),
+    [1, 2, 3],
+  );
+});
+
+test("one drift: work that does not end it does not push the next word further away", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    ctx(t0 + 106 * S, REPO, "related"),
+    ctx(t0 + 150 * S, X, "unrelated"),
+  ];
+  // Words at +45, +75, +105. 44 s of work leaves the budget above the floor: the same
+  // drift, so the next word needs 30 s off task, not the whole way back to the old budget.
+  const { triggers } = run(inputs, { until: t0 + 185 * S, cfg: WORDS });
+  assert.deepEqual(driftWords(triggers).at(-1)?.[0], 179);
+});
+
+test("coming back to a finished agent is one word: the agent's", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, REPO, "related"),
+    { type: "agent", ts: t0 + S, status: "working", session: "a" },
+    ctx(t0 + 2 * S, REPO, "related", { browserFocused: false }),
+    { type: "agent", ts: t0 + 400 * S, status: "completed", session: "a" },
+    ctx(t0 + 500 * S, REPO, "related"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 501 * S, cfg: WORDS });
+  assert.deepEqual(
+    triggers.map((t) => t.kind),
+    ["agent"],
+  );
+});
+
+test("a stop during a break waits for its end, and is said then", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    { type: "agent", ts: t0 + S, status: "working", session: "a" },
+    { type: "response", ts: t0 + 2 * S, choice: "break" },
+    { type: "agent", ts: t0 + 10 * S, status: "completed", session: "a" },
+    ctx(t0 + 20 * S, VIDEO, "unrelated"),
+  ];
+  const during = run(inputs, { until: t0 + 60 * S, cfg: WORDS });
+  assert.deepEqual(
+    during.triggers.map((t) => t.kind),
+    [],
+    "the break is left alone",
+  );
+  const after = run(inputs, { until: t0 + 303 * S, cfg: WORDS });
+  assert.deepEqual(
+    after.triggers.map((t) => t.kind),
+    ["agent"],
+    "the agent's word, not a second one about the break",
+  );
+});
+
+test("the same stop heard twice while away does not lose the word", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    { type: "agent", ts: t0 + S, status: "working", session: "a" },
+    ctx(t0 + 2 * S, VIDEO, "unrelated", { browserFocused: false }),
+    { type: "agent", ts: t0 + 10 * S, status: "waiting_for_user", session: "a" },
+    { type: "agent", ts: t0 + 16 * S, status: "waiting_for_user", session: "a" },
+    ctx(t0 + 60 * S, VIDEO, "unrelated"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 61 * S, cfg: WORDS });
+  assert.deepEqual(
+    triggers.map((t) => t.kind),
+    ["agent"],
+  );
+});
+
+// Muse can ask many times on one hook (a command's stages), and no hook marks an answer,
+// so while it waits Tuck asks again, by time the person spends in the browser.
+const waiting = (ts) => agent(ts, "waiting_for_user");
+const askedAt = (triggers) =>
+  triggers.filter((t) => t.kind === "agent").map((t) => [Math.round((t.ts - t0) / S), !!t.evidence.agentAgain]);
+
+test("while the agent waits, Tuck asks again, further and further apart", () => {
+  const inputs = [setIntent(t0), ctx(t0, REPO, "related"), agent(t0, "working"), waiting(t0 + S)];
+  const { triggers } = run(inputs, { until: t0 + 240 * S, cfg: WORDS });
+  assert.deepEqual(askedAt(triggers), [
+    [1, false],
+    [31, true],
+    [91, true],
+    [211, true],
+  ]);
+});
+
+test("Got it does not end the wait: Muse is what ends it", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, REPO, "related"),
+    agent(t0, "working"),
+    waiting(t0 + S),
+    { type: "response", ts: t0 + 2 * S, choice: "dismiss" },
+  ];
+  const { triggers } = run(inputs, { until: t0 + 32 * S, cfg: WORDS });
+  assert.deepEqual(askedAt(triggers).at(-1), [31, true]);
+});
+
+test("time in the terminal does not count towards asking again", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, REPO, "related"),
+    agent(t0, "working"),
+    waiting(t0 + S),
+    ctx(t0 + 10 * S, REPO, "related", { browserFocused: false }),
+    ctx(t0 + 100 * S, X, "unrelated"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 121 * S, cfg: WORDS });
+  // 9 s before the terminal, 21 s after it.
+  assert.deepEqual(askedAt(triggers).at(-1), [121, true]);
+  assert.equal(askedAt(run(inputs, { until: t0 + 120 * S, cfg: WORDS }).triggers).length, 1);
+});
+
+test("the agent moving on ends the asking", () => {
+  for (const status of ["working", "completed", "unknown"]) {
+    const inputs = [
+      setIntent(t0),
+      ctx(t0, REPO, "related"),
+      agent(t0, "working"),
+      waiting(t0 + S),
+      agent(t0 + 10 * S, status),
+    ];
+    const { triggers } = run(inputs, {
+      until: t0 + 200 * S,
+      cfg: withOverrides({ secondLook: false, agentQuietSec: 900 }),
+    });
+    assert.equal(askedAt(triggers).filter(([, again]) => again).length, 0, status);
+  }
+});
+
+test("a finished agent is said once, with no asking again", () => {
+  const inputs = [setIntent(t0), ctx(t0, REPO, "related"), agent(t0, "working"), agent(t0 + S, "completed")];
+  const { triggers } = run(inputs, { until: t0 + 200 * S, cfg: WORDS });
+  assert.equal(askedAt(triggers).length, 1);
+});
+
+test("no asking again on a break", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, REPO, "related"),
+    agent(t0, "working"),
+    waiting(t0 + S),
+    { type: "response", ts: t0 + 2 * S, choice: "break" },
+  ];
+  const { triggers } = run(inputs, { until: t0 + 200 * S, cfg: WORDS });
+  assert.equal(askedAt(triggers).filter(([, again]) => again).length, 0);
+});
+
+test("asking again leaves room: no drift word right behind it", () => {
+  const inputs = [setIntent(t0), ctx(t0, VIDEO, "unrelated"), agent(t0, "working"), waiting(t0 + S)];
+  const { triggers } = run(inputs, { until: t0 + 40 * S, cfg: WORDS });
+  assert.deepEqual(askedAt(triggers).at(-1), [31, true]);
+  assert.equal(triggers.filter((t) => t.kind === "drift").length, 0);
+});
+
+test("the wake time includes the next asking", () => {
+  const inputs = [setIntent(t0), ctx(t0, REPO, "related"), agent(t0, "working"), waiting(t0 + S)];
+  const { state } = run(inputs, { until: t0 + 11 * S, cfg: WORDS });
+  assert.equal(nextWakeAt(state, WORDS), t0 + 31 * S);
 });

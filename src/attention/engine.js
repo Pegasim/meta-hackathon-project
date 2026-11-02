@@ -26,7 +26,8 @@ export function initialState() {
     breakUntil: null,
     sessionDay: null,
     asked: {},
-    lastDriftBudget: null, // the budget at the last drift word: the next needs more time off task
+    lastDriftBudget: null, // the budget at the last drift word
+    offSinceWordSec: 0, // time off task since then: the next word needs enough of it
     lastDriftKey: null, // the page the last drift word was about
     waited: {}, // seconds in front per page still waiting for its verdict, by key
     fragFiredTs: null,
@@ -40,6 +41,7 @@ export function initialState() {
     holdKey: null, // the page the person was typing on
     agent: null, // a coding agent's status: {status, ts, session}
     agentPending: false, // it stopped while the browser was away: say so on return
+    agentAsk: null, // while it waits on the person: {afterSec, inBrowserSec, again}
   };
 }
 
@@ -69,10 +71,16 @@ function shownState(s, ts, cfg) {
   return s.mode === "dnd" || s.mode === "off" ? "paused" : coreState(s, ts, cfg);
 }
 
+function addOffTask(s, sec) {
+  s.budgetSec += sec;
+  s.offSinceWordSec += sec;
+}
+
 function advance(s, dt, cfg) {
   if (!s.intent || s.away || s.mode === "off" || onBreak(s, s.lastTs)) return;
+  if (s.agentAsk) s.agentAsk.inBrowserSec += dt;
   const label = labelOf(s.current);
-  if (label === "unrelated" && !agentWorking(s)) s.budgetSec += dt;
+  if (label === "unrelated" && !agentWorking(s)) addOffTask(s, dt);
   else if (label === "related") s.budgetSec = Math.max(0, s.budgetSec - dt * cfg.decayRate);
   else if (s.current?.pending && !agentWorking(s)) s.waited[s.current.key] = (s.waited[s.current.key] ?? 0) + dt;
 }
@@ -102,6 +110,7 @@ function evidence(s, ts, cfg) {
     surface: s.current?.surface ?? null,
     key: s.current?.key ?? null,
     agent: s.agent?.status ?? null,
+    agentAgain: !!s.agentAsk?.again,
     dwellSec: Math.round((ts - entered) / S),
     awaySec: s.offTaskSince == null ? 0 : Math.round((ts - s.offTaskSince) / S),
     budgetSec: Math.round(s.budgetSec),
@@ -134,8 +143,10 @@ function applyContext(s, input, candidates, cfg) {
   s.away = false;
   s.awaySince = null;
   s.lastActiveTs = input.ts;
-  if (s.agentPending) {
+  if (s.agentPending && !onBreak(s, input.ts)) {
     s.agentPending = false;
+    // One word on the way back: this is the news, and a second would replace it at once.
+    if (candidates.includes("return")) candidates.splice(candidates.indexOf("return"), 1);
     candidates.push("agent");
   }
   const today = dayKey(input.ts, cfg);
@@ -195,7 +206,7 @@ function applyRelevance(s, input) {
   delete s.asked[input.key];
   // The model takes seconds: time spent waiting for it, on this page or one since left,
   // counts now. Otherwise whoever hops faster than it answers is never drifting.
-  if (input.label === "unrelated") s.budgetSec += s.waited[input.key] ?? 0;
+  if (input.label === "unrelated") addOffTask(s, s.waited[input.key] ?? 0);
   delete s.waited[input.key];
   if (s.current?.key !== input.key) return;
   Object.assign(s.current, {
@@ -251,16 +262,18 @@ function applyResponse(s, input, cfg) {
     s.policy.cooldownUntil[s.policy.episode.kind] = input.ts + cfg.cooldownSec * S;
 }
 
-// Whose turn it is in a coding agent (bridge/). A word when it stops, once: the same
-// stop can arrive twice (an approval request, then its notification).
-function applyAgent(s, input, candidates) {
+// Whose turn it is in a coding agent (bridge/). A word when it stops, once.
+function applyAgent(s, input, candidates, cfg) {
   const before = s.agent?.status;
   s.agent = { status: input.status, ts: input.ts, session: input.session ?? null };
+  if (before === input.status) return; // the same news: a word still waiting keeps waiting
   s.agentPending = false;
-  if (!AGENT_STOPS.includes(input.status) || before === input.status) return;
+  s.agentAsk =
+    input.status === "waiting_for_user" ? { afterSec: cfg.agentAskAgainSec, inBrowserSec: 0, again: false } : null;
+  if (!AGENT_STOPS.includes(input.status)) return;
   // Time to take it in: a drift word right after this one would drown it.
   s.budgetSec = 0;
-  if (s.away) s.agentPending = true;
+  if (s.away || onBreak(s, input.ts)) s.agentPending = true;
   else candidates.push("agent");
 }
 
@@ -366,12 +379,27 @@ export function step(prev, input, cfg = DEFAULTS) {
   else if (input.type === "session") applySession(s, input);
   else if (input.type === "response") applyResponse(s, input, cfg);
   else if (input.type === "second_look") applySecondLook(s, input, cfg);
-  else if (input.type === "agent") applyAgent(s, input, candidates);
+  else if (input.type === "agent") applyAgent(s, input, candidates, cfg);
 
   if (s.breakUntil != null && ts >= s.breakUntil) {
     s.breakUntil = null;
     // Already back at work: nothing to say.
-    if (s.intent && labelOf(s.current) !== "related") candidates.push("break_over");
+    if (s.agentPending && !s.away) {
+      s.agentPending = false;
+      candidates.push("agent");
+    } else if (!candidates.includes("agent") && s.intent && labelOf(s.current) !== "related") {
+      candidates.push("break_over");
+    }
+  }
+
+  // Muse can ask many times on one hook (a command's stages) and no hook marks an answer,
+  // so one word is not enough while it waits. Time in the terminal does not count: the
+  // person may be answering there. It may be running what was approved, so Tuck only asks.
+  const ask = s.agentAsk;
+  if (ask && !s.away && !s.agentPending && ask.inBrowserSec >= ask.afterSec) {
+    s.agentAsk = { afterSec: ask.afterSec * 2, inBrowserSec: 0, again: true };
+    s.budgetSec = 0; // as for the first word: a drift word right after would drown it
+    candidates.push("agent");
   }
 
   // Off task since the first unrelated page after work; neutral stops keep the count.
@@ -434,12 +462,13 @@ export function step(prev, input, cfg = DEFAULTS) {
   }
   if (core === "drifting") {
     // Every drift word is looked at first, when it is due: typing then is what counts.
-    const due = s.lastDriftBudget == null || s.budgetSec >= s.lastDriftBudget + cfg.escalateAfterSec;
+    const due = s.lastDriftBudget == null || s.offSinceWordSec >= cfg.escalateAfterSec;
     const holding = s.holdUntil != null && ts < s.holdUntil;
     if (due && looking(s, cfg) && !holding && s.look?.key !== s.current.key) requestLook(s, ts, out);
     if (due && lookAllows(s, ts, cfg)) {
       candidates.push("drift");
       s.lastDriftBudget = s.budgetSec;
+      s.offSinceWordSec = 0;
       s.look = null;
       s.lookWaitSince = null;
     }
@@ -487,8 +516,10 @@ export function nextWakeAt(s, cfg = DEFAULTS) {
   // escalation waiting for its look or a hold, a timeout): waking for them would loop.
   const pending = (t) => t != null && t > s.lastTs && times.push(t);
   if (agentWorking(s)) pending(s.agent.ts + (cfg.agentQuietSec + 1) * S);
+  if (s.agentAsk && s.intent && !s.away && !onBreak(s, s.lastTs))
+    pending(s.lastTs + (s.agentAsk.afterSec - s.agentAsk.inBrowserSec) * S);
   if (core === "drifting" && s.lastDriftBudget != null)
-    pending(s.lastTs + (s.lastDriftBudget + cfg.escalateAfterSec - s.budgetSec) * S);
+    pending(s.lastTs + (cfg.escalateAfterSec - s.offSinceWordSec) * S);
   if (core === "detour" && looking(s, cfg) && s.readAheadKey !== s.current?.key)
     pending(s.lastTs + (effectiveTolerance(s, cfg) - cfg.lookLeadSec - s.budgetSec) * S);
   if (core === "drifting" && s.lookWaitSince != null) pending(s.lookWaitSince + cfg.lookTimeoutSec * S);

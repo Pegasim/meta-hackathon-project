@@ -20,6 +20,7 @@ export function nudgeText(t) {
     awayMin: Math.round((e.awaySec ?? 0) / 60),
     unsure: !!e.unsure,
     agent: e.agent,
+    again: !!e.agentAgain,
     task: { title: t.intentTitle, step: t.intentStep },
   });
 }

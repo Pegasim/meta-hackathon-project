@@ -17,6 +17,7 @@ export const DEFAULTS = Object.freeze({
   maxGapSec: 120, // a longer silence between inputs is time away (sleep, crash)
   breakMin: 5,
   agentQuietSec: 900, // no word from a working agent this long: its status is unknown
+  agentAskAgainSec: 30, // the agent still waits after this long in the browser: ask again, then twice as long
   relevanceRetrySec: 30, // ask the model again if an answer never came (worker died mid-call)
   secondLook: true, // look at a page again before a drift word about it (typing? an excerpt)
   lookLeadSec: 15, // read the excerpt ahead this long before the tolerance runs out

@@ -14,8 +14,6 @@ export function lineFor(event, ts) {
       return line("working");
     case "PermissionRequest":
       return line("waiting_for_user");
-    case "Notification":
-      return event.notification_type === "permission_prompt" ? line("waiting_for_user") : null;
     case "Stop":
       // A question in plain text also ends a turn. Only this yes or no leaves the script.
       return line(/\?\s*$/.test(event.last_assistant_message ?? "") ? "waiting_for_user" : "completed", {
@@ -56,11 +54,21 @@ export function settled(held, now) {
   return !!held && (now - held.lastSeen >= SETTLE.quietMs || now - held.since >= SETTLE.mostMs);
 }
 
+// The session of the latest prompt in the file: a host started during a turn follows it.
+export function latestPromptSession(text) {
+  for (const raw of text.split("\n").reverse()) {
+    try {
+      const line = JSON.parse(raw);
+      if (line?.prompt) return line.session;
+    } catch {}
+  }
+  return null;
+}
+
 export const HOOK_EVENTS = [
   "UserPromptSubmit",
   "PostToolUse",
   "PermissionRequest",
-  "Notification",
   "Stop",
   "StopFailure",
   "SessionEnd",

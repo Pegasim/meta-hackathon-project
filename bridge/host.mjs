@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { follow, settle, settled } from "./status.mjs";
+import { follow, latestPromptSession, settle, settled } from "./status.mjs";
 
 const file = path.join(os.homedir(), ".tuck", "agent.jsonl");
 const POLL_MS = 500;
@@ -27,7 +27,13 @@ const sizeOf = () => {
 
 // Only what happens from now on: an old status says nothing about whose turn it is.
 let offset = sizeOf();
-let session = null;
+let session = (() => {
+  try {
+    return latestPromptSession(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+})();
 let partial = "";
 let held = null;
 

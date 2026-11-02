@@ -33,6 +33,11 @@ async function render() {
     lastTrigger && !lastTrigger.respondedAt && !lastTrigger.resolvedAt && lastTrigger.kind !== "session_start";
   $("trigger").hidden = !show;
   if (show) $("trigger-text").textContent = nudgeText(lastTrigger);
+  // An agent's word says nothing about the page, so it has no answer about the page.
+  const agentWord = lastTrigger?.kind === "agent";
+  $("take-me-back").hidden = agentWord;
+  $("for-my-task").hidden = agentWord;
+  $("got-it").hidden = !agentWord;
   $("take-me-back").disabled = !engine.lastRelevant;
   $("take-me-back").title = engine.lastRelevant ? `Back to ${engine.lastRelevant.title}` : "No work page yet";
 }
@@ -112,6 +117,7 @@ const respond = (choice) => async () => {
 $("take-me-back").onclick = respond("back");
 $("for-my-task").onclick = respond("related");
 $("give-me-5").onclick = respond("break");
+$("got-it").onclick = respond("dismiss");
 
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.lastTrigger) render();

@@ -27,7 +27,9 @@ Internal reminder subagents fire hooks with their own `session_id`, some after `
 
 The answer is shown after `Stop`, once those are done: 3.2 s and 5.9 s later in two timed headless runs. The host therefore holds a turn's end until the hooks go quiet (`settle` in `bridge/status.mjs`).
 
-Not seen: approval in an interactive session, the event after an approval is answered, `StopFailure`, `request_user_input` (asked for it headless; the agent wrote the question as text).
+Seen interactive, 2026-11-02: a command with stages asks at each stage on one `PermissionRequest`, and `PreToolUse` comes before `PermissionRequest`, so no event marks an answer until `PostToolUse`.
+
+Not seen: `StopFailure`, `request_user_input` (asked for it headless; the agent wrote the question as text).
 
 Default sessions use an approval judge, so few approvals may reach the person. `Stop` is likely the common "your turn".
 
@@ -44,7 +46,7 @@ Muse hook -> tuck-hook (script) -> ~/.tuck/agent.jsonl -> host (native messaging
 | Event, from the session of the latest `UserPromptSubmit` | Status |
 |---|---|
 | `UserPromptSubmit`, `PostToolUse` | `working` |
-| `PermissionRequest`, `Notification` with `permission_prompt` | `waiting_for_user` |
+| `PermissionRequest` | `waiting_for_user` |
 | `Stop` with `asks` | `waiting_for_user` |
 | `Stop` | `completed` |
 | `StopFailure` | `failed` |
@@ -56,7 +58,7 @@ Muse hook -> tuck-hook (script) -> ~/.tuck/agent.jsonl -> host (native messaging
 
 Flagged concerns:
 - A chat with the agent's question open in the terminal is outside the browser: Tuck only speaks while the browser is in front.
-- `Notification` comes about 6 s after `PermissionRequest`. Using both means the first one wins and the second changes nothing.
+- `Notification` comes about 6 s after `PermissionRequest`, also in an interactive session (seen 2026-11-02). It is not used: it adds nothing, and by then the person may have answered.
 - A crash sends nothing. The timeout to `unknown` covers it.
 - Project hooks need the folder trusted, and third-party reports disagree on hooks inline in `settings.json`, so this uses the project file.
 

@@ -152,3 +152,12 @@ test("the agent stopping is one short line, with answers that fit it", () => {
     );
   }
 });
+
+test("asking again about the agent is a question: it may be running what was approved", () => {
+  const trigger = { id: "a", kind: "agent", level: 2, evidence: { agent: "waiting_for_user", agentAgain: true } };
+  assert.equal(present({ trigger }).bubble.text, "Is Muse still waiting on you?");
+  assert.deepEqual(
+    present({ trigger }).bubble.buttons.map((b) => b.label),
+    ["Got it", "5-min break"],
+  );
+});
