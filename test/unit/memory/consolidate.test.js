@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { consolidate, redact, entryId } from "../../../src/memory/consolidate.js";
+import { consolidate, redact, entryId, entryKey, isRemoved } from "../../../src/memory/consolidate.js";
 
 const base = {
   kind: "decision",
@@ -46,4 +46,21 @@ test("rejects invalid entries with reasons", () => {
 test("redaction happens before filing", () => {
   const [e] = consolidate([{ ...base, evidence: "token: ghp_abcdefghijklmnopqrstuvwx" }], []).accepted;
   assert.equal(e.evidence, "token: [REDACTED]");
+});
+
+test("an id changed by redaction keeps the one add() returned, so it can still be removed", () => {
+  const added = { ...base, evidence: "token: ghp_abcdefghijklmnopqrstuvwx" };
+  added.id = entryId(added);
+  const [e] = consolidate([added], []).accepted;
+  assert.notEqual(e.id, added.id);
+  assert.equal(e.addedAs, added.id);
+  const plain = { ...base, id: entryId(base) };
+  assert.equal(consolidate([plain], []).accepted[0].addedAs, undefined, "only when the id changed");
+});
+
+test("a removed entry is known by its id, or by its key when the brain filed it under another id", () => {
+  const removed = { ids: [entryId(base)], keys: [entryKey(base)] };
+  assert.ok(isRemoved({ ...base, id: entryId(base) }, removed));
+  assert.ok(isRemoved({ ...base, id: "brain-own-id", evidence: "Filed by the brain." }, removed));
+  assert.ok(!isRemoved({ ...base, title: "Pick a vendor for the gadget", id: "other" }, removed));
 });

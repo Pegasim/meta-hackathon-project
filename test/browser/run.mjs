@@ -168,6 +168,84 @@ const twoInstances = await page.evaluate(async () => {
   return { empty, afterImport, optionsBefore, optionsSees, afterRefresh };
 });
 
+// Taking an entry back (issue #25), as Forget on a label does: the other instance's recall
+// misses it at once; one not exported yet never is; one exported and still in the brain's
+// inbox/ is deleted there; one whose id changed in redaction goes by the id add() returned;
+// and a brain that has filed it keeps its file, but no import brings it back.
+const removal = await page.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const worker = await Memory.open("browser-test-4");
+  const options = await Memory.open("browser-test-4");
+  const pref = (title, fields) => ({
+    kind: "preference",
+    topic: "shop",
+    title,
+    context: "Marked by the user from a nudge.",
+    result: "related",
+    ...fields,
+  });
+  const found = async (m, title) => (await m.recall(title)).some((h) => h.title === title);
+  const root = await navigator.storage.getDirectory();
+  const brain = await root.getDirectoryHandle("brain-4", { create: true });
+  const inboxTitles = async () => {
+    const titles = [];
+    for await (const [, h] of (await brain.getDirectoryHandle("inbox", { create: true })).entries())
+      if (h.kind === "file") titles.push((await (await h.getFile()).text()).match(/title: "(.*)"/)[1]);
+    return titles.sort();
+  };
+  await options.connectBrain(brain);
+
+  const kept = await worker.add(pref("example.com counts as work for shop"));
+  const pending = await worker.add(pref("social.example counts as work for shop"));
+  const before = await found(options, pending.title);
+  const removedPending = await worker.remove(pending.id);
+  const after = await found(options, pending.title);
+  await worker.maintain(); // consolidate, then export what is left
+  const exported = await inboxTitles();
+
+  const removedExported = await worker.remove(kept.id);
+  const inboxAfter = await inboxTitles();
+  const keptFound = await found(options, kept.title);
+
+  const secret = await worker.add(
+    pref("api.example counts as work for shop", { evidence: "api_key=supersecretvalue1" }),
+  );
+  await worker.consolidate();
+  const redactedFiled = (await worker.recall(secret.title)).find((h) => h.title === secret.title)?.item.id;
+  const removedRedacted = await worker.remove(secret.id);
+  const secretFound = await found(options, secret.title);
+
+  // The brain filed the first one under notes/log with an id of its own.
+  const logDir = await (
+    await brain.getDirectoryHandle("notes", { create: true })
+  ).getDirectoryHandle("log", {
+    create: true,
+  });
+  const w = await (await logDir.getFileHandle("filed.md", { create: true })).createWritable();
+  await w.write(
+    `---\ntype: note\ntitle: "${kept.title}"\nkind: preference\ntopic: shop\ndate: ${kept.date}\nsource: extension\nhost: laptop\nid: bbbbbbbbbb\n---\n\n# ${kept.title}\n\n- **Context:** Marked by the user from a nudge.\n- **Decision/Result:** related\n- **Evidence:** none\n- **Next action:** none\n`,
+  );
+  await w.close();
+  const synced = await options.syncBrain();
+  const filedFound = await found(worker, kept.title);
+  const fileStays = !!(await logDir.getFileHandle("filed.md").catch(() => null));
+  return {
+    before,
+    after,
+    removedPending,
+    exported,
+    removedExported,
+    inboxAfter,
+    keptFound,
+    redactedChanged: redactedFiled !== secret.id,
+    removedRedacted,
+    secretFound,
+    synced: synced.entries,
+    filedFound,
+    fileStays,
+  };
+});
+
 await ctx.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
@@ -210,4 +288,17 @@ assert.deepEqual(
   "the other way round: an entry the worker adds must show in a page that had already read",
 );
 assert.deepEqual(twoInstances.afterRefresh, ["Added by the worker", "First imported task"]);
+assert.equal(removal.before, true);
+assert.equal(removal.after, false, "the other instance's recall misses a removed entry at once");
+assert.deepEqual(removal.removedPending, { removed: 1, file: null });
+assert.deepEqual(removal.exported, ["example.com counts as work for shop"], "a removed entry is never exported");
+assert.deepEqual(removal.removedExported, { removed: 1, file: "deleted" });
+assert.deepEqual(removal.inboxAfter, [], "the exported file left the brain's inbox");
+assert.equal(removal.keptFound, false);
+assert.ok(removal.redactedChanged, "redaction gave the filed entry a new id");
+assert.equal(removal.removedRedacted.removed, 1, "removed by the id add() returned");
+assert.equal(removal.secretFound, false);
+assert.equal(removal.synced, 0, "a brain that still holds a removed entry does not bring it back");
+assert.equal(removal.filedFound, false);
+assert.ok(removal.fileStays, "what the brain has filed is left alone");
 console.log("browser test: ok");
