@@ -407,7 +407,9 @@ const heldMs = Date.now() - typingFrom;
 
 // Review: the chat box at the bottom is focused, but nobody types. The page is judged by
 // the feed in the middle: the nudge comes, with no hold. Typing in the box then makes
-// the next look read the chat, which is work: the drift ends.
+// the next look read the chat, which is work: the drift ends. A fresh drift, so only a
+// hold could delay the word, not the spacing between words of one drift.
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "respond", choice: "back" }));
 const sideTab = await ctx.newPage();
 await sideTab.goto(side);
 await sideTab.bringToFront();

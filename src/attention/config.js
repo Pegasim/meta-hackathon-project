@@ -8,7 +8,7 @@ export const DEFAULTS = Object.freeze({
   fragWindowSec: 120,
   fragMinSwitches: 6,
   fragUnrelatedShare: 0.5,
-  escalateAfterSec: 30, // still drifting this long after a trigger → next level
+  escalateAfterSec: 30, // this much more time off task after a drift word → next level
   cooldownSec: 120,
   gentleMultiplier: 2,
   returnAwaySec: 300,

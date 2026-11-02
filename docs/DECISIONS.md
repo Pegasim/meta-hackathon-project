@@ -6,6 +6,9 @@
 
 ## Decided
 
+**One drift stays one drift, and words are spaced by time off task (2026-11-02, issue #37).**
+A recorded session showed two faults. Time waiting for the model never counted, so hopping faster than it answers looked like no drift at all. And any glance away ended the episode while the budget stayed high, so the next page fired a new L1 at once: eight words in 5.5 minutes, none past L1. The wait now counts once the model says unrelated, and the next word needs `escalateAfterSec` more seconds off task, whatever the clock says, because a glance or time in a terminal says nothing about drifting further. A drift ends on a real absence or once work has drained the budget well below the tolerance. Quiet after the last word holds for that page only: a new page starts over, or hopping would end in silence. A page still waiting counts as neutral, so no word is ever said about a page not yet judged.
+
 **A small local bridge tells Tuck whose turn it is in Muse Code, status only (2026-11-02, issue #11).**
 While an agent works, time on another page is a wait, not drift, and when it stops the person should hear it where they are. A browser extension cannot hear a hook, so this is the one exception to "no separate backend": the hook appends a status line to a file, and a native messaging host Chrome starts passes it on, so the hook needs nothing running. Prompts, messages and terminal output never leave the hook; whether a turn ended in a question is worked out there. Tuck cannot bring a terminal to the front, so the word offers "Got it", not "Take me back".
 

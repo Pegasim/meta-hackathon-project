@@ -721,3 +721,211 @@ test("the agent's word is not drowned by a drift word: the person gets the toler
   );
   assert.ok(state.budgetSec < 5);
 });
+
+// Issue #37. The real policy, so the levels are what a person would get.
+const WORDS = withOverrides({ secondLook: false });
+const X = ["https://x.com/home", "Home / X"];
+const answer37 = (ts, page, label = "unrelated") => ({
+  type: "relevance",
+  ts,
+  key: relevanceKey(intent.id, ...page),
+  label,
+  confidence: 0.9,
+  source: "llm",
+});
+const away37 = (ts, page) => ctx(ts, page, "unrelated", { browserFocused: false });
+const driftWords = (triggers) =>
+  triggers.filter((t) => t.kind === "drift").map((t) => [Math.round((t.ts - t0) / S), t.level]);
+
+test("hopping: the wait on a page the person has left counts once the model says unrelated", () => {
+  const inputs = [setIntent(t0), ctx(t0, VIDEO), ctx(t0 + 10 * S, X), ctx(t0 + 20 * S, REPO, "related")];
+  let { state } = run(inputs, { until: t0 + 20 * S });
+  assert.equal(state.budgetSec, 0, "neutral while it waits");
+  ({ state } = step(state, answer37(t0 + 20 * S, VIDEO), CFG));
+  ({ state } = step(state, answer37(t0 + 20 * S, X), CFG));
+  assert.equal(state.budgetSec, 20);
+  assert.equal(state.state, "focused", "the page in front is still work");
+});
+
+test("hopping: the word comes on the first page the model has judged off task", () => {
+  const inputs = [setIntent(t0)];
+  for (let i = 0; i < 6; i++) {
+    const page = [`https://site${i}.example/`, `Page ${i}`];
+    inputs.push(ctx(t0 + i * 10 * S, page));
+    inputs.push(answer37(t0 + (i * 10 + 12) * S, page));
+  }
+  // Page 5 opens at +50 and stays: its answer at +62 is the first verdict on a page in front.
+  const { triggers } = run(inputs, { until: t0 + 70 * S, cfg: WORDS });
+  assert.deepEqual(driftWords(triggers), [[62, 1]]);
+});
+
+test("the wait counts for the page still in front, once", () => {
+  const inputs = [setIntent(t0), ctx(t0, VIDEO), answer37(t0 + 5 * S, VIDEO)];
+  const { state } = run(inputs, { until: t0 + 10 * S });
+  assert.equal(state.budgetSec, 10);
+  const again = step(state, answer37(t0 + 10 * S, VIDEO), CFG);
+  assert.equal(again.state.budgetSec, 10, "a second answer adds nothing");
+});
+
+test("a wait on a page that turns out related or neutral adds nothing", () => {
+  for (const label of ["related", "neutral"]) {
+    const inputs = [
+      setIntent(t0),
+      ctx(t0, VIDEO),
+      ctx(t0 + 10 * S, X, "unrelated"),
+      answer37(t0 + 10 * S, VIDEO, label),
+    ];
+    const { state } = run(inputs, { until: t0 + 10 * S });
+    assert.equal(state.budgetSec, 0, label);
+  }
+});
+
+test("time away while a page waits for its answer does not count", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO),
+    ctx(t0 + 5 * S, VIDEO, undefined, { browserFocused: false }),
+    answer37(t0 + 60 * S, VIDEO),
+  ];
+  const { state } = run(inputs, { until: t0 + 60 * S });
+  assert.equal(state.budgetSec, 5);
+});
+
+test("time a page waits for its answer while the agent works does not count", () => {
+  const inputs = [
+    setIntent(t0),
+    { type: "agent", ts: t0, status: "working", session: "a" },
+    ctx(t0, VIDEO),
+    answer37(t0 + 10 * S, VIDEO),
+  ];
+  const { state } = run(inputs, { until: t0 + 10 * S });
+  assert.equal(state.budgetSec, 0);
+});
+
+test("one drift: a glance at another window does not start it over", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    away37(t0 + 50 * S, VIDEO),
+    ctx(t0 + 53 * S, VIDEO, "unrelated"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 90 * S, cfg: WORDS });
+  // L1 at 45 s off task; L2 after 30 s more off task: 3 s away are not among them.
+  assert.deepEqual(driftWords(triggers), [
+    [45, 1],
+    [78, 2],
+  ]);
+});
+
+test("one drift: a new tab or other neutral page does not start it over", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    ctx(t0 + 50 * S, SEARCH, "neutral"),
+    ctx(t0 + 60 * S, VIDEO, "unrelated"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 90 * S, cfg: WORDS });
+  assert.deepEqual(driftWords(triggers), [
+    [45, 1],
+    [85, 2],
+  ]);
+});
+
+test("one drift: coming back after a few minutes is not a word by itself", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    away37(t0 + 50 * S, VIDEO),
+    ctx(t0 + 200 * S, VIDEO, "unrelated"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 210 * S, cfg: WORDS });
+  assert.deepEqual(driftWords(triggers), [[45, 1]]);
+});
+
+test("one drift: a moment on work does not start it over", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    ctx(t0 + 50 * S, REPO, "related"),
+    ctx(t0 + 52 * S, VIDEO, "unrelated"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 70 * S, cfg: WORDS });
+  assert.deepEqual(driftWords(triggers), [[45, 1]]);
+});
+
+test("back on work long enough, the next drift is a new one and starts at L1", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    ctx(t0 + 50 * S, REPO, "related"),
+    ctx(t0 + 120 * S, VIDEO, "unrelated"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 170 * S, cfg: WORDS });
+  assert.deepEqual(driftWords(triggers), [
+    [45, 1],
+    [165, 1],
+  ]);
+});
+
+test("a real absence ends the drift: the person is greeted, and it starts at L1", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    away37(t0 + 80 * S, VIDEO),
+    ctx(t0 + 400 * S, VIDEO, "unrelated"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 405 * S, cfg: WORDS });
+  assert.ok(triggers.some((t) => t.kind === "return"));
+  assert.deepEqual(driftWords(triggers).at(-1), [400, 1]);
+});
+
+test("switching mode back and forth during a drift is no new word", () => {
+  const mode = (ts, m) => ({ type: "session", ts, kind: "mode", payload: { mode: m } });
+  const inputs = [setIntent(t0), ctx(t0, VIDEO, "unrelated"), mode(t0 + 50 * S, "gentle"), mode(t0 + 51 * S, "focus")];
+  const { triggers } = run(inputs, { until: t0 + 60 * S, cfg: WORDS });
+  assert.deepEqual(driftWords(triggers), [[45, 1]]);
+});
+
+test("the next word's wake time comes from the time still to spend off task", () => {
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    away37(t0 + 50 * S, VIDEO),
+    ctx(t0 + 53 * S, VIDEO, "unrelated"),
+  ];
+  const { state } = run(inputs, { until: t0 + 54 * S, cfg: WORDS });
+  assert.equal(nextWakeAt(state, WORDS), t0 + 78 * S);
+});
+
+test("with a short tolerance, an empty budget still ends the drift", () => {
+  const short = withOverrides({ secondLook: false, toleranceSec: 3, escalateAfterSec: 5 });
+  const inputs = [
+    setIntent(t0),
+    ctx(t0, VIDEO, "unrelated"),
+    ctx(t0 + 4 * S, REPO, "related"),
+    ctx(t0 + 10 * S, VIDEO, "unrelated"),
+  ];
+  const { triggers } = run(inputs, { until: t0 + 14 * S, cfg: short });
+  assert.deepEqual(driftWords(triggers), [
+    [3, 1],
+    [13, 1],
+  ]);
+});
+
+test("after the last word Tuck stays quiet on that page; a new page starts over, spaced", () => {
+  const onVideo = [setIntent(t0), ctx(t0, VIDEO, "unrelated")];
+  const quiet = run(onVideo, { until: t0 + 300 * S, cfg: WORDS });
+  assert.deepEqual(driftWords(quiet.triggers), [
+    [45, 1],
+    [75, 2],
+    [105, 3],
+  ]);
+  const { triggers } = run([...onVideo, ctx(t0 + 140 * S, X, "unrelated")], { until: t0 + 230 * S, cfg: WORDS });
+  // Out of words at +135 on the video. The new page starts them over, 30 s off task later,
+  // and its L2 waits out the last loud word (L3 at +105).
+  assert.deepEqual(driftWords(triggers).slice(3), [
+    [165, 1],
+    [195, 1],
+    [225, 2],
+  ]);
+});
