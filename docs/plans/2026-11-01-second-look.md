@@ -35,7 +35,7 @@ Open questions: how often the second look turns a drift into work, from the even
   - It runs three functions in the page (`src/background/page.js`):
     - `watchTyping` notes when a key was last pressed (installed when Tuck appears on a page).
     - `isComposing` says whether the focus is in a text field and a key was pressed within `typingRecentSec`.
-    - `readExcerpt` returns up to 1,000 characters. It starts at the focused field while the person types; otherwise at the middle of the viewport, so a chat box left focused does not speak for a scrolled feed.
+    - `readExcerpt` returns up to 1,000 characters. It starts at the focused field while the person types; otherwise from the conversation last touched (#23), else at the middle of the viewport, into any open shadow root there, so a chat box left focused does not speak for a scrolled feed.
 
     The functions never read form values, drop every editable draft in the excerpt, and return nothing when a password field is visible (also inside open shadow roots and same-origin frames).
   - The excerpt is read only when the page-reading setting is on (it is on by default) and the site is not on the never-read list (`src/attention/reading.js`).

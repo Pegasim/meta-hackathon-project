@@ -32,7 +32,7 @@ Out of scope: Muse Code (#11), avatar work, chat, facts or any extraction from n
 
 Not checked: other sites (WhatsApp Web, Slack, Discord), a group chat, minimised chats, a feed post's comment box.
 
-Confirmed on LinkedIn: when the chat sits at the middle of the window and nothing is typed, `readExcerpt` gets the shadow host from `elementFromPoint`, whose `innerText` holds no shadow text, so it reads the page behind the chat. `pageRegion` covers known people. A chat with someone not in the notes is still judged by the page behind it until the person types.
+Confirmed on LinkedIn: when the chat sits at the middle of the window and nothing is typed, `readExcerpt` got the shadow host from `elementFromPoint`, whose `innerText` holds no shadow text, so it read the page behind the chat. `pageRegion` covers known people. Fixed in #23: `readExcerpt` reads the conversation last touched, and otherwise goes into open shadow roots at the middle of the window.
 
 ### Nodes
 

@@ -86,10 +86,11 @@ export function readRegion() {
 }
 
 // A short excerpt of the visible page: the text around the focused field when
-// fromFocus (the person is typing there), else around the middle of the window. Never
-// reads form values or drafts, and reads nothing when a password field is visible,
-// also inside open shadow roots and same-origin frames. Returns { password, text }, or
-// null when the tab has moved on from url.
+// fromFocus (the person is typing there), else the conversation last touched (watchRegion),
+// else around the middle of the window, into any open shadow root there. Never reads form
+// values or drafts, and reads nothing when a password field is visible, also inside open
+// shadow roots and same-origin frames. Returns { password, text }, or null when the tab
+// has moved on from url.
 export function readExcerpt(url, maxChars, minChars, fromFocus) {
   if (location.href !== url) return null;
   const shown = (el) => {
@@ -120,18 +121,36 @@ export function readExcerpt(url, maxChars, minChars, fromFocus) {
     focus.id !== "tuck-companion" &&
     (focus.isContentEditable || focus.tagName === "TEXTAREA" || focus.tagName === "INPUT");
   const flat = (s) => (s || "").replace(/\s+/g, " ").trim();
-  // Climb from there until the container holds enough text to say what it is about.
-  let node = typing ? focus : document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+  // Not typing, but in a conversation: it is what the person is looking at, wherever it sits.
+  const region = window.__tuckRegion?.el;
+  const chat = !typing && region?.isConnected && shown(region) && flat(region.innerText) ? region : null;
+  // The element at the middle of the window. A lookup there stops at an open shadow root's
+  // host, so go in, a few levels at most. Tuck's own bubble is not the page.
+  const middle = () => {
+    let el = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    for (let i = 0; i < 8 && el?.shadowRoot && el.id !== "tuck-companion"; i++) {
+      const inner = el.shadowRoot.elementFromPoint(innerWidth / 2, innerHeight / 2);
+      if (!inner || inner === el) break;
+      el = inner;
+    }
+    return el;
+  };
+  // Climb from there until the container holds enough text to say what it is about. A
+  // conversation is read as it is. In a shadow root the climb ends at its first element:
+  // innerText does not cross to the host, which holds none of that text.
+  let node = typing ? focus : (chat ?? middle());
+  let box = node;
   let text = "";
   for (; node && node !== document.documentElement; node = node.parentElement) {
+    box = node;
     text = flat(node.innerText);
-    if (text.length >= minChars) break;
+    if (text.length >= (chat ? 0 : minChars)) break;
   }
   // innerText has no form values; drafts in editable boxes are the person's, not the page's.
-  for (const box of node?.querySelectorAll?.('[contenteditable=""], [contenteditable="true"]') ?? []) {
-    const draft = flat(box.innerText);
+  for (const draftBox of box?.querySelectorAll?.('[contenteditable=""], [contenteditable="true"]') ?? []) {
+    const draft = flat(draftBox.innerText);
     if (draft) text = flat(text.replace(draft, " "));
   }
-  // Next to a text field the newest lines (a chat's last messages) are at the end.
-  return { password: false, text: typing ? text.slice(-maxChars) : text.slice(0, maxChars) };
+  // Next to a text field, or in a conversation, the newest lines are at the end.
+  return { password: false, text: typing || chat ? text.slice(-maxChars) : text.slice(0, maxChars) };
 }
