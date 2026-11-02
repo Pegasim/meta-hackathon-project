@@ -14,6 +14,9 @@ const ISO = /\d{4}-\d{2}-\d{2}/g;
 // Kept deliberately narrow: a wrong deadline is worse than a missing one, because
 // Tuck would then be confidently wrong about what is urgent.
 const CUES = ["due", "deadline", "closes", "expires", "last day", "son başvuru", "son tarih", "teslim"];
+// Obsidian Tasks writes "📅 2026-11-10" for a due date. It counts only right before the
+// date: in "⏳ 2026-11-05 📅 2026-11-10" the scheduled date is not a deadline.
+const CUES_BEFORE = ["📅"];
 
 // How far from the date the cue may sit. Deadlines read "deadline is <date>" or
 // "<date> son tarih", so the room before the date is the generous side.
@@ -41,7 +44,10 @@ export function deadlinesIn(text) {
     const end = m.index + m[0].length;
     const before = s.slice(Math.max(prevEnd, m.index - BEFORE), m.index).toLowerCase();
     const after = s.slice(end, end + AFTER).toLowerCase();
-    if (CUES.some((cue) => before.includes(cue) || after.includes(cue))) found.push(m[0]);
+    const cued =
+      CUES.some((cue) => before.includes(cue) || after.includes(cue)) ||
+      CUES_BEFORE.some((cue) => before.trimEnd().endsWith(cue));
+    if (cued) found.push(m[0]);
     prevEnd = end;
   }
   return found;

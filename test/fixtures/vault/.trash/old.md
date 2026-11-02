@@ -1,0 +1,1 @@
+- [ ] a deleted note's task that must be skipped

@@ -1,0 +1,1 @@
+- [ ] a template task that must be skipped
