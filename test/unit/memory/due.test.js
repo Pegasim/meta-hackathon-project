@@ -60,3 +60,15 @@ test("a cue does not reach across another date", () => {
 test("the local day is used, not UTC", () => {
   assert.match(localDate(), /^\d{4}-\d{2}-\d{2}$/);
 });
+
+test("reads Obsidian's due date and Dataview due fields", () => {
+  assert.deepEqual(deadlinesIn("Pay the invoice 📅 2026-11-10 ⏫"), ["2026-11-10"]);
+  assert.deepEqual(deadlinesIn("Send the budget due:: 2026-11-20"), ["2026-11-20"]);
+  assert.deepEqual(deadlinesIn("Review the PR [due:: 2026-11-12]"), ["2026-11-12"]);
+});
+
+test("📅 counts only right before its date: scheduled and done dates are not deadlines", () => {
+  assert.deepEqual(deadlinesIn("⏳ 2026-11-05 📅 2026-11-15"), ["2026-11-15"]);
+  assert.deepEqual(deadlinesIn("📅 2026-11-15 ✅ 2026-11-01"), ["2026-11-15"]);
+  assert.deepEqual(deadlinesIn("🛫 2026-11-03"), []);
+});
