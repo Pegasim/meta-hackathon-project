@@ -18,7 +18,7 @@ import {
   labelHolds,
 } from "../attention/relevance.js";
 import { readingSettings, mayRead } from "../attention/reading.js";
-import { stillOpen, sayable, pickReminder, markSaid, markDone } from "../attention/reminders.js";
+import { stillOpen, sayable, pickReminder, markSaid, markDone, markNotTask, taskList } from "../attention/reminders.js";
 import { initialState, step, nextWakeAt } from "../attention/engine.js";
 import { makeIntent, isExpired, dayKey } from "../attention/intents.js";
 import { createSerialQueue } from "../attention/queue.js";
@@ -26,6 +26,7 @@ import { openStore } from "../attention/store.js";
 import { classifyRelevance, privateSettings } from "../agent/relevance.js";
 import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
+import { refreshTasks } from "../agent/tasks.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
@@ -43,8 +44,7 @@ const todayLabel = (d = new Date()) => `${d.toLocaleDateString("en-US", { weekda
 // The tasks close enough for Tuck to name out loud (attention/reminders.js). Anything else
 // never reaches the prompt, so it cannot be nagged about.
 async function dueSoon({ limit = 2 } = {}) {
-  const queue = await (await memory).taskQueue({ today: localDate(), limit: Infinity }).catch(() => []);
-  return sayable(queue, await loadLoops(), localDate())
+  return sayable(await toDo(), await loadLoops(), localDate())
     .slice(0, limit)
     .map((e) => ({ title: e.title, when: dueLabel(e.daysLeft) }));
 }
@@ -52,6 +52,14 @@ async function dueSoon({ limit = 2 } = {}) {
 // What has been said and finished, by entry id (attention/reminders.js).
 const loadLoops = async () => (await chrome.storage.local.get("loops")).loops ?? {};
 const saveLoops = (loops) => chrome.storage.local.set({ loops });
+
+// The to-do list: memory's queue with what the task node made of it (attention/reminders.js
+// taskList, agent/tasks.js). Before the node has run, memory's queue as it is.
+async function toDo(today = localDate()) {
+  const queue = await (await memory).taskQueue({ today, limit: Infinity }).catch(() => []);
+  const { taskVerdicts = {}, taskSettings = {} } = await chrome.storage.local.get(["taskVerdicts", "taskSettings"]);
+  return taskList(queue, { verdicts: taskVerdicts, hidePersonal: !!taskSettings.hidePersonal });
+}
 
 // ---- Schedules -----------------------------------------------------------
 
@@ -546,8 +554,8 @@ async function showWithReminder(tabId, view, goalTitle) {
   const today = localDate();
   const { mode } = await loadEngine();
   const quiet = mode === "dnd" || mode === "off";
-  const queue = await (await memory).taskQueue({ today, limit: Infinity }).catch(() => []);
-  const item = view?.bubble && !quiet ? pickReminder(queue, { goalTitle, loops: await loadLoops(), today }) : null;
+  const item =
+    view?.bubble && !quiet ? pickReminder(await toDo(today), { goalTitle, loops: await loadLoops(), today }) : null;
   if (!item) return showTuck(tabId, view);
   const reminder = { id: item.id, title: item.title, line: reminderLine(dueLabel(item.daysLeft)) };
   const shown = await showTuck(tabId, { ...view, bubble: { ...view.bubble, reminder } });
@@ -559,11 +567,12 @@ async function showWithReminder(tabId, view, goalTitle) {
   return shown;
 }
 
-// On it: nothing more today, already noted when it was said. Done stays done. Switch:
-// it becomes the goal.
+// On it: nothing more today, already noted when it was said. Done stays done, and so does
+// Not a task (from settings). Switch: it becomes the goal.
 async function reminderAnswer({ id, title, choice }, sender) {
   await log({ type: "feedback", ts: Date.now(), kind: "reminder", payload: { id, choice } });
   if (choice === "done") await saveLoops(markDone(await loadLoops(), id, Date.now()));
+  if (choice === "not_task") await saveLoops(markNotTask(await loadLoops(), id, Date.now()));
   if (choice === "switch") return setIntent({ title, from: "tuck", fromLoopId: id }, sender);
   return { ok: true };
 }
@@ -685,11 +694,7 @@ async function greet(tabId) {
   // push a long title past the 120-character limit an entry validates against.
   const loops = [
     ...(expired?.expiredAt && !expired.doneAt ? [{ title: expired.title }] : []),
-    ...stillOpen(await (await memory).taskQueue({ today: localDate(), limit: Infinity }), await loadLoops()).map(
-      (e) => ({
-        title: e.title,
-      }),
-    ),
+    ...stillOpen(await toDo(), await loadLoops()).map((e) => ({ title: e.title })),
   ];
   const view = present({ trigger: { kind: "session_start", level: 2, id: "greeting" }, loops });
   const shown = await showWithReminder(tabId, view, expired?.expiredAt && !expired.doneAt ? expired.title : null);
@@ -833,6 +838,31 @@ async function refreshProfile() {
   return r;
 }
 
+// Which open loops are real tasks (LLM#6), at re-sync. Only new or changed entries cost a
+// call; the settings page runs the same step after its own imports.
+async function refreshTaskList() {
+  const settings = await loadModelSettings();
+  if (!settings) return { source: "no-model" };
+  const used = privateSettings(settings);
+  const started = Date.now();
+  const r = await refreshTasks(modelClient(used), {
+    memory: await memory,
+    storage: chrome.storage.local,
+    today: localDate(),
+    clean: (text) => redact(text).text,
+  });
+  await log({
+    type: "llm",
+    ts: Date.now(),
+    node: "extractTasks",
+    model: used.model ?? used.provider ?? null,
+    latencyMs: Date.now() - started,
+    ok: r.failed === 0,
+    ...(r.errors.length && { error: r.errors.join(" | ") }),
+  });
+  return r;
+}
+
 // ---- Goals and modes -----------------------------------------------------
 
 async function setIntent({ title, next, from, fromLoopId }, sender) {
@@ -927,6 +957,7 @@ const HANDLERS = {
     if (r.connected && !r.needsPermission) {
       await memoryChanged();
       refreshProfile().catch(() => {});
+      refreshTaskList().catch(() => {});
     }
     return r;
   },
