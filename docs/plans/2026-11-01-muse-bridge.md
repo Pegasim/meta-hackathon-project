@@ -25,6 +25,8 @@ Out of scope: reading terminal output, sending agent messages to a model, approv
 
 Internal reminder subagents fire hooks with their own `session_id`, some after `Stop`.
 
+The answer is shown after `Stop`, once those are done: 3.2 s and 5.9 s later in two timed headless runs. The host therefore holds a turn's end until the hooks go quiet (`settle` in `bridge/status.mjs`).
+
 Not seen: approval in an interactive session, the event after an approval is answered, `StopFailure`, `request_user_input` (asked for it headless; the agent wrote the question as text).
 
 Default sessions use an approval judge, so few approvals may reach the person. `Stop` is likely the common "your turn".

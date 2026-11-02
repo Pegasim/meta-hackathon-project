@@ -27,7 +27,7 @@ test("a hook's status reaches the host's output, framed for Chrome, with no text
   send({ hook_event_name: "UserPromptSubmit", prompt: "hunter2" });
   hook(home, JSON.stringify({ hook_event_name: "PostToolUse", session_id: "subagent" }));
   send({ hook_event_name: "Stop", last_assistant_message: "hunter2?" });
-  await new Promise((r) => setTimeout(r, 900));
+  await new Promise((r) => setTimeout(r, 4400)); // a turn's end waits for the hooks to go quiet
   host.stdin.end();
   await new Promise((r) => host.on("exit", r));
 
@@ -44,6 +44,37 @@ test("a hook's status reaches the host's output, framed for Chrome, with no text
   );
   assert.doesNotMatch(out.toString(), /hunter2/);
   assert.doesNotMatch(fs.readFileSync(path.join(home, ".tuck/agent.jsonl"), "utf8"), /hunter2/);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test("Muse's answer on screen comes first: a turn's end waits, an approval does not", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "tuck-"));
+  const host = spawn(process.execPath, [path.join(bridge, "host.mjs")], { env: { HOME: home } });
+  let out = Buffer.alloc(0);
+  host.stdout.on("data", (d) => (out = Buffer.concat([out, d])));
+  const statuses = () => {
+    const seen = [];
+    for (let at = 0; at < out.length;) {
+      const size = out.readUInt32LE(at);
+      seen.push(JSON.parse(out.subarray(at + 4, at + 4 + size).toString()).status);
+      at += 4 + size;
+    }
+    return seen;
+  };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  await wait(300);
+  const send = (e) => hook(home, JSON.stringify({ session_id: "s1", ...e }));
+  send({ hook_event_name: "UserPromptSubmit" });
+  send({ hook_event_name: "PermissionRequest" });
+  await wait(900);
+  assert.deepEqual(statuses(), ["working", "waiting_for_user"], "the approval is on screen already");
+  send({ hook_event_name: "Stop", last_assistant_message: "Done." });
+  await wait(900);
+  assert.deepEqual(statuses(), ["working", "waiting_for_user"], "the end of the turn waits");
+  await wait(3500);
+  assert.deepEqual(statuses(), ["working", "waiting_for_user", "completed"]);
+  host.stdin.end();
+  await new Promise((r) => host.on("exit", r));
   fs.rmSync(home, { recursive: true, force: true });
 });
 

@@ -18,7 +18,9 @@ export function lineFor(event, ts) {
       return event.notification_type === "permission_prompt" ? line("waiting_for_user") : null;
     case "Stop":
       // A question in plain text also ends a turn. Only this yes or no leaves the script.
-      return line(/\?\s*$/.test(event.last_assistant_message ?? "") ? "waiting_for_user" : "completed");
+      return line(/\?\s*$/.test(event.last_assistant_message ?? "") ? "waiting_for_user" : "completed", {
+        turnEnd: true,
+      });
     case "StopFailure":
       return line("failed");
     case "SessionEnd":
@@ -34,6 +36,24 @@ export function lineFor(event, ts) {
 export function follow(session, line) {
   if (line.prompt) return { session: line.session, pass: line };
   return { session, pass: line.session === session ? line : null };
+}
+
+// Muse fires Stop, runs its helpers, and only then shows the answer: saying "done" at Stop
+// beats the screen by seconds. So a turn's end waits until the hooks of every session have
+// been quiet, for so long at most. held: { line, since, lastSeen } or null.
+export const SETTLE = { quietMs: 3500, mostMs: 15000 }; // helpers were up to 2.7 s apart
+
+// For every line read. pass: what follow() passed on, or null for another session's line.
+export function settle(held, pass, now) {
+  const kept = held && { ...held, lastSeen: now };
+  if (!pass) return { held: kept, send: [] };
+  if (pass.turnEnd) return { held: { line: pass, since: now, lastSeen: now }, send: [] };
+  // The session ending says nothing against the word; anything else means it went on.
+  return { held: null, send: pass.status === "unknown" && held ? [held.line, pass] : [pass] };
+}
+
+export function settled(held, now) {
+  return !!held && (now - held.lastSeen >= SETTLE.quietMs || now - held.since >= SETTLE.mostMs);
 }
 
 export const HOOK_EVENTS = [

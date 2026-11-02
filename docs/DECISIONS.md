@@ -6,6 +6,9 @@
 
 ## Decided
 
+**"Muse is done" waits for Muse's answer to be on screen (2026-11-02, issue #11).**
+Muse fires `Stop`, runs its internal helpers, and only then shows the answer: 3.2 s and 5.9 s later in two timed headless runs, with helpers up to 2.7 s apart. Tuck said "done" while the person still saw it working. No hook marks the answer being shown, so the bridge holds the end of a turn until hooks from every session have been quiet for 3.5 s, 15 s at most, so the word can trail the answer by that much. An approval goes at once, since Muse shows it already. The wait lives in the bridge: it is about Muse's timing, and the engine stays unaware of it.
+
 **One drift stays one drift, and words are spaced by time off task (2026-11-02, issue #37).**
 A recorded session showed two faults. Time waiting for the model never counted, so hopping faster than it answers looked like no drift at all. And any glance away ended the episode while the budget stayed high, so the next page fired a new L1 at once: eight words in 5.5 minutes, none past L1. The wait now counts once the model says unrelated, and the next word needs `escalateAfterSec` more seconds off task, whatever the clock says, because a glance or time in a terminal says nothing about drifting further. A drift ends on a real absence or once work has drained the budget well below the tolerance. Quiet after the last word holds for that page only: a new page starts over, or hopping would end in silence. A page still waiting counts as neutral, so no word is ever said about a page not yet judged.
 

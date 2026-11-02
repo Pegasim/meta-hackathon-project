@@ -5,13 +5,13 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { follow } from "./status.mjs";
+import { follow, settle, settled } from "./status.mjs";
 
 const file = path.join(os.homedir(), ".tuck", "agent.jsonl");
 const POLL_MS = 500;
 
-function send(message) {
-  const body = Buffer.from(JSON.stringify(message));
+function send({ status, session, ts }) {
+  const body = Buffer.from(JSON.stringify({ status, session, ts }));
   const size = Buffer.alloc(4);
   size.writeUInt32LE(body.length);
   process.stdout.write(Buffer.concat([size, body]));
@@ -29,8 +29,9 @@ const sizeOf = () => {
 let offset = sizeOf();
 let session = null;
 let partial = "";
+let held = null;
 
-setInterval(() => {
+function readNewLines() {
   const size = sizeOf();
   if (size < offset) offset = 0; // the file was replaced
   if (size === offset) return;
@@ -50,7 +51,17 @@ setInterval(() => {
     }
     const next = follow(session, line);
     session = next.session;
-    if (next.pass) send({ status: next.pass.status, session: next.pass.session, ts: next.pass.ts });
+    const settling = settle(held, next.pass, Date.now());
+    held = settling.held;
+    settling.send.forEach(send);
+  }
+}
+
+setInterval(() => {
+  readNewLines();
+  if (settled(held, Date.now())) {
+    send(held.line);
+    held = null;
   }
 }, POLL_MS);
 

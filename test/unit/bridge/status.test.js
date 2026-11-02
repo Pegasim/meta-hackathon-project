@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lineFor, follow } from "../../../bridge/status.mjs";
+import { lineFor, follow, settle, settled, SETTLE } from "../../../bridge/status.mjs";
 import { extensionId, withTuckHooks } from "../../../bridge/install.mjs";
 
 const event = (hook_event_name, extra = {}) => ({ hook_event_name, session_id: "s1", ...extra });
@@ -66,4 +66,51 @@ test("installing keeps the project's hooks and adds Tuck's only once", () => {
   );
   assert.ok(once.hooks.UserPromptSubmit);
   assert.equal(once.hooks.PreLLMCall, undefined, "large payloads are not subscribed to");
+});
+
+// Muse fires Stop, runs its helpers, and only then shows the answer (measured: 3.2 s).
+const stop = lineFor(event("Stop", { last_assistant_message: "All done." }), 1);
+const asks = lineFor(event("Stop", { last_assistant_message: "Which one?" }), 1);
+const line = (status) => ({ ts: 1, session: "s1", status });
+
+test("the end of a turn waits; anything else goes straight on", () => {
+  assert.deepEqual(settle(null, stop, 0).send, []);
+  assert.deepEqual(settle(null, asks, 0).send, []);
+  const approval = lineFor(event("PermissionRequest"), 1);
+  assert.deepEqual(settle(null, approval, 0), { held: null, send: [approval] });
+});
+
+test("a held turn end goes once the hooks have been quiet", () => {
+  const { held } = settle(null, stop, 0);
+  assert.equal(settled(held, SETTLE.quietMs - 1), false);
+  assert.equal(settled(held, SETTLE.quietMs), true);
+  assert.equal(settled(null, SETTLE.quietMs), false);
+});
+
+test("a helper still at work keeps it waiting, but only so long", () => {
+  let { held } = settle(null, stop, 0);
+  ({ held } = settle(held, null, SETTLE.quietMs - 1)); // a line from another session
+  assert.equal(settled(held, SETTLE.quietMs), false);
+  assert.equal(settled(held, 2 * SETTLE.quietMs - 1), true);
+  for (let at = 1000; at < SETTLE.mostMs; at += 1000) ({ held } = settle(held, null, at));
+  assert.equal(settled(held, SETTLE.mostMs), true, "helpers that never stop cannot hold it forever");
+});
+
+test("the agent working again drops the held word", () => {
+  const { held } = settle(null, stop, 0);
+  const working = line("working");
+  assert.deepEqual(settle(held, working, 100), { held: null, send: [working] });
+});
+
+test("the session ending does not lose the held word", () => {
+  const { held } = settle(null, stop, 0);
+  const gone = line("unknown");
+  assert.deepEqual(settle(held, gone, 100), { held: null, send: [stop, gone] });
+});
+
+test("a newer turn end replaces the held one", () => {
+  const first = settle(null, stop, 0);
+  const second = settle(first.held, asks, 100);
+  assert.deepEqual(second.send, []);
+  assert.equal(second.held.line, asks);
 });
