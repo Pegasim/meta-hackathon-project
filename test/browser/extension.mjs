@@ -22,6 +22,7 @@ const shots = process.env.SCREENSHOT_DIR;
 const calls = [];
 const nudgeCalls = [];
 const taskCalls = [];
+let tasksCut = false; // the task node's replies are cut at the token limit (#43)
 // Typed into a reply box, then left: form values are never read, so it must never
 // reach the model. Not secret-shaped, so redaction alone would not hide it.
 const DRAFT = "unsent draft about hunter2 and the moon";
@@ -178,6 +179,13 @@ const server = http.createServer((req, res) => {
     // The task list (agent/tasks.js): a note to keep watching is no task, a later note that
     // says "booked" closes the venue, and every other entry is a task, named anew.
     if (/short to-do list/.test(messages[0].content)) {
+      if (tasksCut)
+        return res.end(
+          JSON.stringify({
+            choices: [{ message: { content: null }, finish_reason: "length" }],
+            usage: { completion_tokens_details: { reasoning_tokens: 3998 } },
+          }),
+        );
       taskCalls.push(messages);
       const items = messages
         .at(-1)
@@ -867,9 +875,55 @@ const reread = async () => {
   await settingsPage.waitForTimeout(500);
 };
 await settingsPage.bringToFront();
+// Issue #43: while the node has judged nothing, the raw queue is not shown as tasks: only
+// a Markdown checkbox, with the reason for the rest. A reload still gives the reason.
+tasksCut = true;
+await importNotes();
+await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const { fromMarkdownFolder } = await import("/memory/markdown.js");
+  const memory = await Memory.open();
+  await memory.importEntries({
+    origin: "md:Vault",
+    name: "Vault",
+    ...fromMarkdownFolder([{ path: "todo.md", text: "- [ ] Water the plants" }], { folderName: "Vault" }),
+  });
+});
+await reread();
+const failedRows = await settingsPage.locator("#task-list").innerText();
+const failedStatus = await settingsPage.locator("#task-status").innerText();
+await settingsPage.reload();
+await settingsPage.waitForFunction(() => /could not read/.test(document.getElementById("task-status").textContent));
+const failedStatusLater = await settingsPage.locator("#task-status").innerText();
+await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  await (await Memory.open()).removeSource("md:Vault");
+});
+tasksCut = false;
 await importNotes();
 await reread();
 const taskRows = await settingsPage.locator("#task-list .row").count();
+// One note the node did not read stays off the list, next to what it did read (#43).
+tasksCut = true;
+await settingsPage.evaluate(
+  async (files) => {
+    const { Memory } = await import("/memory/index.js");
+    await (await Memory.open()).importFiles(files);
+  },
+  [
+    ...notes,
+    {
+      path: "notes/log/2026/fact1.md",
+      text: '---\ntitle: "Rent went up"\nkind: fact\ntopic: home\ndate: 2026-11-01\nsource: test\nid: fact1\n---\n\n- **Context:** Invented.\n- **Decision/Result:** Noted.\n- **Evidence:** none\n- **Next action:** Check it\n',
+    },
+  ],
+);
+await reread();
+const partialRows = await settingsPage.locator("#task-list").innerText();
+const partialStatus = await settingsPage.locator("#task-status").innerText();
+tasksCut = false;
+await importNotes();
+await reread();
 const showAllLabel = await settingsPage.locator("#all-tasks").innerText();
 await settingsPage.click("#all-tasks");
 await settingsPage.waitForTimeout(300);
@@ -900,6 +954,17 @@ server.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
 assert.deepEqual(errors, []);
+assert.match(failedRows, /Water the plants/);
+assert.doesNotMatch(failedRows, /Errand|Cart conversion/, "a failed run lists no raw note as a task");
+for (const status of [failedStatus, failedStatusLater]) {
+  assert.match(status, /could not read your notes yet/);
+  assert.match(status, /notes with a next action are not listed/);
+}
+assert.match(failedStatus, /reply cut at max_tokens \(length\)/);
+assert.match(failedStatusLater, /reply cut at max_tokens \(length\)/);
+assert.match(partialRows, /Run errand/);
+assert.doesNotMatch(partialRows, /Rent went up/, "with some entries judged, an unread one is still not listed");
+assert.match(partialStatus, /1 note with a next action/);
 assert.equal(greeting, "Hi. What are we working on today?");
 assert.equal(greetState, "checkin");
 assert.equal(restState, "resting", "Tuck rests on the page once the goal is set");

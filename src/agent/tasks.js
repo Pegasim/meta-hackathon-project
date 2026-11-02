@@ -15,6 +15,11 @@ const LATER = 6; // later notes on the same topic shown with each entry
 const KIN = 4; // and notes on the topic whose titles share its words
 const TASK_WORDS = 10;
 const FIELD_CHARS = 300;
+// Hidden reasoning counts against max_tokens: 15 invented entries took 6,700 to 10,629
+// reasoning tokens at the default effort (#43). A cap, not a target. null: the provider's
+// default effort, until `npm run eval:tasks` has compared the settings.
+const MAX_TOKENS = 32000;
+const EFFORT = null;
 
 const SYSTEM = [
   "You read entries from someone's own notes. Each one names a next action. Say for each",
@@ -135,11 +140,12 @@ export function parseTasks(text, count) {
   return out;
 }
 
-// One call for one batch. Returns {verdicts: Map | null, source, latencyMs, error?}.
-export async function judgeBatch(complete, items, { clean, now = Date.now } = {}) {
+// One call for one batch. Returns {verdicts: Map | null, source, latencyMs, error?, cut?}.
+// cut: the reply hit the token limit, so a smaller batch may fit.
+export async function judgeBatch(complete, items, { clean, now = Date.now, effort = EFFORT } = {}) {
   const started = now();
   const messages = taskMessages(items, { clean });
-  const opts = { maxTokens: 4000, temperature: 0 };
+  const opts = { maxTokens: MAX_TOKENS, temperature: 0, reasoningEffort: effort, whole: true };
   try {
     const first = await complete(messages, opts);
     try {
@@ -154,7 +160,13 @@ export async function judgeBatch(complete, items, { clean, now = Date.now } = {}
       return { verdicts: parseTasks(second, items.length), source: "llm", latencyMs: now() - started };
     }
   } catch (err) {
-    return { verdicts: null, source: "fallback", latencyMs: now() - started, error: err.message ?? String(err) };
+    return {
+      verdicts: null,
+      source: "fallback",
+      latencyMs: now() - started,
+      error: err.message ?? String(err),
+      cut: err.cut === true,
+    };
   }
 }
 
@@ -192,6 +204,13 @@ export async function extractTasks(
       const items = batches.shift();
       const r = await judgeBatch(complete, items, { clean, now });
       calls += 1;
+      // Cut at the limit: ask again in two halves, down to one entry, so that one long
+      // batch does not leave all of its entries unread.
+      if (r.cut && items.length > 1) {
+        const half = Math.ceil(items.length / 2);
+        batches.unshift(items.slice(0, half), items.slice(half));
+        continue;
+      }
       if (!r.verdicts) {
         failed += items.length;
         errors.add(r.error);
@@ -220,6 +239,7 @@ export async function refreshTasks(complete, { memory, storage, today, clean, on
   );
   const sample = await memory.profileSample({ limit: Infinity });
   const r = await extractTasks(complete, { candidates, sample, cache: taskVerdicts, clean, onProgress });
-  await storage.set({ taskVerdicts: r.cache });
+  // Why this run left entries unread, for a settings page opened later.
+  await storage.set({ taskVerdicts: r.cache, taskProblem: r.errors.join(" | ") || null });
   return { ...r, candidates: candidates.length };
 }

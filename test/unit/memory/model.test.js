@@ -67,3 +67,48 @@ test("a reply without message content is an error", async () => {
   const complete = modelClient({ provider: "meta", apiKey: "k" }, fakeFetch(200, { choices: [] }));
   await assert.rejects(complete([]), /no message content/);
 });
+
+const cutReply = {
+  choices: [{ message: { content: null }, finish_reason: "length" }],
+  usage: { completion_tokens_details: { reasoning_tokens: 3998 } },
+};
+
+test("a reply cut at the limit says so, with the reasoning that used the budget", async () => {
+  const complete = modelClient({ provider: "meta", apiKey: "k" }, fakeFetch(200, cutReply));
+  await assert.rejects(complete([]), (err) => {
+    assert.equal(err.message, "reply cut at max_tokens (length): 3,998 reasoning tokens");
+    assert.equal(err.cut, true);
+    return true;
+  });
+});
+
+test("an empty reply that was not cut names its finish_reason and is not marked cut", async () => {
+  const empty = { choices: [{ message: { content: null }, finish_reason: "content_filter" }] };
+  const complete = modelClient({ provider: "meta", apiKey: "k" }, fakeFetch(200, empty));
+  await assert.rejects(complete([]), (err) => {
+    assert.match(err.message, /no message content \(content_filter\)/);
+    assert.equal(err.cut, false);
+    return true;
+  });
+});
+
+test("cut text is returned unless the caller needs the whole reply", async () => {
+  const partial = { choices: [{ message: { content: '{"items": [' }, finish_reason: "length" }] };
+  const complete = modelClient({ provider: "meta", apiKey: "k" }, fakeFetch(200, partial));
+  assert.equal(await complete([]), '{"items": [');
+  await assert.rejects(complete([], { whole: true }), { cut: true });
+  const empty = { choices: [{ message: { content: "" }, finish_reason: "length" }] };
+  await assert.rejects(modelClient({ provider: "meta", apiKey: "k" }, fakeFetch(200, empty))([]), { cut: true });
+});
+
+test("reasoning_effort is sent only when set", async () => {
+  const seen = [];
+  const complete = modelClient(
+    { provider: "meta", apiKey: "k" },
+    fakeFetch(200, { choices: [{ message: { content: "ok" } }] }, seen),
+  );
+  await complete([]);
+  await complete([], { reasoningEffort: "low" });
+  assert.equal("reasoning_effort" in JSON.parse(seen[0].init.body), false);
+  assert.equal(JSON.parse(seen[1].init.body).reasoning_effort, "low");
+});
