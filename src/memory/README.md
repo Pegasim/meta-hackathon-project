@@ -26,6 +26,7 @@ maintain() (every 15 min): consolidate + prune activity older than 7 days + expo
 | `due.js` | Deadlines derived from entry text, and day arithmetic (see Entry format) |
 | `activity.js` | Tab events → time spans → per-site summary |
 | `distill.js` | Prompt and parser for turning activity into entries (the model call is passed in) |
+| `paste.js` | Prompt and parser for turning a pasted assistant memory into entries: redacted and capped first, one call per paste (the model call is passed in) |
 | `model.js` | OpenAI-compatible client; provider presets; settings storage |
 | `db.js` | IndexedDB stores: `entries`, `notes`, `activity`, `meta` |
 | `connector.js` | Brain folder access (File System Access API): read, permissions, write into `inbox/` |
