@@ -1,22 +1,44 @@
 // Tuck on the page: draws what background.js decided (see present.js) inside its own
 // Shadow DOM. It reads nothing from the page. Top right by default; the person can
-// drag it anywhere and it stays there on every page. The bubble opens toward the
+// drag it anywhere and it stays there on every page, the open ones too. The bubble opens toward the
 // roomier side (layout.js, injected first). Injected with chrome.scripting, possibly
 // several times into one page, so it installs once.
 (() => {
   if (window.__tuckInstalled) return;
   window.__tuckInstalled = true;
 
-  const { placement, clamp } = globalThis.tuckLayout;
+  const { placement, clamp, anchor, fromAnchor } = globalThis.tuckLayout;
   const HOST_ID = "tuck-companion";
+  const OWNER = chrome.runtime.id; // marks our host: another copy of Tuck shares the page's DOM
+  const ORPHAN_CHECK_MS = 2000;
   const SIZE = { width: 72, height: 72 };
   const DRAG_THRESHOLD = 4; // px; less is a click
   let root = null;
-  let pos = null; // {x, y} of Tuck, in viewport px
+  let pos = null; // {x, y} of Tuck on screen, in viewport px: saved, fitted to this window
+  let saved = null; // where the person put Tuck (layout.js anchor); fitting never changes it
+  let dragging = false;
   let current = null; // the view on screen
   let timers = [];
 
-  const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => {});
+  // Removed, disabled or reloaded, the extension leaves this script in the page with no
+  // runtime behind it, and its host in the DOM. Nothing tells the page, so look.
+  const orphaned = () => !chrome.runtime?.id;
+  const orphanCheck = setInterval(() => orphaned() && leavePage(), ORPHAN_CHECK_MS);
+  function leavePage() {
+    clearInterval(orphanCheck);
+    timers.forEach(clearTimeout);
+    timers = [];
+    window.removeEventListener("resize", place);
+    try {
+      chrome.storage.onChanged.removeListener(follow);
+    } catch {} // no runtime left to ask
+    root?.host.remove();
+    root = null;
+    current = null;
+    window.__tuckInstalled = false; // a later load of this extension may install here
+  }
+
+  const send = (msg) => (orphaned() ? leavePage() : chrome.runtime.sendMessage(msg).catch(() => {}));
   const view = () => ({ width: window.innerWidth, height: window.innerHeight });
 
   const STYLE = `
@@ -74,7 +96,7 @@
   const defaultPos = () => ({ x: window.innerWidth - SIZE.width - 16, y: 16 });
 
   function place() {
-    pos = clamp(pos ?? defaultPos(), SIZE, view());
+    pos = clamp(saved ? fromAnchor(saved, SIZE, view()) : defaultPos(), SIZE, view());
     const d = dock();
     d.style.left = `${pos.x}px`;
     d.style.top = `${pos.y}px`;
@@ -85,36 +107,46 @@
 
   async function loadPos() {
     const { tuckPosition } = await chrome.storage.local.get("tuckPosition");
-    if (tuckPosition) pos = tuckPosition;
+    saved = tuckPosition ?? null;
   }
+
+  // Dragged in another tab: this one follows, also while in the background. Our own
+  // drag is already on screen.
+  function follow(changes, area) {
+    if (area !== "local" || !changes.tuckPosition || dragging) return;
+    saved = changes.tuckPosition.newValue ?? null;
+    if (root?.isConnected) place();
+  }
+  chrome.storage.onChanged.addListener(follow);
 
   function makeDraggable(avatar) {
     let start = null;
-    let moved = false;
+    let dragged = false;
     avatar.addEventListener("pointerdown", (e) => {
       start = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
-      moved = false;
+      dragged = false;
       avatar.setPointerCapture(e.pointerId);
     });
     avatar.addEventListener("pointermove", (e) => {
       if (!start) return;
       const dx = e.clientX - start.px;
       const dy = e.clientY - start.py;
-      if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-      moved = true;
+      if (!dragged && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      dragged = dragging = true;
       avatar.classList.add("dragging");
-      pos = { x: start.x + dx, y: start.y + dy };
+      saved = anchor(clamp({ x: start.x + dx, y: start.y + dy }, SIZE, view()), SIZE, view());
       place();
     });
     avatar.addEventListener("pointerup", () => {
       if (!start) return;
       start = null;
+      dragging = false;
       avatar.classList.remove("dragging");
-      if (moved) chrome.storage.local.set({ tuckPosition: pos });
+      if (dragged) chrome.storage.local.set({ tuckPosition: saved });
     });
     // A drag ends with a click event too; only a real click counts.
     avatar.addEventListener("click", (e) => {
-      if (moved) return ((moved = false), e.preventDefault());
+      if (dragged) return ((dragged = false), e.preventDefault());
       if (current?.bubble) closeBubble();
       else send({ type: "tuck-click" });
     });
@@ -122,9 +154,19 @@
 
   // ---- Drawing -------------------------------------------------------------
 
+  // One pet per page. A host left by an earlier load of this extension, or by a version
+  // without the owner mark, has nobody drawing it: it goes. A host of another copy that
+  // is still installed stays, and this copy does not draw, so two copies never fight;
+  // once that copy is gone its host leaves within ORPHAN_CHECK_MS. Returns whether Tuck
+  // is ours to draw.
   function ensureRoot({ svg, css }) {
-    if (root?.isConnected) return;
+    if (root?.isConnected) return true;
+    for (const other of document.querySelectorAll(`#${HOST_ID}`)) {
+      if (other.dataset.owner && other.dataset.owner !== OWNER) return false;
+      other.remove();
+    }
     const host = el("div", { id: HOST_ID });
+    host.dataset.owner = OWNER;
     const shadow = host.attachShadow({ mode: "open" });
     const avatar = el("button", { className: "avatar", ariaLabel: "Open Tuck", title: "Tuck — drag to move" });
     avatar.innerHTML = svg;
@@ -141,6 +183,7 @@
     makeDraggable(avatar);
     place();
     window.addEventListener("resize", place);
+    return true;
   }
 
   function setState(state) {
@@ -262,7 +305,7 @@
 
   async function show(v, assets) {
     if (!root?.isConnected) await loadPos();
-    ensureRoot(assets);
+    if (!ensureRoot(assets)) return;
     // Quiet presence never interrupts what is on screen.
     if (v.quiet && current) return;
     timers.forEach(clearTimeout);

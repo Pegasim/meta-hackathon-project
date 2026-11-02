@@ -30,6 +30,7 @@ output, no tool calls · `tuck/` Tuck on the page · `popup/`, `options/`, `shar
 | test — integration | `npm run test:browser && npm run test:e2e` |
 | test — live | `node --env-file=.env test/live/model.mjs` (real API; only when asked) |
 | eval | `npm run eval` (relevance, real API; `REPS=1` for a quick run) |
+| eval — tasks | `npm run eval:tasks` (to-do list node, real API; `REPS=1` for a quick run) |
 | format | `npx prettier --write <file>` (no lint; never reformat untouched files) |
 | typecheck | none (plain JS) |
 

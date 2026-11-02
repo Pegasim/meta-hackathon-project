@@ -44,7 +44,8 @@ await memory.syncBrain({ prompt });             // re-import; prompt: true only 
 await memory.exportPending({ prompt });         // write consolidated own entries into its inbox/
 
 // Entries
-await memory.add({ kind, topic, title, context, result, evidence?, next? });
+await memory.add({ kind, topic, title, context, result, evidence?, next? }); // the stored entry, with its id
+await memory.remove(id, { key });               // take it back; see Removing an entry
 await memory.consolidate();                     // { accepted, duplicates, rejected, redactions }
 await memory.recall("query", { limit });        // [{ ref, title, score, item }]
 await memory.openLoops();                       // entries with a next action
@@ -73,7 +74,8 @@ memory.refresh();                              // drop this instance's copy; the
 await memory.version();                        // the stamp of the last write by any instance
 
 // Redaction for any text that leaves the device (a page excerpt): { text, count }
-import { redact } from "../memory/index.js";
+// entryKey(entry): its date, topic and title, the second way remove() finds it
+import { redact, entryKey } from "../memory/index.js";
 ```
 
 ## Entry format
@@ -107,6 +109,16 @@ One format for everything. An entry is the second-brain record (`Date · Context
 **Task queue.** `taskQueue()` orders open loops by time left, as plain arithmetic with no model call: dated loops soonest first, then undated ones newest first, then loops whose deadline passed more than `staleAfter` days ago (14 by default), because nothing marks a loop done and an old note would otherwise sit at the top forever. Days are counted on the user's local date, not UTC (`localDate()`).
 
 **Ids.** An entry read from `notes/log/` keeps the `id` in its file. Every other entry gets `entryId()`: a hash of its date, topic and title plus its title, context, result, evidence and next. The same entry gets the same id on every import, and editing any of those fields gives it a new one. Whether an inbox entry keeps its id once the brain's own `consolidate` has filed it is not verified.
+
+**Removing an entry.** `remove(id, { key })` takes back an entry the extension wrote, such as the preference a lasting "This is for my task" adds, once the label is forgotten in settings. `id` is what `add()` returned; consolidation keeps it as `addedAs` when redaction gives the entry a new one. `key` is `entryKey()`, for a copy the brain filed under an id of its own.
+
+| Where the entry is | What `remove()` does |
+|---|---|
+| This memory only (inbox, or log and not exported) | Deletes it. `exportPending()` never sees it. |
+| Exported, and its file is still in the brain's `inbox/` | Deletes it here, and the file too when write access is already granted (no prompt). The file is found by the name it was written under, and deleted only if it still holds that entry. Without access it stays, and `file` says `"kept"`. |
+| Filed by the brain (`inbox/_done/`, `notes/log/`) | Deletes it here and leaves the brain's files alone. |
+
+In every case its id and key are kept in `meta` (`removed`), and `importFiles()` skips an entry that matches either, so a sync of a brain that still holds it does not bring it back. Other instances see the removal on their next read, as with any write. To take it out of the brain itself, delete it there.
 
 **Profile.** `profile()` is what `src/agent/profile.js` read from the newest entries (`profileSample()`): a short summary, the topics that are the person's work, and the sites that are. It is stored in IndexedDB `meta` and read from there on every call, so unlike the entries it is never stale.
 

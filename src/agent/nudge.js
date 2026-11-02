@@ -21,7 +21,7 @@ const SYSTEM = [
   '- "Still on YouTube? Let\'s get back to testing the extension."',
   '- "That\'s 5 minutes on LinkedIn. Back to the hackathon project?"',
   '- "Is this for the hackathon project?"',
-  '- "Lots of tab switching. Want to pick one thing?"',
+  '- "These tabs don\'t look like your task. Want to pick one thing?"',
   '- "Welcome back. You were testing the extension."',
   '- "Break\'s over. Ready to get back to it?"',
   "Write a fresh line in that voice; do not copy one word for word.",
@@ -34,7 +34,8 @@ const SITUATION = {
       ? "They are still away from work: this is the second nudge."
       : "They just drifted away from work: this is the first nudge.",
   unsure: () => "You are not sure this page is unrelated: ask, briefly, whether it is part of their task.",
-  fragmentation: () => "They keep switching between tabs: invite them to pick one thing.",
+  fragmentation: () =>
+    "They keep moving between tabs that do not look like their task: invite them to pick one thing, without blaming the switching.",
   return: () => "They are back at the computer after a while: welcome them and name where they were.",
   break_over: () => "Their break just ended: invite them back.",
 };

@@ -21,6 +21,7 @@ const shots = process.env.SCREENSHOT_DIR;
 // calls the video unrelated and everything else related.
 const calls = [];
 const nudgeCalls = [];
+const taskCalls = [];
 // Typed into a reply box, then left: form values are never read, so it must never
 // reach the model. Not secret-shaped, so redaction alone would not hide it.
 const DRAFT = "unsent draft about hunter2 and the moon";
@@ -165,6 +166,27 @@ const server = http.createServer((req, res) => {
       nudgeCalls.push(messages);
       const message = "Still on the video? Back to the failing test.";
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] }));
+    }
+    // The task list (agent/tasks.js): a note to keep watching is no task, a later note that
+    // says "booked" closes the venue, and every other entry is a task, named anew.
+    if (/short to-do list/.test(messages[0].content)) {
+      taskCalls.push(messages);
+      const items = messages
+        .at(-1)
+        .content.split("\n\n")
+        .filter((b) => /^\d+\. /.test(b))
+        .map((b) => {
+          const title = b.split("\n")[0].replace(/^\d+\. \[[^\]]+\] [a-z]+, [\d-]+: /, "");
+          return {
+            n: Number(b.match(/^\d+/)[0]),
+            is_task: !/Keep an eye/.test(b),
+            still_open: !/booked/.test(b),
+            task: title.replace(/^Errand/, "Run errand"),
+            who: null,
+            personal: false,
+          };
+        });
+      return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ items }) } }] }));
     }
     calls.push(messages);
     // Notes that name the person spoken to: that conversation is work.
@@ -680,7 +702,108 @@ const labelLines = await settingsPage.locator("#label-list").innerText();
 await settingsPage.locator("#label-list button").first().click();
 await settingsPage.waitForTimeout(300);
 const learnedAfter = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-labels" }));
+
+// "This is for my task" on a third day lasts, and writes a preference to memory; Forget in
+// settings takes that back too, so the model stops reading it (#25). The two earlier days
+// are seeded: a test cannot wait for them.
+const lastingKey = await popup.evaluate(async (url) => {
+  const { openStore } = await import("/attention/store.js");
+  const { labelKeys, hostOf } = await import("/attention/relevance.js");
+  const { dayKey } = await import("/attention/intents.js");
+  const { DEFAULTS } = await import("/attention/config.js");
+  const st = await openStore();
+  const { topic } = await st.activeIntent();
+  const title = "Top 10 F1 crashes - Video";
+  const key = labelKeys(topic, url, title)[0];
+  const day = (n) => dayKey(Date.now() - n * 86400000, DEFAULTS);
+  const ts = Date.now() - 86400000;
+  await st.putLabel({ key, label: "related", topic, host: hostOf(url), title, ts, days: [day(2), day(1)], until: ts });
+  return key;
+}, video);
+const lastingTab = await ctx.newPage();
+await lastingTab.goto(video);
+await lastingTab.bringToFront();
+let driftLasting = await waitForNewDrift(driftMaybe.id);
+while (driftLasting.evidence.url !== video) driftLasting = await waitForNewDrift(driftLasting.id);
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "respond", choice: "related" }));
+const preferences = (key) =>
+  popup.evaluate(async (key) => {
+    const { openStore } = await import("/attention/store.js");
+    const { Memory } = await import("/memory/index.js");
+    const label = await (await openStore()).getLabel(key);
+    const hits = await (await Memory.open()).recall("localhost counts as work");
+    return { label, titles: hits.filter((h) => h.item.kind === "preference").map((h) => h.title) };
+  }, key);
+const lasting = await preferences(lastingKey);
+await lastingTab.close();
+await settingsPage.reload();
+const lastingRow = settingsPage.locator("#label-list .row", { hasText: "Top 10 F1 crashes" });
+await lastingRow.locator("button").click();
+await settingsPage.waitForTimeout(300);
+const forgotten = await preferences(lastingKey);
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+
+// Issue #29: the to-do list is what the task node kept from the open loops, the first 7 in
+// sight. A note to keep watching and a task a later note closed are not on it, and Not a
+// task holds over a re-import, which asks the model about nothing it has already read.
+const notes = (() => {
+  const day = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const note = (id, kind, topic, date, title, next) => ({
+    path: `notes/log/2026/${id}.md`,
+    text: [
+      "---",
+      `title: "${title}"`,
+      `kind: ${kind}`,
+      `topic: ${topic}`,
+      `date: ${date}`,
+      "source: test",
+      `id: ${id}`,
+      "---",
+      "",
+      "- **Context:** Invented for the test.",
+      "- **Decision/Result:** Noted.",
+      "- **Evidence:** none",
+      `- **Next action:** ${next}`,
+    ].join("\n"),
+  });
+  return [
+    ...Array.from({ length: 9 }, (_, i) =>
+      note(`err${i + 1}`, "todo", "errands", day(i + 2), `Errand ${i + 1}`, "Do it"),
+    ),
+    note("watch1", "fact", "shop", day(3), "Cart conversion dipped", "Keep an eye on the conversion rate"),
+    note("venue1", "todo", "party", day(6), "Book the venue", "Call the hall"),
+    note("venue2", "event", "party", day(4), "The hall is booked for Saturday", "none"),
+  ];
+})();
+const importNotes = () =>
+  settingsPage.evaluate(async (files) => {
+    const { Memory } = await import("/memory/index.js");
+    await (await Memory.open()).importFiles(files);
+  }, notes);
+const reread = async () => {
+  await settingsPage.click("#reread");
+  await settingsPage.waitForFunction(() => !/^Reading/.test(document.getElementById("profile-status").textContent));
+  await settingsPage.waitForFunction(() => !/^Reading/.test(document.getElementById("task-status").textContent));
+  await settingsPage.waitForTimeout(500);
+};
+await settingsPage.bringToFront();
+await importNotes();
+await reread();
+const taskRows = await settingsPage.locator("#task-list .row").count();
+const showAllLabel = await settingsPage.locator("#all-tasks").innerText();
+await settingsPage.click("#all-tasks");
+await settingsPage.waitForTimeout(300);
+const allTaskText = await settingsPage.locator("#task-list").innerText();
+const askedTasks = taskCalls.length;
+await settingsPage
+  .locator("#task-list .row", { hasText: "Run errand 1" })
+  .getByRole("button", { name: "Not a task" })
+  .click();
+await settingsPage.waitForTimeout(300);
+await importNotes();
+await reread();
+const taskTextAfter = await settingsPage.locator("#task-list").innerText();
+const askedAgain = taskCalls.length - askedTasks;
 
 // The exported event log.
 await settingsPage.bringToFront();
@@ -721,7 +844,10 @@ assert.equal(nudgeState, "thinking");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
 const looks = calls.filter((m) => /excerpt/.test(m[0].content));
 const judged = calls.filter((m) => !/excerpt/.test(m[0].content));
-const videoCalls = judged.filter((m) => /Top 10 F1 crashes/.test(m.at(-1).content)).length;
+// Under the first goal: a later goal judges it afresh (the Forget step, #25).
+const videoCalls = judged.filter((m) =>
+  /Goal: Fix the checkout bug[\s\S]*Top 10 F1 crashes/.test(m.at(-1).content),
+).length;
 assert.equal(videoCalls, 1, `the video is judged once, then cached (${videoCalls} calls)`);
 assert.ok(["·", "!"].includes(badge), `badge: ${badge}`);
 assert.equal(cardText, "Still on the video? Back to the failing test.", "L2 uses the drafted line too");
@@ -834,10 +960,29 @@ assert.ok(loopsAfterSaid.visa01.saidOn, "said once it is on screen");
 assert.ok(loopsAfterDone.visa01.doneAt, "Done is remembered");
 assert.equal(reminderAgain, 0, "and it does not come back");
 assert.equal(driftMaybe.evidence.unsure, true, "Tuck asks on a page it is unsure about");
+assert.equal(askedTasks, 1, "eleven open loops, one call");
+assert.equal(taskRows, 7, "the first 7 in sight");
+assert.match(showAllLabel, /Show all 9/, "the rest behind Show all");
+assert.match(allTaskText, /Run errand 1\b[\s\S]*Run errand 9/, "the node's titles, newest first");
+assert.doesNotMatch(allTaskText, /conversion|venue|Book the/i, "no watch note, and no task a later note closed");
+assert.doesNotMatch(taskTextAfter, /Run errand 1\b/, "Not a task holds over a re-import");
+assert.match(taskTextAfter, /Run errand 2/);
+assert.equal(askedAgain, 0, "a re-import with nothing new asks nothing");
+assert.ok(
+  taskCalls.every((m) => !m.at(-1).content.includes(DRAFT)),
+  "the task node sees only notes",
+);
 const no = learned.find((l) => l.label === "unrelated");
 assert.equal(no?.host, "localhost", "the no is remembered");
 assert.match(labelLines, /localhost.*not work/, "settings shows what was learned");
 assert.ok(learnedAfter.length < learned.length, "and can forget it");
+assert.equal(driftLasting.evidence.url, video);
+assert.equal(lasting.label.until, null, "given on a third day, the site label lasts");
+assert.ok(lasting.label.memoryEntry?.id, "the label keeps the memory entry it wrote");
+assert.equal(lasting.titles.length, 1, `one preference written: ${lasting.titles}`);
+assert.match(lasting.titles[0], /^localhost counts as work for /);
+assert.equal(forgotten.label, undefined, "Forget removes the label");
+assert.deepEqual(forgotten.titles, [], "and the preference: recall no longer finds it");
 assert.equal(selfReturn.id, drift5.id);
 assert.equal(selfReturn.resolvedBy, "self", "a drift ends on its own when you go back to work");
 assert.equal(cardAfterSelfReturn, false, "no stale card in the popup");

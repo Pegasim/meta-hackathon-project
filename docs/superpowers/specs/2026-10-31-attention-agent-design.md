@@ -122,7 +122,7 @@ Attention is "the senses and the reflex": it runs every second and is determinis
 **Drift budget**
 - Every second in an unrelated context adds to the budget; in a related context the budget decays; neutral holds it steady.
 - Budget over the tolerance threshold → `drift` trigger.
-- Tab switches in the last 2 min and their unrelated share are also tracked → `fragmentation` trigger.
+- Tab switches in the last 2 min and their unrelated share are also tracked → `fragmentation` trigger. Off by default since 2026-11-02 (#30); only confident unrelated time counts.
 - Starting values (the builder tunes them, verified by replay): tolerance ~45 s; decay ~2× the rate of unrelated accumulation; fragmentation: ≥6 switches in 2 min with ≥50% of the time unrelated.
 
 **State machine**

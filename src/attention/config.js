@@ -5,6 +5,7 @@ export const DEFAULTS = Object.freeze({
   toleranceSec: 45, // drift budget that triggers a drift
   decayRate: 2, // related time drains the budget this many times faster than unrelated fills it
   unsureConfidence: 0.6, // an "unrelated" below this is unsure: never past L1
+  fragmentation: false, // the tab-hopping nudge: off, it read fast work as drift (#30); drift covers most of it
   fragWindowSec: 120,
   fragMinSwitches: 6,
   fragUnrelatedShare: 0.5,

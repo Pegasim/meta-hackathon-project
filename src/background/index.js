@@ -2,7 +2,7 @@
 // engine inputs, processed one at a time; engine state lives in
 // chrome.storage.session (the worker can stop at any moment); every input and
 // output goes to the event log; unknown pages are judged by the model (LLM#1).
-import { Memory, redact } from "../memory/index.js";
+import { Memory, redact, entryKey } from "../memory/index.js";
 import { modelClient, loadModelSettings } from "../memory/model.js";
 import { withOverrides } from "../attention/config.js";
 import {
@@ -18,7 +18,7 @@ import {
   labelHolds,
 } from "../attention/relevance.js";
 import { readingSettings, mayRead } from "../attention/reading.js";
-import { stillOpen, sayable, pickReminder, markSaid, markDone } from "../attention/reminders.js";
+import { stillOpen, sayable, pickReminder, markSaid, markDone, markNotTask, taskList } from "../attention/reminders.js";
 import { initialState, step, nextWakeAt } from "../attention/engine.js";
 import { makeIntent, isExpired, dayKey } from "../attention/intents.js";
 import { createSerialQueue } from "../attention/queue.js";
@@ -26,6 +26,7 @@ import { openStore } from "../attention/store.js";
 import { classifyRelevance, privateSettings } from "../agent/relevance.js";
 import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
+import { refreshTasks } from "../agent/tasks.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
@@ -43,8 +44,7 @@ const todayLabel = (d = new Date()) => `${d.toLocaleDateString("en-US", { weekda
 // The tasks close enough for Tuck to name out loud (attention/reminders.js). Anything else
 // never reaches the prompt, so it cannot be nagged about.
 async function dueSoon({ limit = 2 } = {}) {
-  const queue = await (await memory).taskQueue({ today: localDate(), limit: Infinity }).catch(() => []);
-  return sayable(queue, await loadLoops(), localDate())
+  return sayable(await toDo(), await loadLoops(), localDate())
     .slice(0, limit)
     .map((e) => ({ title: e.title, when: dueLabel(e.daysLeft) }));
 }
@@ -52,6 +52,14 @@ async function dueSoon({ limit = 2 } = {}) {
 // What has been said and finished, by entry id (attention/reminders.js).
 const loadLoops = async () => (await chrome.storage.local.get("loops")).loops ?? {};
 const saveLoops = (loops) => chrome.storage.local.set({ loops });
+
+// The to-do list: memory's queue with what the task node made of it (attention/reminders.js
+// taskList, agent/tasks.js). Before the node has run, memory's queue as it is.
+async function toDo(today = localDate()) {
+  const queue = await (await memory).taskQueue({ today, limit: Infinity }).catch(() => []);
+  const { taskVerdicts = {}, taskSettings = {} } = await chrome.storage.local.get(["taskVerdicts", "taskSettings"]);
+  return taskList(queue, { verdicts: taskVerdicts, hidePersonal: !!taskSettings.hidePersonal });
+}
 
 // ---- Schedules -----------------------------------------------------------
 
@@ -568,8 +576,8 @@ async function showWithReminder(tabId, view, goalTitle) {
   const today = localDate();
   const { mode } = await loadEngine();
   const quiet = mode === "dnd" || mode === "off";
-  const queue = await (await memory).taskQueue({ today, limit: Infinity }).catch(() => []);
-  const item = view?.bubble && !quiet ? pickReminder(queue, { goalTitle, loops: await loadLoops(), today }) : null;
+  const item =
+    view?.bubble && !quiet ? pickReminder(await toDo(today), { goalTitle, loops: await loadLoops(), today }) : null;
   if (!item) return showTuck(tabId, view);
   const reminder = { id: item.id, title: item.title, line: reminderLine(dueLabel(item.daysLeft)) };
   const shown = await showTuck(tabId, { ...view, bubble: { ...view.bubble, reminder } });
@@ -581,11 +589,12 @@ async function showWithReminder(tabId, view, goalTitle) {
   return shown;
 }
 
-// On it: nothing more today, already noted when it was said. Done stays done. Switch:
-// it becomes the goal.
+// On it: nothing more today, already noted when it was said. Done stays done, and so does
+// Not a task (from settings). Switch: it becomes the goal.
 async function reminderAnswer({ id, title, choice }, sender) {
   await log({ type: "feedback", ts: Date.now(), kind: "reminder", payload: { id, choice } });
   if (choice === "done") await saveLoops(markDone(await loadLoops(), id, Date.now()));
+  if (choice === "not_task") await saveLoops(markNotTask(await loadLoops(), id, Date.now()));
   if (choice === "switch") return setIntent({ title, from: "tuck", fromLoopId: id }, sender);
   return { ok: true };
 }
@@ -707,11 +716,7 @@ async function greet(tabId) {
   // push a long title past the 120-character limit an entry validates against.
   const loops = [
     ...(expired?.expiredAt && !expired.doneAt ? [{ title: expired.title }] : []),
-    ...stillOpen(await (await memory).taskQueue({ today: localDate(), limit: Infinity }), await loadLoops()).map(
-      (e) => ({
-        title: e.title,
-      }),
-    ),
+    ...stillOpen(await toDo(), await loadLoops()).map((e) => ({ title: e.title })),
   ];
   const view = present({ trigger: { kind: "session_start", level: 2, id: "greeting" }, loops });
   const shown = await showWithReminder(tabId, view, expired?.expiredAt && !expired.doneAt ? expired.title : null);
@@ -809,27 +814,53 @@ async function markLabel(page, intent, ts, verdict = "related") {
     },
     cfg,
   );
-  // Shown in settings, where a label can be forgotten.
-  await st.putLabel(chat ? { ...label, who: page.surface.labels?.[0] } : label);
+  // Shown in settings, where a label can be forgotten. The memory entry it wrote, if any,
+  // goes with it (Forget).
+  const stored = {
+    ...label,
+    ...(chat && { who: page.surface.labels?.[0] }),
+    ...(prev?.label === "related" && prev.memoryEntry && { memoryEntry: prev.memoryEntry }),
+  };
+  await st.putLabel(stored);
   await log({ type: "feedback", ts, kind: "label", payload: label });
   if (verdict !== "related") return;
   if (key !== noKey) await st.deleteLabel(noKey); // a yes takes back an earlier no
   const lastedBefore = prev?.label === "related" && prev.days && prev.until == null;
   if (label.until != null || lastedBefore) return;
-  await (
+  const entry = await (
     await memory
   ).add({
     kind: "preference",
     topic: intent.topic,
-    // One person's answer says nothing of the rest of the site.
-    title:
-      `${chat ? `Conversations with ${page.surface.labels?.[0] ?? "this person"} on ${page.host} count` : `${page.host} counts`} as work for ${intent.topic}`.slice(
-        0,
-        120,
-      ),
+    title: preferenceTitle({ topic: intent.topic, host: page.host, chat, who: stored.who }),
     context: "Marked by the user from a nudge.",
     result: "related",
   });
+  await st.putLabel({ ...stored, memoryEntry: { id: entry.id, key: entryKey(entry) } });
+}
+
+// What a lasting "This is for my task" says in memory. One person's answer says nothing
+// of the rest of the site.
+const preferenceTitle = ({ topic, host, chat, who }) =>
+  `${chat ? `Conversations with ${who ?? "this person"} on ${host} count` : `${host} counts`} as work for ${topic}`.slice(
+    0,
+    120,
+  );
+
+// Forget on a label also takes back the preference it wrote, so notesFor stops sending it
+// to the model. A label from before the entry was kept on it is matched by its title.
+// Returns whether an entry was removed.
+async function forgetPreference(label) {
+  if (label?.label !== "related") return false;
+  const m = await memory;
+  if (label.memoryEntry) return (await m.remove(label.memoryEntry.id, { key: label.memoryEntry.key })).removed > 0;
+  const title = preferenceTitle({ ...label, chat: label.surface === "conversation" });
+  const hits = (await m.recall(title, { limit: 20 })).filter(
+    (h) => h.item.kind === "preference" && h.item.topic === label.topic && h.item.title === title,
+  );
+  let removed = 0;
+  for (const h of hits) removed += (await m.remove(h.item.id)).removed;
+  return removed > 0;
 }
 
 // ---- Who this person is (LLM#5) ------------------------------------------
@@ -851,6 +882,31 @@ async function refreshProfile() {
     latencyMs: r.latencyMs,
     ok: !!r.profile,
     error: r.error,
+  });
+  return r;
+}
+
+// Which open loops are real tasks (LLM#6), at re-sync. Only new or changed entries cost a
+// call; the settings page runs the same step after its own imports.
+async function refreshTaskList() {
+  const settings = await loadModelSettings();
+  if (!settings) return { source: "no-model" };
+  const used = privateSettings(settings);
+  const started = Date.now();
+  const r = await refreshTasks(modelClient(used), {
+    memory: await memory,
+    storage: chrome.storage.local,
+    today: localDate(),
+    clean: (text) => redact(text).text,
+  });
+  await log({
+    type: "llm",
+    ts: Date.now(),
+    node: "extractTasks",
+    model: used.model ?? used.provider ?? null,
+    latencyMs: Date.now() - started,
+    ok: r.failed === 0,
+    ...(r.errors.length && { error: r.errors.join(" | ") }),
   });
   return r;
 }
@@ -949,6 +1005,7 @@ const HANDLERS = {
     if (r.connected && !r.needsPermission) {
       await memoryChanged();
       refreshProfile().catch(() => {});
+      refreshTaskList().catch(() => {});
     }
     return r;
   },
@@ -959,8 +1016,12 @@ const HANDLERS = {
   // front judged again.
   "get-labels": async () => (await (await store).recentLabels(50)).filter((l) => labelHolds(l, Date.now())),
   "delete-label": async ({ key }) => {
-    await (await store).deleteLabel(key);
-    await feed({ type: "session", ts: Date.now(), kind: "memory" });
+    const st = await store;
+    const label = await st.getLabel(key);
+    await st.deleteLabel(key);
+    // A note left memory: verdicts judged with it are judged again.
+    if (await forgetPreference(label)) await memoryChanged();
+    else await feed({ type: "session", ts: Date.now(), kind: "memory" });
     return sense(activeTab);
   },
   // An import ran in the settings page. Memory's own reads notice it; what was judged
