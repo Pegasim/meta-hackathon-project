@@ -1,17 +1,18 @@
 // Public memory API. The extension talks to memory only through this class.
 import { makeEntry } from "./entry.js";
 import { loadBrain, openLoops } from "./brain.js";
-import { consolidate, entryId, entryKey } from "./consolidate.js";
+import { consolidate, entryId, entryKey, isRemoved } from "./consolidate.js";
 import { buildIndex, search, entryDoc, noteDoc } from "./recall.js";
 import { contextPack, renderPack, latestIntent, taskQueue } from "./context.js";
 import { IDLE_GAP, toSpans, clipSpans, summarize, renderSummary } from "./activity.js";
 import { distillMessages, parseEntries } from "./distill.js";
 import * as db from "./db.js";
-import { readBrainFolder, writeInboxEntry, permission } from "./connector.js";
+import { readBrainFolder, writeInboxEntry, removeInboxEntry, permission } from "./connector.js";
 
 // Secret-shaped strings (keys, tokens, "password: …") replaced by [REDACTED]: for any
-// text that leaves the device, such as a page excerpt. Returns { text, count }.
-export { redact } from "./consolidate.js";
+// text that leaves the device, such as a page excerpt. Returns { text, count }. entryKey:
+// an entry's date, topic and title, which remove() also takes.
+export { redact, entryKey } from "./consolidate.js";
 
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
@@ -63,12 +64,21 @@ export class Memory {
     return db.getMeta(this.#db, "version");
   }
 
+  // What the person took back with remove(): { ids, keys }.
+  async #removed() {
+    return (await db.getMeta(this.#db, "removed")) ?? { ids: [], keys: [] };
+  }
+
   // ---- Brain -------------------------------------------------------------
 
   // Import a brain snapshot: [{ path, text }]. Replaces the previous import and keeps
   // the extension's own entries, except those the brain now holds (exported earlier).
+  // An entry removed here stays out, though the brain still holds it.
   async importFiles(files) {
-    const { entries, documents, skipped } = loadBrain(files);
+    const removed = await this.#removed();
+    const read = loadBrain(files);
+    const { documents, skipped } = read;
+    const entries = read.entries.filter((e) => !isRemoved(e, removed));
     const brainKeys = new Set(entries.map(entryKey));
     const own = (await db.getAll(this.#db, "entries")).filter((e) => !e.path && !brainKeys.has(entryKey(e)));
     await db.clear(this.#db, "entries");
@@ -119,18 +129,16 @@ export class Memory {
     if (!dir) return { exported: 0, connected: false };
     if ((await permission(dir, "readwrite", { prompt })) !== "granted") return { exported: 0, needsPermission: true };
     const pending = (await db.byStatus(this.#db, "log")).filter((e) => !e.path && !e.exported);
-    for (const e of pending) await writeInboxEntry(dir, e, host);
-    await db.putAll(
-      this.#db,
-      "entries",
-      pending.map((e) => ({ ...e, exported: true })),
-    );
+    const written = [];
+    for (const e of pending) written.push({ ...e, exported: true, exportedAs: await writeInboxEntry(dir, e, host) });
+    await db.putAll(this.#db, "entries", written);
     return { exported: pending.length };
   }
 
   // ---- Entries -----------------------------------------------------------
 
-  // New entry from the extension. Lands in the inbox until consolidate().
+  // New entry from the extension. Lands in the inbox until consolidate(). Returns the
+  // stored entry; its id is what remove() takes.
   async add(fields) {
     const entry = makeEntry({ source: "extension", ...fields });
     const stored = { ...entry, id: entryId(entry), status: "inbox", ts: Date.now() };
@@ -162,6 +170,39 @@ export class Memory {
       rejected: result.rejected.length,
       redactions: result.redactions,
     };
+  }
+
+  // Take an entry back, such as a preference written for a label the person then forgot.
+  // id: what add() returned; key: entryKey(), for a copy the brain filed under another id.
+  // It leaves this memory and every later import, and if it was not exported yet it never
+  // will be. A copy already written to the brain's inbox/ is deleted only when write access
+  // is already granted, with no prompt; whatever the brain has filed is left alone.
+  // Returns { removed, file: "deleted" | "kept" | "not in inbox" | null }.
+  async remove(id, { key } = {}) {
+    const all = await db.getAll(this.#db, "entries");
+    const target = all.find((e) => e.id === id || e.addedAs === id);
+    const keys = [...new Set([key, target && entryKey(target)].filter(Boolean))];
+    const copies = all.filter((e) => e === target || keys.includes(entryKey(e)));
+    const removed = await this.#removed();
+    await db.setMeta(this.#db, "removed", {
+      ids: [...new Set([...removed.ids, id, ...copies.map((e) => e.id)])],
+      keys: [...new Set([...removed.keys, ...keys])],
+    });
+    await db.removeAll(
+      this.#db,
+      "entries",
+      copies.map((e) => e.id),
+    );
+    await this.#dirty();
+    // Written out by this extension: the exported entry, or its copy read back from inbox/.
+    const written = copies.find((e) => e.exported || (e.source === "extension" && e.path?.startsWith("inbox/")));
+    return { removed: copies.length, file: written ? await this.#unexport(written) : null };
+  }
+
+  async #unexport(entry) {
+    const dir = await db.getMeta(this.#db, "brain");
+    if (!dir || (await permission(dir, "readwrite")) !== "granted") return "kept";
+    return (await removeInboxEntry(dir, entry)) ? "deleted" : "not in inbox";
   }
 
   async recall(query, opts) {

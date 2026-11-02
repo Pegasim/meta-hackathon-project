@@ -9,6 +9,8 @@
 
   const { placement, clamp } = globalThis.tuckLayout;
   const HOST_ID = "tuck-companion";
+  const OWNER = chrome.runtime.id; // marks our host: another copy of Tuck shares the page's DOM
+  const ORPHAN_CHECK_MS = 2000;
   const SIZE = { width: 72, height: 72 };
   const DRAG_THRESHOLD = 4; // px; less is a click
   let root = null;
@@ -16,7 +18,22 @@
   let current = null; // the view on screen
   let timers = [];
 
-  const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => {});
+  // Removed, disabled or reloaded, the extension leaves this script in the page with no
+  // runtime behind it, and its host in the DOM. Nothing tells the page, so look.
+  const orphaned = () => !chrome.runtime?.id;
+  const orphanCheck = setInterval(() => orphaned() && leavePage(), ORPHAN_CHECK_MS);
+  function leavePage() {
+    clearInterval(orphanCheck);
+    timers.forEach(clearTimeout);
+    timers = [];
+    window.removeEventListener("resize", place);
+    root?.host.remove();
+    root = null;
+    current = null;
+    window.__tuckInstalled = false; // a later load of this extension may install here
+  }
+
+  const send = (msg) => (orphaned() ? leavePage() : chrome.runtime.sendMessage(msg).catch(() => {}));
   const view = () => ({ width: window.innerWidth, height: window.innerHeight });
 
   const STYLE = `
@@ -122,9 +139,19 @@
 
   // ---- Drawing -------------------------------------------------------------
 
+  // One pet per page. A host left by an earlier load of this extension, or by a version
+  // without the owner mark, has nobody drawing it: it goes. A host of another copy that
+  // is still installed stays, and this copy does not draw, so two copies never fight;
+  // once that copy is gone its host leaves within ORPHAN_CHECK_MS. Returns whether Tuck
+  // is ours to draw.
   function ensureRoot({ svg, css }) {
-    if (root?.isConnected) return;
+    if (root?.isConnected) return true;
+    for (const other of document.querySelectorAll(`#${HOST_ID}`)) {
+      if (other.dataset.owner && other.dataset.owner !== OWNER) return false;
+      other.remove();
+    }
     const host = el("div", { id: HOST_ID });
+    host.dataset.owner = OWNER;
     const shadow = host.attachShadow({ mode: "open" });
     const avatar = el("button", { className: "avatar", ariaLabel: "Open Tuck", title: "Tuck — drag to move" });
     avatar.innerHTML = svg;
@@ -141,6 +168,7 @@
     makeDraggable(avatar);
     place();
     window.addEventListener("resize", place);
+    return true;
   }
 
   function setState(state) {
@@ -262,7 +290,7 @@
 
   async function show(v, assets) {
     if (!root?.isConnected) await loadPos();
-    ensureRoot(assets);
+    if (!ensureRoot(assets)) return;
     // Quiet presence never interrupts what is on screen.
     if (v.quiet && current) return;
     timers.forEach(clearTimeout);

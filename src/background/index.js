@@ -2,7 +2,7 @@
 // engine inputs, processed one at a time; engine state lives in
 // chrome.storage.session (the worker can stop at any moment); every input and
 // output goes to the event log; unknown pages are judged by the model (LLM#1).
-import { Memory, redact } from "../memory/index.js";
+import { Memory, redact, entryKey } from "../memory/index.js";
 import { modelClient, loadModelSettings } from "../memory/model.js";
 import { withOverrides } from "../attention/config.js";
 import {
@@ -792,27 +792,53 @@ async function markLabel(page, intent, ts, verdict = "related") {
     },
     cfg,
   );
-  // Shown in settings, where a label can be forgotten.
-  await st.putLabel(chat ? { ...label, who: page.surface.labels?.[0] } : label);
+  // Shown in settings, where a label can be forgotten. The memory entry it wrote, if any,
+  // goes with it (Forget).
+  const stored = {
+    ...label,
+    ...(chat && { who: page.surface.labels?.[0] }),
+    ...(prev?.label === "related" && prev.memoryEntry && { memoryEntry: prev.memoryEntry }),
+  };
+  await st.putLabel(stored);
   await log({ type: "feedback", ts, kind: "label", payload: label });
   if (verdict !== "related") return;
   if (key !== noKey) await st.deleteLabel(noKey); // a yes takes back an earlier no
   const lastedBefore = prev?.label === "related" && prev.days && prev.until == null;
   if (label.until != null || lastedBefore) return;
-  await (
+  const entry = await (
     await memory
   ).add({
     kind: "preference",
     topic: intent.topic,
-    // One person's answer says nothing of the rest of the site.
-    title:
-      `${chat ? `Conversations with ${page.surface.labels?.[0] ?? "this person"} on ${page.host} count` : `${page.host} counts`} as work for ${intent.topic}`.slice(
-        0,
-        120,
-      ),
+    title: preferenceTitle({ topic: intent.topic, host: page.host, chat, who: stored.who }),
     context: "Marked by the user from a nudge.",
     result: "related",
   });
+  await st.putLabel({ ...stored, memoryEntry: { id: entry.id, key: entryKey(entry) } });
+}
+
+// What a lasting "This is for my task" says in memory. One person's answer says nothing
+// of the rest of the site.
+const preferenceTitle = ({ topic, host, chat, who }) =>
+  `${chat ? `Conversations with ${who ?? "this person"} on ${host} count` : `${host} counts`} as work for ${topic}`.slice(
+    0,
+    120,
+  );
+
+// Forget on a label also takes back the preference it wrote, so notesFor stops sending it
+// to the model. A label from before the entry was kept on it is matched by its title.
+// Returns whether an entry was removed.
+async function forgetPreference(label) {
+  if (label?.label !== "related") return false;
+  const m = await memory;
+  if (label.memoryEntry) return (await m.remove(label.memoryEntry.id, { key: label.memoryEntry.key })).removed > 0;
+  const title = preferenceTitle({ ...label, chat: label.surface === "conversation" });
+  const hits = (await m.recall(title, { limit: 20 })).filter(
+    (h) => h.item.kind === "preference" && h.item.topic === label.topic && h.item.title === title,
+  );
+  let removed = 0;
+  for (const h of hits) removed += (await m.remove(h.item.id)).removed;
+  return removed > 0;
 }
 
 // ---- Who this person is (LLM#5) ------------------------------------------
@@ -967,8 +993,12 @@ const HANDLERS = {
   // front judged again.
   "get-labels": async () => (await (await store).recentLabels(50)).filter((l) => labelHolds(l, Date.now())),
   "delete-label": async ({ key }) => {
-    await (await store).deleteLabel(key);
-    await feed({ type: "session", ts: Date.now(), kind: "memory" });
+    const st = await store;
+    const label = await st.getLabel(key);
+    await st.deleteLabel(key);
+    // A note left memory: verdicts judged with it are judged again.
+    if (await forgetPreference(label)) await memoryChanged();
+    else await feed({ type: "session", ts: Date.now(), kind: "memory" });
     return sense(activeTab);
   },
   // An import ran in the settings page. Memory's own reads notice it; what was judged
