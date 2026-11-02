@@ -17,6 +17,23 @@ export async function readBrainFolder(dir, prefix = "") {
   return files;
 }
 
+// Any folder: every file ending in `ext`, as [{ path, text, lastModified }], with paths
+// relative to the folder. Hidden folders and files (.obsidian/, .trash/) are skipped.
+export async function readTextFiles(dir, { ext = ".md", prefix = "" } = {}) {
+  const files = [];
+  for await (const [name, handle] of dir.entries()) {
+    if (name.startsWith(".")) continue;
+    const path = prefix + name;
+    if (handle.kind === "directory") {
+      files.push(...(await readTextFiles(handle, { ext, prefix: path + "/" })));
+    } else if (name.endsWith(ext)) {
+      const file = await handle.getFile();
+      files.push({ path, text: await file.text(), lastModified: file.lastModified });
+    }
+  }
+  return files;
+}
+
 // "granted" | "prompt" | "denied". Asking (prompt: true) needs a user click,
 // so background code only checks.
 export async function permission(dir, mode, { prompt = false } = {}) {

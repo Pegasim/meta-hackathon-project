@@ -246,6 +246,133 @@ const removal = await page.evaluate(async () => {
   };
 });
 
+// Memory by source (issue #6): a brain, a Markdown folder and a pasted memory side by side.
+// A brain sync leaves the others as they are; removing one leaves the rest, and the other
+// instance's recall misses it at once; only the extension's own entries are exported.
+const sources = await page.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const { readTextFiles } = await import("/memory/connector.js");
+  const worker = await Memory.open("browser-test-5");
+  const options = await Memory.open("browser-test-5");
+  const root = await navigator.storage.getDirectory();
+  const write = async (dir, name, text) => {
+    const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+    await w.write(text);
+    await w.close();
+  };
+  // Entries only: the vault's own file is found too, as a document.
+  const titles = async (m, q) =>
+    (await m.recall(q))
+      .filter((h) => h.ref.type === "entry")
+      .map((h) => h.title)
+      .sort();
+  const logNote = (title, next) =>
+    `---\ntype: note\ntitle: "${title}"\nkind: decision\ntopic: shop\ndate: 2026-10-10\nsource: claude-code\nhost: laptop\nid: ${title.length}aaaaaaaa\n---\n\n# ${title}\n\n- **Context:** Invented.\n- **Decision/Result:** Invented.\n- **Evidence:** none\n- **Next action:** ${next}\n`;
+
+  // A stand-in for the Markdown reader (part B): one todo per unchecked box.
+  const read = async (dir) => {
+    const files = await readTextFiles(dir);
+    const entries = files.flatMap((f) =>
+      [...f.text.matchAll(/^- \[ \] (.+)$/gm)].map((m) => ({
+        kind: "todo",
+        topic: "vault",
+        title: m[1],
+        date: "2026-10-20",
+        source: "markdown",
+        context: f.path,
+        result: "open",
+        next: m[1],
+        evidence: "none",
+        path: f.path,
+      })),
+    );
+    return { entries, documents: files.map((f) => ({ path: f.path, title: f.path, text: f.text })), skipped: [] };
+  };
+
+  const brain = await root.getDirectoryHandle("brain-5", { create: true });
+  const log = await (
+    await brain.getDirectoryHandle("notes", { create: true })
+  ).getDirectoryHandle("log", {
+    create: true,
+  });
+  await write(log, "a.md", logNote("Ship the invoice export", "Ship it by Friday."));
+  await options.connectBrain(brain);
+
+  const vault = await root.getDirectoryHandle("Vault", { create: true });
+  await write(vault, "Inbox.md", "# Inbox\n- [ ] Renew the invoice domain\n- [x] Done already\n");
+  const md = await options.connectFolder(vault, { kind: "md", read });
+
+  const paste = await options.importEntries({
+    origin: "paste:t1",
+    name: "Pasted from an assistant",
+    entries: [
+      {
+        kind: "todo",
+        topic: "invoices",
+        title: "Send the invoice draft to the accountant",
+        date: "2026-10-30",
+        source: "paste",
+        context: "From the assistant.",
+        result: "open",
+        next: "Send the invoice draft",
+        evidence: "none",
+      },
+      { kind: "nonsense", topic: "x", title: "Bad", date: "2026-10-30", context: "c", result: "r" },
+    ],
+  });
+
+  // A new brain snapshot: only the brain's part changes.
+  await log.removeEntry("a.md");
+  await write(log, "b.md", logNote("Close the invoice ticket", "Close it today."));
+  const synced = await options.syncBrain();
+  const afterSync = await titles(worker, "invoice");
+  const listed = (await worker.sources()).map(({ origin, kind, name, entries, documents, openLoops, connected }) => ({
+    origin,
+    kind,
+    name,
+    entries,
+    documents,
+    openLoops,
+    connected,
+  }));
+
+  // Only the extension's own entries go to the brain's inbox.
+  const exportedNone = await worker.exportPending();
+  await worker.add({
+    kind: "fact",
+    topic: "invoices",
+    title: "Each invoice goes out monthly",
+    context: "c",
+    result: "r",
+  });
+  await worker.consolidate();
+  const exportedOwn = await worker.exportPending();
+
+  const removedPaste = await worker.removeSource("paste:t1");
+  const afterPaste = await titles(options, "invoice");
+  const removedMd = await options.removeSource("md:Vault");
+  const syncRemoved = await options.syncSource("md:Vault", { read });
+  const afterMd = await titles(worker, "invoice");
+  const left = (await worker.sources()).map((x) => x.origin);
+  const readded = await options.connectFolder(vault, { kind: "md", read });
+  return {
+    md,
+    paste,
+    synced: { connected: synced.connected, entries: synced.entries },
+    afterSync,
+    listed,
+    exportedNone,
+    exportedOwn,
+    removedPaste,
+    afterPaste,
+    removedMd,
+    syncRemoved,
+    afterMd,
+    left,
+    readded: readded.entries,
+  };
+});
+
 await ctx.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
@@ -301,4 +428,39 @@ assert.equal(removal.secretFound, false);
 assert.equal(removal.synced, 0, "a brain that still holds a removed entry does not bring it back");
 assert.equal(removal.filedFound, false);
 assert.ok(removal.fileStays, "what the brain has filed is left alone");
+assert.deepEqual(sources.md, { entries: 1, notes: 1, skipped: [] }, "the checked box is not a task");
+assert.equal(sources.paste.entries, 1);
+assert.equal(sources.paste.skipped.length, 1, "an entry that fails validation is skipped and reported");
+assert.deepEqual(sources.synced, { connected: true, entries: 1 });
+assert.deepEqual(
+  sources.afterSync,
+  ["Close the invoice ticket", "Renew the invoice domain", "Send the invoice draft to the accountant"],
+  "a brain sync replaced the brain's part and left the folder and the paste",
+);
+assert.deepEqual(sources.listed, [
+  { origin: "brain", kind: "brain", name: "brain-5", entries: 1, documents: 0, openLoops: 1, connected: true },
+  { origin: "md:Vault", kind: "md", name: "Vault", entries: 1, documents: 1, openLoops: 1, connected: true },
+  {
+    origin: "paste:t1",
+    kind: "paste",
+    name: "Pasted from an assistant",
+    entries: 1,
+    documents: 0,
+    openLoops: 1,
+    connected: undefined,
+  },
+]);
+assert.equal(sources.exportedNone.exported, 0, "entries from other sources are never written to the brain");
+assert.equal(sources.exportedOwn.exported, 1);
+assert.deepEqual(sources.removedPaste, { entries: 1, notes: 0 });
+assert.deepEqual(
+  sources.afterPaste,
+  ["Close the invoice ticket", "Each invoice goes out monthly", "Renew the invoice domain"],
+  "the other instance misses the removed paste at once",
+);
+assert.deepEqual(sources.removedMd, { entries: 1, notes: 1 });
+assert.deepEqual(sources.syncRemoved, { connected: false }, "a removed folder is not synced back");
+assert.deepEqual(sources.afterMd, ["Close the invoice ticket", "Each invoice goes out monthly"]);
+assert.deepEqual(sources.left, ["brain"]);
+assert.equal(sources.readded, 1, "connecting the folder again brings it back");
 console.log("browser test: ok");
