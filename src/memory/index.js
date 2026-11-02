@@ -1,5 +1,5 @@
 // Public memory API. The extension talks to memory only through this class.
-import { makeEntry } from "./entry.js";
+import { makeEntry, validate } from "./entry.js";
 import { loadBrain, openLoops } from "./brain.js";
 import { consolidate, entryId, entryKey, isRemoved } from "./consolidate.js";
 import { buildIndex, search, entryDoc, noteDoc } from "./recall.js";
@@ -8,11 +8,17 @@ import { IDLE_GAP, toSpans, clipSpans, summarize, renderSummary } from "./activi
 import { distillMessages, parseEntries } from "./distill.js";
 import * as db from "./db.js";
 import { readBrainFolder, writeInboxEntry, removeInboxEntry, permission } from "./connector.js";
+import { BRAIN, OWN, READERS, originOf, kindOf } from "./sources.js";
 
 // Secret-shaped strings (keys, tokens, "password: …") replaced by [REDACTED]: for any
 // text that leaves the device, such as a page excerpt. Returns { text, count }. entryKey:
 // an entry's date, topic and title, which remove() also takes.
 export { redact, entryKey } from "./consolidate.js";
+// Where an entry or document came from (see sources.js and Sources in README.md).
+export { BRAIN, originOf, kindOf } from "./sources.js";
+// A pasted assistant memory, for the settings page: shown before it is sent, then turned
+// into entries (stored with importEntries under a "paste:<id>" origin).
+export { previewPaste, importPasted, ASK_YOUR_ASSISTANT, MAX_PASTE_CHARS } from "./paste.js";
 
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
@@ -69,28 +75,167 @@ export class Memory {
     return (await db.getMeta(this.#db, "removed")) ?? { ids: [], keys: [] };
   }
 
-  // ---- Brain -------------------------------------------------------------
+  // ---- Sources -----------------------------------------------------------
 
-  // Import a brain snapshot: [{ path, text }]. Replaces the previous import and keeps
-  // the extension's own entries, except those the brain now holds (exported earlier).
-  // An entry removed here stays out, though the brain still holds it.
-  async importFiles(files) {
-    const removed = await this.#removed();
-    const read = loadBrain(files);
-    const { documents, skipped } = read;
-    const entries = read.entries.filter((e) => !isRemoved(e, removed));
-    const brainKeys = new Set(entries.map(entryKey));
-    const own = (await db.getAll(this.#db, "entries")).filter((e) => !e.path && !brainKeys.has(entryKey(e)));
-    await db.clear(this.#db, "entries");
-    await db.clear(this.#db, "notes");
-    await db.putAll(this.#db, "entries", [
-      ...own,
-      ...entries.map((e) => ({ ...e, id: e.id ?? entryId(e), status: e.path.startsWith("inbox/") ? "inbox" : "log" })),
-    ]);
-    await db.putAll(this.#db, "notes", documents);
-    await this.#dirty();
-    return { entries: entries.length, notes: documents.length, skipped };
+  // Import a brain snapshot: [{ path, text }]. Replaces what the last import of that
+  // origin brought, and keeps every other source and the extension's own entries,
+  // except those the brain now holds (exported earlier). An entry removed here stays
+  // out, though the brain still holds it.
+  async importFiles(files, { origin = BRAIN } = {}) {
+    return this.importEntries({ origin, ...loadBrain(files) });
   }
+
+  // What an adapter made of one source: entries in the entry format, documents as
+  // { path, title, text } with paths relative to that source. Replaces that origin's
+  // entries and documents, and nothing else. Entries removed with remove() stay out;
+  // outside the brain, entries that fail validation are skipped and returned.
+  // name: how settings shows the source. Importing re-adds a source removeSource()
+  // dropped: it is the explicit way back.
+  // Returns { entries, notes, skipped }.
+  async importEntries({ origin, name, entries = [], documents = [], skipped = [] }) {
+    if (!origin || origin === OWN) throw new Error("importEntries needs the origin of a source");
+    const brain = origin === BRAIN;
+    const removed = await this.#removed();
+    const invalid = brain ? [] : entries.map((e) => ({ e, errors: validate(e) })).filter((x) => x.errors.length);
+    const stored = entries
+      .filter((e) => !invalid.some((x) => x.e === e))
+      .map((e) => {
+        const id = e.id ?? entryId(e);
+        // Outside the brain, ids are kept apart by origin: one note can sit in two folders.
+        const status = brain && e.path?.startsWith("inbox/") ? "inbox" : "log";
+        return { ...e, origin, id: brain ? id : `${origin}|${id}`, status };
+      })
+      .filter((e) => !isRemoved(e, removed));
+    // Documents keep their path for the brain; elsewhere it is prefixed with the origin.
+    const docs = documents.map((d) => ({ ...d, origin, path: brain ? d.path : `${origin}/${d.path}` }));
+    const keys = new Set(stored.map(entryKey));
+    const gone = (await db.getAll(this.#db, "entries")).filter(
+      (e) => originOf(e) === origin || (brain && originOf(e) === OWN && keys.has(entryKey(e))),
+    );
+    const goneNotes = (await db.getAll(this.#db, "notes")).filter((d) => originOf(d) === origin);
+    await db.removeAll(
+      this.#db,
+      "entries",
+      gone.map((e) => e.id),
+    );
+    await db.removeAll(
+      this.#db,
+      "notes",
+      goneNotes.map((d) => d.path),
+    );
+    await db.putAll(this.#db, "entries", stored);
+    await db.putAll(this.#db, "notes", docs);
+    await this.#setSource(origin, { name, lastImport: Date.now() });
+    await this.#dirty();
+    return {
+      entries: stored.length,
+      notes: docs.length,
+      skipped: [...skipped, ...invalid.map(({ e, errors }) => ({ title: e.title, reason: errors.join("; ") }))],
+    };
+  }
+
+  // Every source with something in memory or a folder connected:
+  // [{ origin, kind, name, entries, documents, openLoops, connected, lastImport }]
+  // (connected only for folders). The brain comes first.
+  async sources() {
+    await this.#load();
+    const notes = await db.getAll(this.#db, "notes");
+    const known = await this.#sourceRecords();
+    const brainDir = await db.getMeta(this.#db, "brain");
+    const origins = new Set([...Object.keys(known), ...this.#entries.map(originOf), ...notes.map(originOf)]);
+    if (brainDir) origins.add(BRAIN);
+    origins.delete(OWN);
+    const order = (o) => (o === BRAIN ? "" : o);
+    return [...origins]
+      .sort((a, b) => order(a).localeCompare(order(b)))
+      .map((origin) => {
+        const kind = kindOf(origin);
+        const record = known[origin] ?? {};
+        const handle = origin === BRAIN ? brainDir : record.handle;
+        const mine = this.#entries.filter((e) => originOf(e) === origin);
+        return {
+          origin,
+          kind,
+          name: record.name ?? handle?.name ?? origin,
+          entries: mine.length,
+          documents: notes.filter((d) => originOf(d) === origin).length,
+          openLoops: openLoops(mine).length,
+          ...(kind !== "paste" && { connected: !!handle }),
+          lastImport: record.lastImport ?? null,
+        };
+      });
+  }
+
+  // Drop a source: all its entries and documents, and its folder. A later sync finds no
+  // folder for it; connecting or importing it again brings it back. The extension's own
+  // entries stay, also when the brain goes, but nothing is exported until a brain is
+  // connected again. Returns { entries, notes }.
+  async removeSource(origin) {
+    if (!origin || origin === OWN) throw new Error("removeSource needs the origin of a source");
+    const entries = (await db.getAll(this.#db, "entries")).filter((e) => originOf(e) === origin);
+    const notes = (await db.getAll(this.#db, "notes")).filter((d) => originOf(d) === origin);
+    await db.removeAll(
+      this.#db,
+      "entries",
+      entries.map((e) => e.id),
+    );
+    await db.removeAll(
+      this.#db,
+      "notes",
+      notes.map((d) => d.path),
+    );
+    const known = await this.#sourceRecords();
+    delete known[origin];
+    await db.setMeta(this.#db, "sources", known);
+    if (origin === BRAIN) await db.setMeta(this.#db, "brain", null);
+    await this.#dirty();
+    return { entries: entries.length, notes: notes.length };
+  }
+
+  // A folder other than the brain, read only: remember it under `origin` and import it.
+  // read(dirHandle) -> { entries, documents, skipped }; by default the reader for the
+  // origin's kind (sources.js READERS). origin defaults to "<kind>:<folder name>".
+  async connectFolder(dirHandle, { kind, origin = `${kind}:${dirHandle.name}`, name = dirHandle.name, read } = {}) {
+    if (origin === BRAIN) return this.connectBrain(dirHandle);
+    await this.#setSource(origin, { name, handle: dirHandle });
+    return this.#importFolder(origin, dirHandle, read);
+  }
+
+  // Re-read a connected folder, the brain included. prompt: true only from a user click.
+  // Returns { connected, needsPermission?, entries?, notes?, skipped? }.
+  async syncSource(origin, { prompt = false, read } = {}) {
+    const dir = await this.#folderOf(origin);
+    if (!dir) return { connected: false };
+    if ((await permission(dir, "read", { prompt })) !== "granted") return { connected: true, needsPermission: true };
+    return { connected: true, ...(await this.#importFolder(origin, dir, read)) };
+  }
+
+  async #importFolder(origin, dir, read = READERS[kindOf(origin)]) {
+    if (!read) throw new Error(`no reader for ${kindOf(origin)} folders`);
+    const result = await read(dir);
+    // Removed while it was being read (the other instance): it stays removed.
+    if (!(await this.#folderOf(origin))) return { entries: 0, notes: 0, skipped: [], removed: true };
+    return this.importEntries({ origin, ...result });
+  }
+
+  async #folderOf(origin) {
+    if (origin === BRAIN) return db.getMeta(this.#db, "brain");
+    return (await this.#sourceRecords())[origin]?.handle ?? null;
+  }
+
+  // { [origin]: { name, handle?, lastImport } }; the brain's folder stays in meta "brain".
+  async #sourceRecords() {
+    return (await db.getMeta(this.#db, "sources")) ?? {};
+  }
+
+  async #setSource(origin, fields) {
+    const known = await this.#sourceRecords();
+    const defined = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
+    known[origin] = { ...known[origin], ...defined };
+    await db.setMeta(this.#db, "sources", known);
+  }
+
+  // ---- Brain -------------------------------------------------------------
 
   async importBrain(dirHandle) {
     return this.importFiles(await readBrainFolder(dirHandle));
@@ -117,10 +262,7 @@ export class Memory {
 
   // Re-import the remembered folder. prompt: true only from a user click.
   async syncBrain({ prompt = false } = {}) {
-    const dir = await db.getMeta(this.#db, "brain");
-    if (!dir) return { connected: false };
-    if ((await permission(dir, "read", { prompt })) !== "granted") return { connected: true, needsPermission: true };
-    return { connected: true, ...(await this.importBrain(dir)) };
+    return this.syncSource(BRAIN, { prompt });
   }
 
   // Write consolidated entries made here into the brain's inbox/, once each.
@@ -128,7 +270,8 @@ export class Memory {
     const dir = await db.getMeta(this.#db, "brain");
     if (!dir) return { exported: 0, connected: false };
     if ((await permission(dir, "readwrite", { prompt })) !== "granted") return { exported: 0, needsPermission: true };
-    const pending = (await db.byStatus(this.#db, "log")).filter((e) => !e.path && !e.exported);
+    // Only what the extension wrote: other sources are the person's, read from elsewhere.
+    const pending = (await db.byStatus(this.#db, "log")).filter((e) => originOf(e) === OWN && !e.exported);
     const written = [];
     for (const e of pending) written.push({ ...e, exported: true, exportedAs: await writeInboxEntry(dir, e, host) });
     await db.putAll(this.#db, "entries", written);
