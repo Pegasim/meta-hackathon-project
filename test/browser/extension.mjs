@@ -275,6 +275,7 @@ await settingsPage.evaluate(async (baseUrl) => {
     attentionConfig: {
       toleranceSec: 3,
       escalateAfterSec: 4,
+      agentAskAgainSec: 4,
       fragMinSwitches: 1000,
       idleAfterSec: 86400,
       holdSec: 2,
@@ -444,7 +445,9 @@ const heldMs = Date.now() - typingFrom;
 
 // Review: the chat box at the bottom is focused, but nobody types. The page is judged by
 // the feed in the middle: the nudge comes, with no hold. Typing in the box then makes
-// the next look read the chat, which is work: the drift ends.
+// the next look read the chat, which is work: the drift ends. A fresh drift, so only a
+// hold could delay the word, not the spacing between words of one drift.
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "respond", choice: "back" }));
 const sideTab = await ctx.newPage();
 await sideTab.goto(side);
 await sideTab.bringToFront();
@@ -679,6 +682,70 @@ await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 const driftOff = await waitForNewDrift(driftSlowFeed.id);
 
+// Whose turn it is in a coding agent (#11): while it works the same drifting page is a
+// wait; when it stops Tuck says so, once.
+const agentSays = (status) =>
+  popup.evaluate((s) => chrome.runtime.sendMessage({ type: "agent-status", status: s, session: "s1" }), status);
+const agentTab = await ctx.newPage();
+await agentTab.goto(dockedSocial);
+await agentTab.bringToFront();
+await agentSays("working");
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await agentTab.waitForTimeout(500);
+const beforeWait = await lastTrigger();
+await agentTab.waitForTimeout(6000);
+const duringWait = await lastTrigger();
+const waitStatus = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }));
+const waitBadge = await popup.evaluate(() => chrome.action.getBadgeText({}));
+await agentSays("waiting_for_user");
+await agentSays("waiting_for_user");
+await agentTab.locator("#tuck-companion").waitFor({ state: "attached" });
+await agentTab.waitForTimeout(500);
+const agentWord = await lastTrigger();
+const agentBubble = await agentTab.locator("#tuck-companion .bubble").innerText();
+// The popup answers an agent's word as the bubble does: nothing teaches about the page.
+await popup.reload();
+await popup.waitForSelector("#trigger:not([hidden])");
+const agentPopup = {
+  gotIt: await popup.isVisible("#got-it"),
+  back: await popup.isVisible("#take-me-back"),
+  forTask: await popup.isVisible("#for-my-task"),
+};
+// Still waiting: Tuck asks again, on the page in front, with no new status from the agent.
+await agentTab.bringToFront();
+await agentTab
+  .locator("#tuck-companion .bubble", { hasText: "Is Muse still waiting on you?" })
+  .waitFor({ timeout: 10000 });
+await agentTab.close();
+await agentSays("unknown");
+
+// A stop on a page Tuck cannot draw on is said on the next page it can.
+const noDrawTab = await ctx.newPage();
+await noDrawTab.goto("chrome://version");
+await noDrawTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await agentSays("working");
+await agentSays("completed");
+await noDrawTab.waitForTimeout(500);
+const drawTab = await ctx.newPage();
+await drawTab.goto(dockedSocial);
+await drawTab.bringToFront();
+await drawTab.locator("#tuck-companion .bubble").waitFor({ timeout: 8000 });
+const heldBubble = await drawTab.locator("#tuck-companion .bubble").innerText();
+await drawTab.close();
+await noDrawTab.close();
+
+// Off stops Tuck speaking, not the record of whose turn it is.
+const setMode = (mode) => popup.evaluate((m) => chrome.runtime.sendMessage({ type: "set-mode", mode: m }), mode);
+await agentSays("working");
+await setMode("off");
+await agentSays("completed");
+await setMode("focus");
+const afterOff = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }));
+await agentSays("unknown");
+await chatTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+
 // Review I1: changing the goal closes the old one; Done leaves no goal behind.
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
@@ -703,7 +770,9 @@ await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", titl
 const maybeTab = await ctx.newPage();
 await maybeTab.goto(`http://localhost:${port}/maybe`);
 await maybeTab.bringToFront();
-const driftMaybe = await waitForNewDrift(driftOff.id);
+// The chat page in front until now can still get a word first.
+let driftMaybe = await waitForNewDrift(driftOff.id);
+while (!driftMaybe.evidence.url.endsWith("/maybe")) driftMaybe = await waitForNewDrift(driftMaybe.id);
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "respond", choice: "back" }));
 const learned = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-labels" }));
 await maybeTab.close();
@@ -961,6 +1030,15 @@ assert.ok(
 );
 assert.equal(drift4.kind, "drift", "drift is still caught after a restart");
 assert.equal(backAfterRestart, repo, "Take me back still works after a restart");
+assert.equal(duringWait.id, beforeWait.id, "no nudge while the agent works");
+assert.equal(waitStatus.engine.state, "agent_working");
+assert.equal(waitBadge, "", "waiting for the agent: no drift badge left behind");
+assert.ok(duringWait.respondedAt || duringWait.resolvedAt, "nor a drift word left open");
+assert.deepEqual(agentPopup, { gotIt: true, back: false, forTask: false });
+assert.match(heldBubble, /Muse is done\./);
+assert.equal(afterOff.engine.agent.status, "completed");
+assert.equal(agentWord.kind, "agent");
+assert.match(agentBubble, /Muse is waiting on you\./);
 assert.equal(afterDone.intent, null, "no stale goal after change + done");
 assert.match(reminderText, /Due today\. Still on your list\?/, "the deadline in Tuck's words");
 assert.match(reminderText, /Send the visa papers/);

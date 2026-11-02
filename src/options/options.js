@@ -6,6 +6,7 @@ import { refreshTasks } from "../agent/tasks.js";
 import { privateSettings } from "../agent/relevance.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { NEVER_READ, readingSettings } from "../attention/reading.js";
+import { wrongBrainFolder } from "./brain-folder.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
@@ -85,6 +86,11 @@ async function brainStatus(r = {}) {
 $("connect").onclick = async () => {
   try {
     const dir = await showDirectoryPicker({ mode: "readwrite" });
+    if (await wrongBrainFolder(dir)) {
+      $("brain-status").textContent =
+        `"${dir.name}" has no inbox/ or notes/ inside. Choose the folder that holds them.`;
+      return;
+    }
     $("brain-status").textContent = "Reading…";
     const r = await memory.connectBrain(dir);
     await chrome.runtime.sendMessage({ type: "memory-changed" });

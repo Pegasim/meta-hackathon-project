@@ -136,3 +136,28 @@ test("minutes away come from awaySec, never seconds", () => {
   const long = { ...trigger("drift", 2), evidence: { ...evidence, awaySec: 330 } };
   assert.equal(nudgeText(long), "That's 6 minutes on YouTube. Next up: write the failing test.");
 });
+
+test("the agent stopping is one short line, with answers that fit it", () => {
+  for (const [status, line] of [
+    ["waiting_for_user", "Muse is waiting on you."],
+    ["completed", "Muse is done."],
+    ["failed", "Muse stopped on an error."],
+  ]) {
+    const v = present({ trigger: { id: "a", kind: "agent", level: 2, evidence: { agent: status } } });
+    assert.equal(v.tuck, "checkin");
+    assert.equal(v.bubble.text, line);
+    assert.deepEqual(
+      v.bubble.buttons.map((b) => b.choice),
+      ["dismiss", "break"],
+    );
+  }
+});
+
+test("asking again about the agent is a question: it may be running what was approved", () => {
+  const trigger = { id: "a", kind: "agent", level: 2, evidence: { agent: "waiting_for_user", agentAgain: true } };
+  assert.equal(present({ trigger }).bubble.text, "Is Muse still waiting on you?");
+  assert.deepEqual(
+    present({ trigger }).bubble.buttons.map((b) => b.label),
+    ["Got it", "5-min break"],
+  );
+});

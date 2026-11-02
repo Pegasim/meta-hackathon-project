@@ -20,6 +20,10 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ext-copies-"));
 const copies = ["a", "b"].map((name) => {
   const dir = path.join(tmp, name);
   fs.cpSync(src, dir, { recursive: true });
+  // The manifest's fixed key gives every copy one id; two ids are what is tested here.
+  const manifest = path.join(dir, "manifest.json");
+  const { key, ...rest } = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  fs.writeFileSync(manifest, JSON.stringify(rest));
   return dir;
 });
 

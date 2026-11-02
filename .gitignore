@@ -6,3 +6,6 @@ brain/
 .DS_Store
 evals/reports/*.json
 .superpowers/
+
+# Written by bridge/install.mjs for this machine
+bridge/host-launcher.sh

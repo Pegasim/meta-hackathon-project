@@ -73,8 +73,10 @@ config().then((cfg) => chrome.idle.setDetectionInterval(cfg.idleAfterSec));
 chrome.alarms.onAlarm.addListener(({ name }) => {
   // The heartbeat looks at the page in front: after sleep it finds the person back
   // even when no tab or idle event comes. Same page, so no switch.
-  if (name === "attention-heartbeat") sense(activeTab);
-  else if (name === "attention-wake") tick();
+  if (name === "attention-heartbeat") {
+    connectBridge();
+    sense(activeTab);
+  } else if (name === "attention-wake") tick();
   else if (name === "distill") distill();
   else if (name === "memory-maintain") maintain();
 });
@@ -125,7 +127,7 @@ const log = async (record) => (await store).appendEvent(record);
 async function process(input) {
   const cfg = await config();
   let s = await engineState(cfg, input.ts);
-  if (s.mode === "off" && input.type !== "session" && input.type !== "response") return s;
+  if (s.mode === "off" && !["session", "response", "agent"].includes(input.type)) return s;
 
   // A goal left over from yesterday (or hours ago) becomes an open loop.
   if (input.type === "context" && s.intent) {
@@ -140,6 +142,7 @@ async function process(input) {
 }
 
 async function apply(s, input, cfg) {
+  if (input.type === "agent") await chrome.storage.session.remove("agentWordToSay"); // old news now
   const r = step(s, input, cfg);
   await saveEngine(r.state);
   await log(input); // ticks too: replay tells sleep from a long stay by them
@@ -154,10 +157,13 @@ async function apply(s, input, cfg) {
       if (o.type === "state" && o.to === "detour") draftNudge(r.state, 1, cfg);
       if (o.type === "trigger" && o.kind === "drift" && o.level >= 1 && !o.suppressedBy)
         draftNudge(r.state, o.level + 1, cfg);
-      if (o.type === "state" && ["focused", "no_intent", "paused"].includes(o.to)) await setBadge(null);
+      if (o.type === "state" && ["focused", "no_intent", "paused", "agent_working"].includes(o.to))
+        await setBadge(null);
       // Back on a work page before answering (a new tab or a search is not back yet).
       const backAtWork = o.type === "state" && o.to === "focused" && r.state.current?.label === "related";
-      if (backAtWork && ["detour", "drifting"].includes(o.from)) await selfReturn(o.ts);
+      if (backAtWork && ["detour", "drifting", "agent_working"].includes(o.from)) await selfReturn(o.ts);
+      // Waiting for the agent now: a word about drifting no longer holds.
+      if (o.type === "state" && o.to === "agent_working" && o.from !== "agent_working") await selfReturn(o.ts);
     }
   }
   if (input.type === "context") await presence(s, r.state, input);
@@ -165,12 +171,33 @@ async function apply(s, input, cfg) {
     const { pendingGreeting } = await chrome.storage.session.get("pendingGreeting");
     if (pendingGreeting) await greet(input.tabId);
   }
+  if (input.type === "context" && !r.state.away) await sayHeldAgentWord(input.tabId, r.state);
   scheduleWake(r.state, cfg);
   return r;
 }
 
 const feed = (input) => enqueue(() => process(input));
 const tick = () => feed({ type: "tick", ts: Date.now() });
+
+// A coding agent's status, from the local bridge (bridge/host.mjs), when one is installed.
+const AGENT_STATUS = ["working", "waiting_for_user", "completed", "failed", "unknown"];
+const agentStatus = ({ status, session }) =>
+  AGENT_STATUS.includes(status) ? feed({ type: "agent", ts: Date.now(), status, session }) : null;
+let bridge = null;
+function connectBridge() {
+  if (bridge) return;
+  try {
+    bridge = chrome.runtime.connectNative("com.tuck.bridge");
+    bridge.onMessage.addListener(agentStatus);
+    bridge.onDisconnect.addListener(() => {
+      void chrome.runtime.lastError; // no host installed: nothing changes
+      bridge = null;
+    });
+  } catch {
+    bridge = null;
+  }
+}
+connectBridge();
 
 let wakeTimer = null;
 function scheduleWake(s, cfg) {
@@ -551,7 +578,18 @@ async function showTrigger(t, s) {
   const view = present({ trigger: shown });
   // A return or a break's end is a natural moment; a drift is not.
   if (t.kind === "return" || t.kind === "break_over") return showWithReminder(s.current?.tabId, view, s.intent?.title);
-  await showTuck(s.current?.tabId, view);
+  const drawn = await showTuck(s.current?.tabId, view);
+  if (t.kind === "agent" && !drawn) await chrome.storage.session.set({ agentWordToSay: view });
+}
+
+// An agent's word comes once, so one that met a page Tuck cannot draw on (a new tab, the
+// Web Store) waits for the next page it can.
+async function sayHeldAgentWord(tabId, s) {
+  const { agentWordToSay: view } = await chrome.storage.session.get("agentWordToSay");
+  if (!view || ["dnd", "off"].includes(s.mode) || s.state === "break") return;
+  const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
+  const answered = lastTrigger?.respondedAt || lastTrigger?.resolvedAt;
+  if (answered || (await showTuck(tabId, view))) await chrome.storage.session.remove("agentWordToSay");
 }
 
 // Shows Tuck with the most urgent thing worth a word, if any. It counts as said only
@@ -1002,6 +1040,7 @@ const HANDLERS = {
   },
   "refresh-profile": refreshProfile,
   "reminder-answer": reminderAnswer,
+  "agent-status": agentStatus,
   // What Tuck has learned from answers, for settings. Forgetting one has the page in
   // front judged again.
   "get-labels": async () => (await (await store).recentLabels(50)).filter((l) => labelHolds(l, Date.now())),
