@@ -1,0 +1,30 @@
+{
+  "id": "v1",
+  "name": "Border collie",
+  "kind": "svg",
+  "size": { "width": 72, "height": 60 },
+  "poses": ["rest", "work", "wait", "drift", "happy", "sleep", "hello"],
+  "fallback": {},
+  "items": ["none", "bandana", "frisbee", "both"],
+  "theme": {
+    "light": {
+      "accent": "#94BFAE",
+      "onAccent": "#1f2a26",
+      "surface": "#FBF8F2",
+      "ink": "#222222",
+      "muted": "#5f5a57",
+      "outline": "#E3DDD3",
+      "pink": "#e98a95"
+    },
+    "dark": {
+      "accent": "#94BFAE",
+      "onAccent": "#1f2a26",
+      "surface": "#26232a",
+      "ink": "#F3EFE8",
+      "muted": "#B5AFA8",
+      "outline": "#3C3841",
+      "pink": "#e98a95"
+    },
+    "rim": "#FFFFFF"
+  }
+}
