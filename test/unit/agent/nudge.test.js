@@ -79,3 +79,20 @@ test("no deadline means no Due soon block at all", () => {
   const [, user] = nudgeMessages({ ...input, today: "Sunday 2026-11-01", due: [] });
   assert.doesNotMatch(user.content, /Due soon/);
 });
+
+test("the greeting after a goal: how it went, and no away time (#46)", () => {
+  const [system, user] = nudgeMessages({
+    kind: "session_start",
+    task: { title: "Plan the launch" },
+    last: { onGoalMin: 130, finished: false, site: "GitHub" },
+    lastWork: "launch-plan.md · acme/launch",
+  });
+  assert.match(system.content, /12 words/);
+  assert.match(user.content, /^Situation: .*new session/m);
+  assert.match(user.content, /Their task: Plan the launch/);
+  assert.match(user.content, /Last time: 130 minutes on it, not finished, last on GitHub/);
+  assert.match(user.content, /Last work page: launch-plan\.md · acme\/launch/);
+  assert.doesNotMatch(user.content, /Away from work/);
+  // A drift's prompt still says how long they have been away.
+  assert.match(nudgeMessages(input)[1].content, /Away from work: 5 minutes/);
+});

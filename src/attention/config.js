@@ -32,6 +32,7 @@ export const DEFAULTS = Object.freeze({
   dayBoundaryHour: 4,
   expireAwayHours: 6,
   retentionDays: 7,
+  summaryMinSec: 60, // a goal in front of the person less than this gets no entry about its day (#46)
   tzOffsetMin: null, // null = the machine's time zone; tests pin it
 });
 

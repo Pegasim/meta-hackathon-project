@@ -4,7 +4,8 @@
 // for my task" silences that page, for a while → the second look (issue #5): a work
 // chat on a social page is not a drift, typing holds the nudge, a chat box left
 // focused does not speak for the feed but typing in it does, a page with a password
-// field is not read → the exported event log holds it all.
+// field is not read → a goal that ran out is summed up in memory and in the next
+// greeting (#46) → the exported event log holds it all.
 // Saves screenshots of the popup and settings page to SCREENSHOT_DIR when set.
 import { createRequire } from "node:module";
 import http from "node:http";
@@ -21,6 +22,7 @@ const shots = process.env.SCREENSHOT_DIR;
 // calls the video unrelated and everything else related.
 const calls = [];
 const nudgeCalls = [];
+const greetCalls = [];
 const taskCalls = [];
 let tasksCut = false; // the task node's replies are cut at the token limit (#43)
 // Typed into a reply box, then left: form values are never read, so it must never
@@ -172,6 +174,14 @@ const server = http.createServer((req, res) => {
     res.setHeader("Content-Type", "application/json");
     // Tuck's words (agent/nudge.js).
     if (/You are Tuck/.test(messages[0].content)) {
+      // The greeting after a goal (#46) takes a while, so a greeting right at a restart
+      // cannot wait for it.
+      if (/new session/.test(messages.at(-1).content)) {
+        greetCalls.push(messages);
+        const message = "Two hours on the launch plan last time. Pick it up?";
+        const body = JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] });
+        return setTimeout(() => res.end(body), 2000);
+      }
       nudgeCalls.push(messages);
       const message = "Still on the video? Back to the failing test.";
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] }));
@@ -939,6 +949,81 @@ await reread();
 const taskTextAfter = await settingsPage.locator("#task-list").innerText();
 const askedAgain = taskCalls.length - askedTasks;
 
+// Issue #46: a goal that ran out while the browser was closed is summed up at the next
+// start: one entry in memory, with no page title, and the greeting says how it went, in
+// the template while the model's line is not ready, then in the model's words. The day
+// is seeded into the log: a test cannot wait two hours.
+const launch = await settingsPage.evaluate(async () => {
+  const { openStore } = await import("/attention/store.js");
+  const { makeIntent, dayKey } = await import("/attention/intents.js");
+  const { relevanceKey, hostOf } = await import("/attention/relevance.js");
+  const { DEFAULTS } = await import("/attention/config.js");
+  const st = await openStore();
+  const t0 = Date.now() - 24 * 3600 * 1000;
+  const intent = makeIntent({ title: "Plan the launch" }, t0);
+  await st.putIntent(intent);
+  const url = "https://github.com/acme/launch";
+  const title = "launch-plan.md · acme/launch";
+  const events = [
+    {
+      type: "session",
+      ts: t0,
+      kind: "intent_set",
+      payload: { id: intent.id, title: intent.title, topic: intent.topic },
+    },
+    {
+      type: "context",
+      ts: t0 + 1000,
+      tabId: 1,
+      url,
+      host: hostOf(url),
+      title,
+      key: relevanceKey(intent.id, url, title),
+      label: "related",
+      confidence: 0.9,
+      source: "llm",
+      audible: false,
+      browserFocused: true,
+      idleState: "active",
+      surface: { kind: "page", labels: [] },
+    },
+  ];
+  for (let ts = t0 + 30000; ts <= t0 + 130 * 60000; ts += 30000) events.push({ type: "tick", ts });
+  for (const e of events) await st.appendEvent(e);
+  return { id: intent.id, date: dayKey(t0, DEFAULTS) };
+});
+const dayEntries = (query) =>
+  settingsPage.evaluate(async (query) => {
+    const { Memory } = await import("/memory/index.js");
+    const hits = await (await Memory.open()).recall(query, { limit: 50 });
+    return hits
+      .map((h) => h.item)
+      .filter((e) => e.topic === "focus" && /^Day /.test(e.title ?? "") && e.title.includes(`: ${query}: `));
+  }, query);
+const greetAfterRestart = async () => {
+  await settingsPage.evaluate(() => chrome.storage.session.clear());
+  const tab = await ctx.newPage();
+  await tab.goto(repo);
+  const t = tab.locator("#tuck-companion");
+  await t.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
+  const said = await t.locator(".bubble .text").textContent();
+  await tab.close();
+  return said;
+};
+const morning = await greetAfterRestart();
+const launchEntries = await dayEntries("Plan the launch");
+await settingsPage.evaluate(async (id) => {
+  for (let i = 0; i < 100; i++) {
+    const { greetingLine } = await chrome.storage.local.get("greetingLine");
+    if (greetingLine?.intentId === id) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error("the greeting's line never came");
+}, launch.id);
+const nextMorning = await greetAfterRestart();
+const launchEntriesLater = await dayEntries("Plan the launch");
+const checkoutEntries = await dayEntries("Fix the checkout bug");
+
 // The exported event log.
 await settingsPage.bringToFront();
 const log = await settingsPage.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }));
@@ -954,6 +1039,25 @@ server.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
 assert.deepEqual(errors, []);
+// Issue #46: one entry per goal, in the record format, with no page title in it.
+assert.equal(launchEntries.length, 1, JSON.stringify(launchEntries));
+assert.equal(launchEntries[0].title, `Day ${launch.date}: Plan the launch: 2h10 on goal, 0 drifts`);
+assert.equal(launchEntries[0].kind, "event");
+assert.equal(launchEntries[0].next, "none");
+assert.match(launchEntries[0].result, /Last work on github\.com\./);
+assert.doesNotMatch(JSON.stringify(launchEntries[0]), /launch-plan|acme/);
+assert.equal(launchEntriesLater.length, 1, "a later start writes no second entry");
+assert.equal(morning, "Yesterday: 2h 10m on plan the launch, last on GitHub.");
+assert.equal(nextMorning, "Two hours on the launch plan last time. Pick it up?");
+const launchPrompt = greetCalls.map((m) => m.at(-1).content).find((c) => /Their task: Plan the launch/.test(c));
+assert.match(launchPrompt, /Last time: 130 minutes on it, not finished, last on GitHub/);
+assert.match(launchPrompt, /Last work page: launch-plan\.md · acme\/launch/);
+// The goal the test worked on all along, closed when another replaced it.
+assert.equal(checkoutEntries.length, 1, JSON.stringify(checkoutEntries));
+assert.match(checkoutEntries[0].title, /^Day \d{4}-\d{2}-\d{2}: Fix the checkout bug: \dh\d\d on goal, \d+ drifts?$/);
+assert.ok(!/ 0 drifts$/.test(checkoutEntries[0].title), checkoutEntries[0].title);
+assert.match(checkoutEntries[0].result, /^Not finished; another goal replaced it\./);
+assert.doesNotMatch(JSON.stringify(checkoutEntries[0]), /cart\.js|F1 crashes|Social|Messages|acme/);
 assert.match(failedRows, /Water the plants/);
 assert.doesNotMatch(failedRows, /Errand|Cart conversion/, "a failed run lists no raw note as a task");
 for (const status of [failedStatus, failedStatusLater]) {

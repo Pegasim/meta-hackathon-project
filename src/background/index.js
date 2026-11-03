@@ -21,6 +21,7 @@ import { readingSettings, mayRead } from "../attention/reading.js";
 import { stillOpen, sayable, pickReminder, markSaid, markDone, markNotTask, taskList } from "../attention/reminders.js";
 import { initialState, step, nextWakeAt } from "../attention/engine.js";
 import { makeIntent, isExpired, dayKey } from "../attention/intents.js";
+import { daySummary, summaryEntry } from "../attention/summary.js";
 import { createSerialQueue } from "../attention/queue.js";
 import { openStore } from "../attention/store.js";
 import { classifyRelevance, privateSettings } from "../agent/relevance.js";
@@ -28,7 +29,7 @@ import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks } from "../agent/tasks.js";
 import { dueLabel, localDate } from "../memory/due.js";
-import { siteName, reminderLine } from "../tuck/voice.js";
+import { siteName, reminderLine, templateGreeting, whenSaid } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
 import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
 import { present } from "../tuck/present.js";
@@ -100,8 +101,10 @@ async function engineState(cfg, ts) {
     s = (await apply(s, { type: "session", ts, kind: "mode", payload: { mode } }, cfg)).state;
   const st = await store;
   const intent = await st.activeIntent();
-  if (intent && isExpired(intent, ts, ts, cfg)) await st.putIntent({ ...intent, expiredAt: ts });
-  else if (intent) {
+  if (intent && isExpired(intent, ts, ts, cfg)) {
+    await st.putIntent({ ...intent, expiredAt: ts });
+    await summarizeEnded();
+  } else if (intent) {
     const payload = { id: intent.id, title: intent.title, topic: intent.topic, restored: true };
     s = (await apply(s, { type: "session", ts, kind: "intent_set", payload }, cfg)).state;
     const { lastRelevant } = await chrome.storage.local.get("lastRelevant");
@@ -136,6 +139,7 @@ async function process(input) {
       await (await store).putIntent({ ...intent, expiredAt: input.ts });
       const done = { type: "session", ts: input.ts, kind: "intent_done", payload: { id: intent.id, expired: true } };
       s = (await apply(s, done, cfg)).state;
+      await summarizeEnded();
     }
   }
   return (await apply(s, input, cfg)).state;
@@ -740,7 +744,8 @@ async function greet(tabId) {
     ...(expired?.expiredAt && !expired.doneAt ? [{ title: expired.title }] : []),
     ...stillOpen(await toDo(), await loadLoops()).map((e) => ({ title: e.title })),
   ];
-  const view = present({ trigger: { kind: "session_start", level: 2, id: "greeting" }, loops });
+  const message = await lastTimeLine();
+  const view = present({ trigger: { kind: "session_start", level: 2, id: "greeting", message }, loops });
   const shown = await showWithReminder(tabId, view, expired?.expiredAt && !expired.doneAt ? expired.title : null);
   await chrome.storage.session.set({ pendingGreeting: !shown });
 }
@@ -933,13 +938,75 @@ async function refreshTaskList() {
   return r;
 }
 
+// ---- How a goal went (#46) -----------------------------------------------
+
+// A goal that ended (done, replaced or run out) gets one entry in memory about its day
+// (attention/summary.js), and the next greeting's line is drafted. Runs inside the queue.
+async function summarizeEnded() {
+  const st = await store;
+  const cfg = await config();
+  for (const intent of await st.endedIntents()) {
+    const sum = daySummary(await st.eventsSince(intent.createdAt), intent, cfg);
+    await st.putIntent({ ...intent, summarizedAt: Date.now() });
+    if (!sum) continue;
+    await (await memory).add(summaryEntry(sum)).catch(() => {});
+    // The last page's title stays out of what is kept: the line below is made from it now.
+    const { lastWork: _, ...lastDay } = sum;
+    await chrome.storage.local.set({ lastDay });
+    draftGreeting(sum);
+  }
+}
+
+// The greeting's words for how the last goal summed up went: the model's line when it
+// was ready, else the template, from the same facts.
+async function lastTimeLine() {
+  const { lastDay, greetingLine } = await chrome.storage.local.get(["lastDay", "greetingLine"]);
+  if (!lastDay) return null;
+  if (greetingLine?.intentId === lastDay.intentId) return greetingLine.message;
+  return templateGreeting(lastDay, whenSaid(lastDay.date, dayKey(Date.now(), await config())));
+}
+
+// Written when the goal ends, so the greeting never waits for the model. Outside the
+// queue; a failure leaves the template.
+function draftGreeting(sum) {
+  writeGreeting(sum).catch((err) =>
+    log({ type: "llm", ts: Date.now(), node: "composeNudge", ok: false, error: String(err) }),
+  );
+}
+
+async function writeGreeting(sum) {
+  const settings = await loadModelSettings();
+  if (!settings) return;
+  const used = privateSettings(settings);
+  const r = await composeNudge(modelClient(used), {
+    kind: "session_start",
+    task: { title: sum.goal },
+    last: { onGoalMin: sum.onGoalMin, finished: sum.finished, site: sum.site && siteName(sum.site) },
+    lastWork: sum.lastWork,
+  });
+  await log({
+    type: "llm",
+    ts: Date.now(),
+    node: "composeNudge",
+    model: used.model ?? used.provider ?? null,
+    latencyMs: r.latencyMs,
+    ok: r.source === "llm",
+    ...(r.error && { error: r.error }),
+    ...(r.message && { message: r.message }),
+  });
+  if (r.message) await chrome.storage.local.set({ greetingLine: { intentId: sum.intentId, message: r.message } });
+}
+
 // ---- Goals and modes -----------------------------------------------------
 
 async function setIntent({ title, next, from, fromLoopId }, sender) {
   return enqueue(async () => {
     const st = await store;
     const previous = await st.activeIntent();
-    if (previous) await st.putIntent({ ...previous, doneAt: Date.now(), replaced: true });
+    if (previous) {
+      await st.putIntent({ ...previous, doneAt: Date.now(), replaced: true });
+      await summarizeEnded();
+    }
     const entry = await (await memory).setIntent({ title, next: next || undefined });
     const intent = {
       ...makeIntent({ title, steps: next ? [next] : [], memoryEntryId: entry.id }, Date.now()),
@@ -967,6 +1034,7 @@ async function completeIntent() {
     await st.putIntent({ ...intent, doneAt: Date.now() });
     if (intent.fromLoopId) await saveLoops(markDone(await loadLoops(), intent.fromLoopId, Date.now()));
     await process({ type: "session", ts: Date.now(), kind: "intent_done", payload: { id: intent.id } });
+    await summarizeEnded();
     // Tuck asks what's next, on the page in front.
     await showWithReminder((await loadEngine()).current?.tabId, present({ event: "goal_done" }), intent.title);
     return intent;

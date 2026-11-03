@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { siteName, taskPhrase, templateNudge, followsVoice, reminderLine } from "../../../src/tuck/voice.js";
+import {
+  siteName,
+  taskPhrase,
+  templateNudge,
+  followsVoice,
+  reminderLine,
+  templateGreeting,
+  whenSaid,
+} from "../../../src/tuck/voice.js";
 
 test("sites go by their everyday names", () => {
   assert.equal(siteName("youtube.com"), "YouTube");
@@ -65,4 +73,35 @@ test("a reminder's line follows the voice", () => {
     assert.ok(followsVoice(reminderLine(when)), when);
   assert.equal(reminderLine("tomorrow"), "Due tomorrow. Still on your list?");
   assert.equal(reminderLine("yesterday"), "That was due yesterday. Still on your list?");
+});
+
+test("the greeting after a goal: how it went, in plain facts (#46)", () => {
+  const last = { goal: "Plan the launch", onGoalMin: 130, site: "github.com", finished: false };
+  assert.equal(templateGreeting(last, "Yesterday"), "Yesterday: 2h 10m on plan the launch, last on GitHub.");
+  assert.equal(
+    templateGreeting({ ...last, onGoalMin: 45 }, "Yesterday"),
+    "Yesterday: 45 minutes on plan the launch, last on GitHub.",
+  );
+  assert.equal(
+    templateGreeting({ ...last, onGoalMin: 120 }, "Last time"),
+    "Last time: 2 hours on plan the launch, last on GitHub.",
+  );
+  // Minutes only when it has been a few; no site when no work page was seen.
+  assert.equal(
+    templateGreeting({ ...last, onGoalMin: 2, site: null }, "Earlier today"),
+    "Earlier today: plan the launch.",
+  );
+  assert.equal(
+    templateGreeting({ ...last, finished: true }, "Yesterday"),
+    "Done yesterday: plan the launch. What's next?",
+  );
+  for (const line of [templateGreeting(last, "Yesterday"), templateGreeting({ ...last, finished: true }, "Last time")])
+    assert.ok(followsVoice(line), line);
+});
+
+test("when the last goal was, said from today's date", () => {
+  assert.equal(whenSaid("2026-11-02", "2026-11-03"), "Yesterday");
+  assert.equal(whenSaid("2026-11-03", "2026-11-03"), "Earlier today");
+  assert.equal(whenSaid("2026-10-31", "2026-11-01"), "Yesterday");
+  assert.equal(whenSaid("2026-10-29", "2026-11-03"), "Last time");
 });
