@@ -19,10 +19,6 @@ export { BRAIN, originOf, kindOf } from "./sources.js";
 // A pasted assistant memory, for the settings page: shown before it is sent, then turned
 // into entries (stored with importEntries under a "paste:<id>" origin).
 export { previewPaste, importPasted, ASK_YOUR_ASSISTANT, MAX_PASTE_CHARS } from "./paste.js";
-// An assistant's account export (Claude, Gemini), for the settings page: the recent
-// conversations that name something owed, previewed, then read one at a time through the
-// paste node and stored with importEntries under an "export:<kind>:<file>" origin.
-export { readExport, selectConversations, conversationText, importExport, exportEntries } from "./exports.js";
 
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
@@ -164,7 +160,7 @@ export class Memory {
           entries: mine.length,
           documents: notes.filter((d) => originOf(d) === origin).length,
           openLoops: openLoops(mine).length,
-          ...(kind !== "paste" && kind !== "export" && { connected: !!handle }),
+          ...(kind !== "paste" && { connected: !!handle }),
           lastImport: record.lastImport ?? null,
         };
       });

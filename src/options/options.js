@@ -1,17 +1,5 @@
 import { stillOpen, taskList, taskKey } from "../attention/reminders.js";
-import {
-  Memory,
-  redact,
-  previewPaste,
-  importPasted,
-  ASK_YOUR_ASSISTANT,
-  MAX_PASTE_CHARS,
-  readExport,
-  selectConversations,
-  conversationText,
-  importExport,
-  exportEntries,
-} from "../memory/index.js";
+import { Memory, redact, previewPaste, importPasted, ASK_YOUR_ASSISTANT, MAX_PASTE_CHARS } from "../memory/index.js";
 import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks, taskByConstruction } from "../agent/tasks.js";
@@ -107,7 +95,9 @@ $("connect").onclick = async () => {
     const r = await memory.connectBrain(dir);
     await chrome.runtime.sendMessage({ type: "memory-changed" });
     $("brain-status").textContent = await brainStatus({ connected: true, name: dir.name, ...r });
-    await rereadMemory();
+    $("profile-status").textContent = "Reading…";
+    const note = await readProfile();
+    await showProfile(note, await readTasks());
   } catch (err) {
     if (err.name !== "AbortError") $("brain-status").textContent = `Failed: ${err.message}`;
   }
@@ -121,7 +111,10 @@ $("sync").onclick = async () => {
     const exported = r.connected && !r.needsPermission ? await memory.exportPending({ prompt: true }) : null;
     $("brain-status").textContent =
       (await brainStatus(r)) + (exported?.exported ? `\n${exported.exported} new entries written to inbox/` : "");
-    if (r.connected && !r.needsPermission) await rereadMemory();
+    if (r.connected && !r.needsPermission) {
+      const note = await readProfile();
+      await showProfile(note, await readTasks());
+    }
   } catch (err) {
     $("brain-status").textContent = `Failed: ${err.message}`;
   }
@@ -131,14 +124,16 @@ $("brain-status").textContent = await brainStatus(await memory.brainState().catc
 
 // ---- Other memory --------------------------------------------------------
 
-const KINDS = { md: "Notes folder", paste: "Pasted memory", export: "Assistant export" };
+const KINDS = { md: "Notes folder", paste: "Pasted memory" };
 
 // After an import or a removal, as after a brain sync: the worker judges pages again, and
 // the profile and the tasks are read again.
 async function sourcesChanged() {
   await chrome.runtime.sendMessage({ type: "memory-changed" });
   await showSources();
-  await rereadMemory();
+  $("profile-status").textContent = "Reading…";
+  const note = await readProfile();
+  await showProfile(note, await readTasks());
 }
 
 function sourceText(s) {
@@ -156,7 +151,6 @@ async function showSources() {
             if (!confirm(`Remove "${s.name}" from Tuck's memory? Nothing in the folder or your assistant changes.`))
               return;
             await memory.removeSource(s.origin);
-            if (s.kind === "export") await forgetExport(s.origin);
             $("source-status").textContent = `Removed "${s.name}".`;
             await sourcesChanged();
           });
@@ -189,96 +183,6 @@ $("add-folder").onclick = async () => {
     await sourcesChanged();
   } catch (err) {
     if (err.name !== "AbortError") $("source-status").textContent = `Failed: ${err.message}`;
-  }
-};
-
-// An assistant's export. The whole file is read here, in the page; the preview says how
-// many of its conversations go to the model, and nothing is sent before Import. What each
-// conversation gave is kept by origin in exportCache, so the same file again sends only
-// what is new or changed, and a run that stopped halfway picks up where it was.
-const EXPORT_NAMES = { claude: "Claude export", gemini: "Gemini export" };
-let exportFile = null; // { kind, origin, name, conversations, chosen }
-
-const exportCaches = async () => (await chrome.storage.local.get("exportCache")).exportCache ?? {};
-async function forgetExport(origin) {
-  const caches = await exportCaches();
-  delete caches[origin];
-  await chrome.storage.local.set({ exportCache: caches });
-}
-
-$("add-export").onclick = () => $("export-file").click();
-$("export-file").onchange = async () => {
-  const file = $("export-file").files[0];
-  $("export-file").value = ""; // so the same file can be chosen again
-  if (!file) return;
-  exportFile = null;
-  $("import-export").hidden = true;
-  $("export-status").textContent = "Reading the file…";
-  try {
-    const { kind, conversations } = readExport(JSON.parse(await file.text()));
-    const s = selectConversations(conversations, { today: localDate() });
-    const origin = `export:${kind}:${file.name}`;
-    const cache = (await exportCaches())[origin] ?? {};
-    const fresh = s.chosen.filter((c) => cache[c.id]?.stamp !== c.updated);
-    const chars = fresh.reduce((n, c) => n + conversationText(c).text.length, 0);
-    const dates = s.chosen.map((c) => c.updated.slice(0, 10)).sort();
-    exportFile = { kind, origin, name: file.name, conversations, chosen: s.chosen };
-    $("export-status").textContent = [
-      `${EXPORT_NAMES[kind]} "${file.name}": ${conversations.length} conversations.`,
-      s.chosen.length
-        ? `${s.chosen.length} are from the last 30 days and name a date or a to-do in your own words, ${dates[0]} to ${dates.at(-1)}.`
-        : "None is from the last 30 days with a date or a to-do in your own words.",
-      fresh.length < s.chosen.length ? `${s.chosen.length - fresh.length} were read before.` : null,
-      `${fresh.length} will be sent, one at a time: ${chars.toLocaleString()} characters, secrets removed, to Muse Spark 1.3 (not Contributor).`,
-      `Left out: ${s.tooOld} older, ${s.noCue} with nothing owed` +
-        (s.overCap ? `, ${s.overCap} over the limit of 50` : "") +
-        ".",
-    ]
-      .filter(Boolean)
-      .join("\n");
-    $("import-export").hidden = !s.chosen.length;
-  } catch (err) {
-    $("export-status").textContent = `Could not read it: ${err.message}`;
-  }
-};
-$("import-export").onclick = async () => {
-  const f = exportFile;
-  if (!f) return;
-  $("import-export").hidden = true;
-  try {
-    const settings = await loadModelSettings();
-    if (!settings) {
-      $("import-export").hidden = false;
-      return ($("export-status").textContent = "Set up a model above first.");
-    }
-    $("export-status").textContent = "Reading…";
-    const r = await importExport(modelClient(privateSettings(settings)), f.chosen, {
-      kind: f.kind,
-      cache: (await exportCaches())[f.origin] ?? {},
-      topics: (await memory.profile().catch(() => null))?.topics ?? [],
-      onSaved: async (cache) =>
-        chrome.storage.local.set({ exportCache: { ...(await exportCaches()), [f.origin]: cache } }),
-      onProgress: ({ done, total }) => ($("export-status").textContent = `Reading… ${done} of ${total}`),
-    });
-    const failed = r.failed
-      ? `${r.failed} conversations could not be read (${r.errors.join(" | ")}); import the file again to retry them.`
-      : null;
-    const entries = exportEntries(r.cache, f.conversations);
-    if (!entries.length) return ($("export-status").textContent = failed ?? "Nothing in it could be read as memory.");
-    const stored = await memory.importEntries({ origin: f.origin, name: f.name, entries });
-    exportFile = null;
-    $("export-status").textContent = [
-      `${stored.entries} entries from "${f.name}"` +
-        (r.redactions ? `, ${r.redactions} secrets removed first` : "") +
-        ".",
-      failed,
-    ]
-      .filter(Boolean)
-      .join("\n");
-    await sourcesChanged();
-  } catch (err) {
-    $("export-status").textContent = `Failed: ${err.message}`;
-    $("import-export").hidden = false;
   }
 };
 
@@ -359,11 +263,8 @@ async function readProfile() {
 // Which open loops are real tasks (agent/tasks.js), read here for the same reason as the
 // profile. Only entries that are new or changed since the last read cost a call. Returns
 // a note, and never throws.
-// While it runs, taskProgress says how far it got, so a redraw in between keeps saying so.
-let taskProgress = null;
 async function readTasks() {
-  const progress = (text) => ($("task-status").textContent = taskProgress = text);
-  progress("Reading your tasks…");
+  $("task-status").textContent = "Reading your tasks…";
   try {
     const settings = await loadModelSettings();
     if (!settings) return null;
@@ -372,47 +273,24 @@ async function readTasks() {
       storage: chrome.storage.local,
       today: localDate(),
       clean: (text) => redact(text).text,
-      onProgress: ({ done, total }) => progress(`Reading your tasks… ${done} of ${total}`),
+      onProgress: ({ done, total }) => ($("task-status").textContent = `Reading your tasks… ${done} of ${total}`),
     });
     return r.failed ? `${r.failed} entries could not be read: ${r.errors.join(" | ")}. Re-read to try again.` : null;
   } catch (err) {
     return `Could not read your tasks: ${err.message}`;
-  } finally {
-    taskProgress = null;
   }
 }
 
-// After an import or a sync. The tasks that need no model, such as a notes folder's
-// checkboxes, are listed at once; the profile and the task node are then read side by
-// side, and each is drawn as soon as it is back. Drawing used to wait for both, one after
-// the other, so the list sat empty for the half minute the model took (#6).
-async function rereadMemory() {
-  $("profile-status").textContent = "Reading…";
-  const tasks = readTasks();
-  await showTasks(await queueNow());
-  const profile = readProfile().then(async (note) => {
-    await drawProfile(note);
-    return note;
-  });
-  const [note, taskNote] = await Promise.all([profile, tasks]);
-  await showProfile(note, taskNote);
-}
-
-const queueNow = () => memory.taskQueue({ today: localDate(), limit: Infinity });
-
-async function drawProfile(note) {
+async function showProfile(note, taskNote) {
   const profile = await memory.profile();
+  const queue = await memory.taskQueue({ today: localDate(), limit: Infinity });
   const lines = [
     note,
     profile ? `Tuck knows you as: ${profile.summary}` : "Nothing read yet.",
     profile?.topics?.length ? `Your topics: ${profile.topics.join(", ")}` : null,
   ].filter(Boolean);
   $("profile-status").textContent = lines.join("\n");
-}
-
-async function showProfile(note, taskNote) {
-  await drawProfile(note);
-  await showTasks(await queueNow(), taskNote);
+  await showTasks(queue, taskNote);
   await showLabels();
 }
 
@@ -489,7 +367,6 @@ async function showTasks(queue, note) {
   $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${tasks.length}`;
   const notes = waiting === 1 ? "1 note" : `${waiting} notes`;
   const why = note ? "" : taskProblem ? `: ${taskProblem}` : " (needs a model above)";
-  if (taskProgress) return void ($("task-status").textContent = taskProgress);
   $("task-status").textContent = [
     note,
     waiting
@@ -531,8 +408,11 @@ async function showLabels() {
 }
 
 $("reread").onclick = async () => {
+  $("profile-status").textContent = "Reading…";
+  $("task-status").textContent = "Reading your tasks…";
   try {
-    await rereadMemory();
+    const note = await readProfile();
+    await showProfile(note, await readTasks());
   } catch (err) {
     $("profile-status").textContent = `Failed: ${err.message}`;
   }

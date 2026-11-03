@@ -2,7 +2,6 @@
 //   "brain"         the second-brain folder (the one exportPending writes to)
 //   "md:<folder>"   a Markdown folder, read only (Obsidian, plain notes)
 //   "paste:<id>"    what an assistant said it knows about the person, pasted once
-//   "export:<kind>:<file>"  recent conversations from a Claude or Gemini account export
 // and the extension's own entries (add(), distill) have none. `source` is something
 // else: who wrote the entry (claude-code, distill, extension).
 import { loadBrain } from "./brain.js";
