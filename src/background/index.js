@@ -32,6 +32,7 @@ import { siteName, reminderLine } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
 import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
 import { present } from "../tuck/present.js";
+import "../tuck/skins.js";
 
 const memory = Memory.open();
 const store = openStore();
@@ -714,13 +715,14 @@ async function draftFor(t, s) {
 
 // ---- Tuck on the page ----------------------------------------------------
 
-let tuckAssets = null;
-async function assets() {
-  tuckAssets ??= {
-    svg: await (await fetch(chrome.runtime.getURL("tuck/assets/tuck.svg"))).text(),
-    css: await (await fetch(chrome.runtime.getURL("tuck/assets/tuck.css"))).text(),
-  };
-  return tuckAssets;
+const tuckAssets = new Map();
+async function assets(id) {
+  if (!tuckAssets.has(id)) {
+    const read = async (file) => (await fetch(chrome.runtime.getURL(`tuck/skins/${id}/${file}`))).text();
+    const [manifest, svg, css] = await Promise.all([read("skin.json"), read("tuck.svg"), read("tuck.css")]);
+    tuckAssets.set(id, { manifest: JSON.parse(manifest), svg, css });
+  }
+  return tuckAssets.get(id);
 }
 
 // Draw a view (present.js) in a tab. False when Chrome does not allow it there
@@ -732,7 +734,7 @@ async function showTuck(tabId, view) {
       target: { tabId },
       files: ["tuck/layout.js", "tuck/overlay.js"],
     });
-    await chrome.tabs.sendMessage(tabId, { type: "tuck-show", view, assets: await assets() });
+    await chrome.tabs.sendMessage(tabId, { type: "tuck-show", view, assets: await assets("paper") });
     await chrome.storage.session.set({ tuckTab: tabId });
     return true;
   } catch {

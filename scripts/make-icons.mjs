@@ -1,4 +1,4 @@
-// Renders the toolbar icons from src/tuck/assets/tuck.svg (resting pose, cropped to
+// Renders the toolbar icons from src/tuck/skins/paper/tuck.svg (resting pose, cropped to
 // the character). Run after changing the artwork: node scripts/make-icons.mjs
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -7,7 +7,7 @@ import path from "node:path";
 const { chromium } = createRequire(import.meta.url)("playwright");
 const root = path.resolve(import.meta.dirname, "..");
 const svg = fs
-  .readFileSync(path.join(root, "src/tuck/assets/tuck.svg"), "utf8")
+  .readFileSync(path.join(root, "src/tuck/skins/paper/tuck.svg"), "utf8")
   // The body only: crop the viewBox to the character, without the effect area.
   .replace('viewBox="0 0 280 260"', 'viewBox="30 30 200 200"');
 const browser = await chromium.launch();

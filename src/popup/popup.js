@@ -2,6 +2,7 @@ import { Memory } from "../memory/index.js";
 import { loadModelSettings } from "../memory/model.js";
 import { activityRows } from "./activity.js";
 import { nudgeText } from "../tuck/present.js";
+import "../tuck/skins.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
@@ -127,12 +128,15 @@ setInterval(renderActivity, 15000);
 
 // Tuck in the header; sleeping while you are on a break or not to be disturbed.
 async function renderMark() {
-  const svg = await (await fetch(chrome.runtime.getURL("tuck/assets/tuck.svg"))).text();
+  const read = async (file) => (await fetch(chrome.runtime.getURL(`tuck/skins/paper/${file}`))).text();
+  const [svg, manifest] = await Promise.all([read("tuck.svg"), read("skin.json").then(JSON.parse)]);
   $("tuck-mark").innerHTML = svg;
   const { engine } = await send("get-status");
-  $("tuck-mark").querySelector("svg").dataset.state = ["break", "paused"].includes(engine.state)
-    ? "sleeping"
-    : "resting";
+  const pose = ["break", "paused"].includes(engine.state) ? "sleep" : "rest";
+  const root = $("tuck-mark").querySelector("svg");
+  for (const [name, value] of Object.entries(globalThis.tuckSkins.poseAttrs(manifest, pose))) {
+    root.setAttribute(name, value);
+  }
 }
 
 render();

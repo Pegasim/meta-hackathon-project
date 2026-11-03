@@ -24,7 +24,7 @@ test/
   live/              real-model checks
   fixtures/          recorded sessions for the replay criteria
 evals/               npm run eval: relevance accuracy against the real model
-scripts/             make-icons.mjs renders the toolbar icons from src/tuck/assets/tuck.svg
+scripts/             make-icons.mjs renders the toolbar icons from src/tuck/skins/paper/tuck.svg
 checks/              pre-commit checks
 docs/                INTENT.md, DECISIONS.md, DESIGN.md, guides/, design specs and plans
 ```
