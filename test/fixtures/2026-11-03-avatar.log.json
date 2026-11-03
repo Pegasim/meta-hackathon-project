@@ -1,0 +1,3987 @@
+{
+ "version": 1,
+ "exportedAt": "2026-11-03T14:57:27.173Z",
+ "events": [
+  {
+   "type": "session",
+   "ts": 1793716804471,
+   "kind": "mode",
+   "payload": {
+    "mode": "off"
+   }
+  },
+  {
+   "type": "state",
+   "ts": 1793716804471,
+   "from": "no_intent",
+   "to": "paused",
+   "budgetSec": 0,
+   "switches2m": 0
+  },
+  {
+   "type": "session",
+   "ts": 1793716841631,
+   "kind": "mode",
+   "payload": {
+    "mode": "off"
+   }
+  },
+  {
+   "type": "state",
+   "ts": 1793716841631,
+   "from": "no_intent",
+   "to": "paused",
+   "budgetSec": 0,
+   "switches2m": 0
+  },
+  {
+   "type": "session",
+   "ts": 1793716844936,
+   "kind": "mode",
+   "payload": {
+    "mode": "focus"
+   }
+  },
+  {
+   "type": "state",
+   "ts": 1793716844936,
+   "from": "paused",
+   "to": "no_intent",
+   "budgetSec": 0,
+   "switches2m": 0
+  },
+  {
+   "type": "context",
+   "ts": 1793716864231,
+   "tabId": 1245013931,
+   "url": "",
+   "host": "",
+   "title": "",
+   "key": "none||",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "trigger",
+   "kind": "session_start",
+   "ts": 1793716864231,
+   "id": "session_start-1793716864231",
+   "evidence": {
+    "url": "",
+    "host": "",
+    "title": "",
+    "surface": {
+     "kind": "page",
+     "labels": []
+    },
+    "key": "none||",
+    "agent": null,
+    "agentAgain": false,
+    "dwellSec": 0,
+    "awaySec": 0,
+    "budgetSec": 0,
+    "switches2m": 1,
+    "lastRelevant": null,
+    "unsure": false
+   },
+   "level": 2
+  },
+  {
+   "type": "context",
+   "ts": 1793716864263,
+   "tabId": 1245013931,
+   "url": "",
+   "host": "",
+   "title": "",
+   "key": "none||",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793716864265,
+   "tabId": 1245013931,
+   "url": "",
+   "host": "",
+   "title": "",
+   "key": "none||",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "session",
+   "ts": 1793716870965,
+   "kind": "memory"
+  },
+  {
+   "type": "context",
+   "ts": 1793716876531,
+   "tabId": 1245013354,
+   "url": "chrome://extensions/he60a6d8163",
+   "host": "extensions",
+   "title": "h8e974594cb",
+   "key": "none|extensions|ha5d6f76e29",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793716878750,
+   "tabId": 1245013360,
+   "url": "https://github.com/h34c1471402",
+   "host": "github.com",
+   "title": "h0578b0c93d",
+   "key": "none|github.com|h6b81304fea",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "session",
+   "ts": 1793716882171,
+   "kind": "intent_set",
+   "payload": {
+    "id": "aaf6630a-f2aa-47c1-b47e-c98cfb40f509",
+    "title": "working on hackathon",
+    "topic": "working-on-hackathon"
+   }
+  },
+  {
+   "type": "state",
+   "ts": 1793716882171,
+   "from": "no_intent",
+   "to": "focused",
+   "budgetSec": 0,
+   "switches2m": 3
+  },
+  {
+   "type": "context",
+   "ts": 1793716900721,
+   "tabId": 1245013360,
+   "url": "https://github.com/h34c1471402",
+   "host": "github.com",
+   "title": "h0578b0c93d",
+   "key": "aaf6630a-f2aa-47c1-b47e-c98cfb40f509|github.com|h6b81304fea",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "session",
+   "ts": 1793716902571,
+   "kind": "intent_set",
+   "payload": {
+    "id": "8d06888c-39b4-45f8-911e-ea0146f95d81",
+    "title": "creating avatar for tuck",
+    "topic": "creating-avatar-for-tuck"
+   }
+  },
+  {
+   "type": "context",
+   "ts": 1793716908589,
+   "tabId": 1245013360,
+   "url": "https://github.com/h34c1471402",
+   "host": "github.com",
+   "title": "h0578b0c93d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|github.com|h6b81304fea",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active"
+  },
+  {
+   "type": "state",
+   "ts": 1793716908589,
+   "from": "focused",
+   "to": "away",
+   "budgetSec": 0,
+   "switches2m": 3
+  },
+  {
+   "type": "context",
+   "ts": 1793716914037,
+   "tabId": 1245013360,
+   "url": "https://github.com/h34c1471402",
+   "host": "github.com",
+   "title": "h0578b0c93d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|github.com|h6b81304fea",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "state",
+   "ts": 1793716914037,
+   "from": "away",
+   "to": "focused",
+   "budgetSec": 0,
+   "switches2m": 3
+  },
+  {
+   "type": "context",
+   "ts": 1793716918030,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "llm",
+   "ts": 1793716924532,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 23794,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 1,
+    "profile": true,
+    "conversation": false,
+    "commitments": 3
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793716924535,
+   "key": "aaf6630a-f2aa-47c1-b47e-c98cfb40f509|github.com|h6b81304fea",
+   "label": "unrelated",
+   "confidence": 0.85,
+   "source": "llm",
+   "latencyMs": 23794,
+   "intentId": "aaf6630a-f2aa-47c1-b47e-c98cfb40f509"
+  },
+  {
+   "type": "context",
+   "ts": 1793716930722,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "llm",
+   "ts": 1793716933408,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 19353,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 1,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793716933410,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|github.com|h6b81304fea",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "llm",
+   "latencyMs": 19353,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "llm",
+   "ts": 1793716936703,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 18547,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 3,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793716936706,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "llm",
+   "latencyMs": 18547,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793716940085,
+   "tabId": 1245013935,
+   "url": "",
+   "host": "",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81||hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793716940398,
+   "tabId": 1245013935,
+   "url": "chrome://newtab/he60a6d8163",
+   "host": "newtab",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|newtab|hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793716944211,
+   "tabId": 1245013935,
+   "url": "https://www.google.com/h84192d8f2c",
+   "host": "google.com",
+   "title": "h02e734536d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|h81c6555271",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": [],
+    "late": true
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793716945511,
+   "tabId": 1245013935,
+   "url": "https://www.google.com/h84192d8f2c",
+   "host": "google.com",
+   "title": "h02e734536d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|h81c6555271",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793716959611,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h8b54a74722",
+   "host": "magnific.com",
+   "title": "h3350ff54ac",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h949fa4d94c",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": [],
+    "late": true
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793716960517,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h8b54a74722",
+   "host": "magnific.com",
+   "title": "h3350ff54ac",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h949fa4d94c",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793716960719,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h8b54a74722",
+   "host": "magnific.com",
+   "title": "h3350ff54ac",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h949fa4d94c",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "llm",
+   "ts": 1793716979237,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 19119,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793716979240,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h949fa4d94c",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "llm",
+   "latencyMs": 19119,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793716979604,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h82fa9e2b02",
+   "host": "magnific.com",
+   "title": "h3350ff54ac",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h949fa4d94c",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793716981046,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h691cc0f72c",
+   "host": "magnific.com",
+   "title": "h3350ff54ac",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h949fa4d94c",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793716984788,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h7d07df2b24",
+   "host": "magnific.com",
+   "title": "h3350ff54ac",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h949fa4d94c",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793716984855,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h7d07df2b24",
+   "host": "magnific.com",
+   "title": "he00d1c60d4",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|hb113e55f62",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793716985041,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h7d07df2b24",
+   "host": "magnific.com",
+   "title": "hc356ac656a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h161104738a|he31da23205",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793716990722,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h7d07df2b24",
+   "host": "magnific.com",
+   "title": "hc356ac656a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h161104738a|he31da23205",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793716995454,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h691cc0f72c",
+   "host": "magnific.com",
+   "title": "hc356ac656a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h161104738a|he31da23205",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793716995561,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h691cc0f72c",
+   "host": "magnific.com",
+   "title": "h3350ff54ac",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h949fa4d94c",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717005642,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 20772,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717005645,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|hb113e55f62",
+   "label": "related",
+   "confidence": 0.65,
+   "source": "llm",
+   "latencyMs": 20772,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793717006680,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h691cc0f72c",
+   "host": "magnific.com",
+   "title": "hb1e2a83f41",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|hb1e2a83f41",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717006743,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/hb262ab5eca",
+   "host": "magnific.com",
+   "title": "ha6ac6d0200",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h96ff1f6d3b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717006865,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/hb262ab5eca",
+   "host": "magnific.com",
+   "title": "h080749a074",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|he232ca35d8|he31da23205",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717015077,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 30017,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717015079,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h161104738a|he31da23205",
+   "label": "unrelated",
+   "confidence": 0.8,
+   "source": "llm",
+   "latencyMs": 30017,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793717020721,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/hb262ab5eca",
+   "host": "magnific.com",
+   "title": "h080749a074",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|he232ca35d8|he31da23205",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717022036,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 15293,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717022037,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|hb1e2a83f41",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "llm",
+   "latencyMs": 15293,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717023629,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 16873,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717023630,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h96ff1f6d3b",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "llm",
+   "latencyMs": 16873,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793717024654,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h691cc0f72c",
+   "host": "magnific.com",
+   "title": "h080749a074",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|he232ca35d8|he31da23205",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717024761,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h691cc0f72c",
+   "host": "magnific.com",
+   "title": "h3350ff54ac",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h949fa4d94c",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717025144,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/hb262ab5eca",
+   "host": "magnific.com",
+   "title": "h080749a074",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|he232ca35d8|he31da23205",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717025169,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/hb262ab5eca",
+   "host": "magnific.com",
+   "title": "h080749a074",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|he232ca35d8|he31da23205",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717026412,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h691cc0f72c",
+   "host": "magnific.com",
+   "title": "hb1e2a83f41",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|hb1e2a83f41",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717026436,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h691cc0f72c",
+   "host": "magnific.com",
+   "title": "hb1e2a83f41",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|hb1e2a83f41",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717027978,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h7d07df2b24",
+   "host": "magnific.com",
+   "title": "hc356ac656a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h161104738a|he31da23205",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.8,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717027978,
+   "from": "focused",
+   "to": "detour",
+   "budgetSec": 7,
+   "switches2m": 14
+  },
+  {
+   "type": "context",
+   "ts": 1793717028019,
+   "tabId": 1245013935,
+   "url": "https://www.magnific.com/h7d07df2b24",
+   "host": "magnific.com",
+   "title": "hc356ac656a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|h161104738a|he31da23205",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.8,
+   "source": "cache"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717029635,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 22747,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717029636,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|magnific.com|he232ca35d8|he31da23205",
+   "label": "related",
+   "confidence": 0.65,
+   "source": "llm",
+   "latencyMs": 22747,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793717034669,
+   "tabId": 1245013935,
+   "url": "https://www.google.com/ha49a606cdf",
+   "host": "google.com",
+   "title": "hfc3c5873a1",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|hdf6d51dfb9",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": [],
+    "late": true
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "state",
+   "ts": 1793717034669,
+   "from": "detour",
+   "to": "focused",
+   "budgetSec": 13,
+   "switches2m": 15
+  },
+  {
+   "type": "context",
+   "ts": 1793717036073,
+   "tabId": 1245013935,
+   "url": "https://www.google.com/ha49a606cdf",
+   "host": "google.com",
+   "title": "hfc3c5873a1",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|hdf6d51dfb9",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717045214,
+   "tabId": 1245013935,
+   "url": "https://www.shutterstock.com/h045afca713",
+   "host": "shutterstock.com",
+   "title": "h60d70fab98",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717046555,
+   "tabId": 1245013935,
+   "url": "https://www.shutterstock.com/h045afca713",
+   "host": "shutterstock.com",
+   "title": "h60d70fab98",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717048824,
+   "tabId": 1245013935,
+   "url": "https://www.shutterstock.com/h045afca713",
+   "host": "shutterstock.com",
+   "title": "h60d70fab98",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717050719,
+   "tabId": 1245013935,
+   "url": "https://www.shutterstock.com/h045afca713",
+   "host": "shutterstock.com",
+   "title": "h60d70fab98",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717052769,
+   "node": "composeNudge",
+   "model": "meta",
+   "latencyMs": 24769,
+   "ok": true
+  },
+  {
+   "type": "llm",
+   "ts": 1793717072752,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 27031,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717072754,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "llm",
+   "latencyMs": 27031,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793717080720,
+   "tabId": 1245013935,
+   "url": "https://www.shutterstock.com/h045afca713",
+   "host": "shutterstock.com",
+   "title": "h60d70fab98",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717083525,
+   "tabId": 1245013938,
+   "url": "",
+   "host": "",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81||hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717083774,
+   "tabId": 1245013938,
+   "url": "chrome://newtab/he60a6d8163",
+   "host": "newtab",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|newtab|hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717091447,
+   "tabId": 1245013938,
+   "url": "https://www.google.com/h5a2fcf926a",
+   "host": "google.com",
+   "title": "hda62b49bc4",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|h1416eecb4c",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": [],
+    "late": true
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717092638,
+   "tabId": 1245013938,
+   "url": "https://www.google.com/h5a2fcf926a",
+   "host": "google.com",
+   "title": "hda62b49bc4",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|h1416eecb4c",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717093526,
+   "tabId": 1245013938,
+   "url": "https://openpets.dev/he60a6d8163",
+   "host": "openpets.dev",
+   "title": "hd34914b3a0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": [],
+    "late": true
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717095429,
+   "tabId": 1245013938,
+   "url": "https://openpets.dev/he60a6d8163",
+   "host": "openpets.dev",
+   "title": "hd34914b3a0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717110721,
+   "tabId": 1245013938,
+   "url": "https://openpets.dev/he60a6d8163",
+   "host": "openpets.dev",
+   "title": "hd34914b3a0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717121966,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 27933,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717121967,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "llm",
+   "latencyMs": 27933,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793717122909,
+   "tabId": 1245013941,
+   "url": "",
+   "host": "",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81||hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717123153,
+   "tabId": 1245013941,
+   "url": "chrome://newtab/he60a6d8163",
+   "host": "newtab",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|newtab|hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717124982,
+   "tabId": 1245013941,
+   "url": "https://www.linkedin.com/h99f7c293f5",
+   "host": "linkedin.com",
+   "title": "hab35116acd",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h7cfb0e6f87|h232e97a1bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717125389,
+   "tabId": 1245013941,
+   "url": "https://www.linkedin.com/h99f7c293f5",
+   "host": "linkedin.com",
+   "title": "hab35116acd",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h7cfb0e6f87|h232e97a1bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717127102,
+   "tabId": 1245013941,
+   "url": "https://www.linkedin.com/hc7c2c22cdc",
+   "host": "linkedin.com",
+   "title": "h9c9a7848ff",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h1577f86dc8",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": [],
+    "late": true
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717128478,
+   "tabId": 1245013941,
+   "url": "https://www.linkedin.com/hc7c2c22cdc",
+   "host": "linkedin.com",
+   "title": "h9c9a7848ff",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h1577f86dc8",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717129142,
+   "tabId": 1245013941,
+   "url": "https://www.linkedin.com/h4b0da63e62",
+   "host": "linkedin.com",
+   "title": "h9c9a7848ff",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h1577f86dc8",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717129320,
+   "tabId": 1245013941,
+   "url": "https://www.linkedin.com/h4b0da63e62",
+   "host": "linkedin.com",
+   "title": "h357db10dd2",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h2d12c76d1d|h232e97a1bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717130565,
+   "tabId": 1245013941,
+   "url": "https://www.linkedin.com/h4b0da63e62",
+   "host": "linkedin.com",
+   "title": "h357db10dd2",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h2d12c76d1d|h232e97a1bf|h68988b0d96|h31ab369167",
+   "audible": false,
+   "surface": {
+    "kind": "conversation",
+    "labels": [
+     "h29a01cc6c6"
+    ]
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717140229,
+   "tabId": 1245013938,
+   "url": "https://openpets.dev/he60a6d8163",
+   "host": "openpets.dev",
+   "title": "hd34914b3a0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717140587,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 10008,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": true,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717140589,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h2d12c76d1d|h232e97a1bf|h68988b0d96|h31ab369167",
+   "label": "neutral",
+   "confidence": 0.9,
+   "source": "llm",
+   "latencyMs": 10008,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793717140719,
+   "tabId": 1245013938,
+   "url": "https://openpets.dev/he60a6d8163",
+   "host": "openpets.dev",
+   "title": "hd34914b3a0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717142923,
+   "tabId": 1245013935,
+   "url": "https://www.shutterstock.com/h045afca713",
+   "host": "shutterstock.com",
+   "title": "h60d70fab98",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717146472,
+   "tabId": 1245013935,
+   "url": "https://www.shutterstock.com/h045afca713",
+   "host": "shutterstock.com",
+   "title": "h60d70fab98",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717146472,
+   "from": "focused",
+   "to": "away",
+   "budgetSec": 0,
+   "switches2m": 14
+  },
+  {
+   "type": "llm",
+   "ts": 1793717148486,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 19134,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 2,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717148487,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h2d12c76d1d|h232e97a1bf",
+   "label": "neutral",
+   "confidence": 0.85,
+   "source": "llm",
+   "latencyMs": 19134,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717150605,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 25237,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 3,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717150606,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h7cfb0e6f87|h232e97a1bf",
+   "label": "unrelated",
+   "confidence": 0.85,
+   "source": "llm",
+   "latencyMs": 25237,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717156595,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 28981,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 2,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717156598,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h1577f86dc8",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "llm",
+   "latencyMs": 28981,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793717174755,
+   "tabId": 1245013935,
+   "url": "https://www.shutterstock.com/h045afca713",
+   "host": "shutterstock.com",
+   "title": "h60d70fab98",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717174755,
+   "from": "away",
+   "to": "focused",
+   "budgetSec": 4,
+   "switches2m": 11
+  },
+  {
+   "type": "context",
+   "ts": 1793717175896,
+   "tabId": 1245013944,
+   "url": "",
+   "host": "",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81||hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717176190,
+   "tabId": 1245013944,
+   "url": "chrome://newtab/he60a6d8163",
+   "host": "newtab",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|newtab|hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717177242,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/ha143e1ff76",
+   "host": "youtube.com",
+   "title": "h1025ac6a43",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717177512,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/ha143e1ff76",
+   "host": "youtube.com",
+   "title": "h1025ac6a43",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717177561,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/h40e52f959a",
+   "host": "youtube.com",
+   "title": "h1025ac6a43",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717177798,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/h40e52f959a",
+   "host": "youtube.com",
+   "title": "hccf81d403c",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717186769,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/h40e52f959a",
+   "host": "youtube.com",
+   "title": "h1025ac6a43",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717186981,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/h40e52f959a",
+   "host": "youtube.com",
+   "title": "h1025ac6a43",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717187258,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/h40e52f959a",
+   "host": "youtube.com",
+   "title": "h21c1f75b8b",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717188028,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/h40e52f959a",
+   "host": "youtube.com",
+   "title": "h1025ac6a43",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717190865,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 13423,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717190867,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "label": "unrelated",
+   "confidence": 0.8,
+   "source": "llm",
+   "latencyMs": 13423,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "state",
+   "ts": 1793717190867,
+   "from": "focused",
+   "to": "detour",
+   "budgetSec": 16,
+   "switches2m": 15
+  },
+  {
+   "type": "context",
+   "ts": 1793717193093,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/h40e52f959a",
+   "host": "youtube.com",
+   "title": "h1025ac6a43",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.8,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717193138,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/hfacf7b09e0",
+   "host": "youtube.com",
+   "title": "h1025ac6a43",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.8,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717193258,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/hfacf7b09e0",
+   "host": "youtube.com",
+   "title": "h201d64a8d0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|hfd92378865",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "state",
+   "ts": 1793717193258,
+   "from": "detour",
+   "to": "focused",
+   "budgetSec": 18,
+   "switches2m": 16
+  },
+  {
+   "type": "context",
+   "ts": 1793717195086,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/hfacf7b09e0",
+   "host": "youtube.com",
+   "title": "haef676cc18",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|hc6475b8f07",
+   "audible": true,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717200720,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/hfacf7b09e0",
+   "host": "youtube.com",
+   "title": "haef676cc18",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|hc6475b8f07",
+   "audible": true,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717205441,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 10190,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717205443,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|hc6475b8f07",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "llm",
+   "latencyMs": 10190,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "state",
+   "ts": 1793717205443,
+   "from": "focused",
+   "to": "detour",
+   "budgetSec": 28,
+   "switches2m": 14
+  },
+  {
+   "type": "tick",
+   "ts": 1793717207067
+  },
+  {
+   "type": "llm",
+   "ts": 1793717208407,
+   "node": "composeNudge",
+   "model": "meta",
+   "latencyMs": 17533,
+   "ok": true
+  },
+  {
+   "type": "llm",
+   "ts": 1793717215352,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 22070,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717215354,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|hfd92378865",
+   "label": "neutral",
+   "confidence": 0.9,
+   "source": "llm",
+   "latencyMs": 22070,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717215485,
+   "node": "secondLook",
+   "model": "meta",
+   "latencyMs": 8395,
+   "ok": true,
+   "chars": 1000,
+   "redactions": 0,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "tick",
+   "ts": 1793717222066
+  },
+  {
+   "type": "state",
+   "ts": 1793717222066,
+   "from": "detour",
+   "to": "drifting",
+   "budgetSec": 45,
+   "switches2m": 12
+  },
+  {
+   "type": "second_look",
+   "ts": 1793717222076,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|hc6475b8f07",
+   "composing": false,
+   "label": "unrelated",
+   "confidence": 0.95,
+   "source": "look-cache"
+  },
+  {
+   "type": "trigger",
+   "kind": "drift",
+   "ts": 1793717222076,
+   "id": "drift-1793717222076",
+   "evidence": {
+    "url": "https://www.youtube.com/hfacf7b09e0",
+    "host": "youtube.com",
+    "title": "haef676cc18",
+    "surface": {
+     "kind": "page",
+     "labels": []
+    },
+    "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|hc6475b8f07",
+    "agent": null,
+    "agentAgain": false,
+    "dwellSec": 29,
+    "awaySec": 45,
+    "budgetSec": 45,
+    "switches2m": 12,
+    "lastRelevant": {
+     "tabId": 1245013935,
+     "title": "h60d70fab98",
+     "ts": 1793717174755,
+     "url": "https://www.shutterstock.com/h045afca713"
+    },
+    "unsure": false
+   },
+   "level": 1
+  },
+  {
+   "type": "llm",
+   "ts": 1793717223624,
+   "node": "composeNudge",
+   "model": "meta",
+   "latencyMs": 18175,
+   "ok": true
+  },
+  {
+   "type": "context",
+   "ts": 1793717225306,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/hfacf7b09e0",
+   "host": "youtube.com",
+   "title": "haef676cc18",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|hc6475b8f07",
+   "audible": true,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717225306,
+   "from": "drifting",
+   "to": "away",
+   "budgetSec": 48,
+   "switches2m": 12
+  },
+  {
+   "type": "llm",
+   "ts": 1793717242509,
+   "node": "composeNudge",
+   "model": "meta",
+   "latencyMs": 20417,
+   "ok": true
+  },
+  {
+   "type": "context",
+   "ts": 1793717261712,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/hfacf7b09e0",
+   "host": "youtube.com",
+   "title": "haef676cc18",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|hc6475b8f07",
+   "audible": true,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717261712,
+   "from": "away",
+   "to": "drifting",
+   "budgetSec": 48,
+   "switches2m": 6
+  },
+  {
+   "type": "context",
+   "ts": 1793717266719,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/h40e52f959a",
+   "host": "youtube.com",
+   "title": "haef676cc18",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|hc6475b8f07",
+   "audible": true,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717267351,
+   "tabId": 1245013944,
+   "url": "https://www.youtube.com/h40e52f959a",
+   "host": "youtube.com",
+   "title": "h1025ac6a43",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|youtube.com|h90cf7b7f6e",
+   "audible": true,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.8,
+   "source": "cache"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717277223,
+   "node": "secondLook",
+   "model": "meta",
+   "latencyMs": 9805,
+   "ok": true,
+   "chars": 610,
+   "redactions": 0,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "context",
+   "ts": 1793717282194,
+   "tabId": 1245013935,
+   "url": "https://www.shutterstock.com/h045afca713",
+   "host": "shutterstock.com",
+   "title": "h60d70fab98",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717282194,
+   "from": "drifting",
+   "to": "focused",
+   "budgetSec": 69,
+   "switches2m": 7
+  },
+  {
+   "type": "feedback",
+   "ts": 1793717282194,
+   "kind": "self_return",
+   "payload": {
+    "triggerId": "drift-1793717222076",
+    "afterMs": 60118
+   }
+  },
+  {
+   "type": "context",
+   "ts": 1793717287617,
+   "tabId": 1245013360,
+   "url": "https://github.com/h34c1471402",
+   "host": "github.com",
+   "title": "h0578b0c93d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|github.com|h6b81304fea",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717288346,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717290720,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717308569,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717308569,
+   "from": "focused",
+   "to": "away",
+   "budgetSec": 16,
+   "switches2m": 5
+  },
+  {
+   "type": "context",
+   "ts": 1793717323575,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717323575,
+   "from": "away",
+   "to": "focused",
+   "budgetSec": 16,
+   "switches2m": 4
+  },
+  {
+   "type": "context",
+   "ts": 1793717350720,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717376638,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717376638,
+   "from": "focused",
+   "to": "away",
+   "budgetSec": 0,
+   "switches2m": 4
+  },
+  {
+   "type": "context",
+   "ts": 1793717378587,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717378587,
+   "from": "away",
+   "to": "focused",
+   "budgetSec": 0,
+   "switches2m": 4
+  },
+  {
+   "type": "context",
+   "ts": 1793717380721,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717381456,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717381456,
+   "from": "focused",
+   "to": "away",
+   "budgetSec": 0,
+   "switches2m": 4
+  },
+  {
+   "type": "context",
+   "ts": 1793717409904,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717409904,
+   "from": "away",
+   "to": "focused",
+   "budgetSec": 0,
+   "switches2m": 0
+  },
+  {
+   "type": "context",
+   "ts": 1793717410751,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717440720,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717470720,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717491777,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717491777,
+   "from": "focused",
+   "to": "away",
+   "budgetSec": 0,
+   "switches2m": 0
+  },
+  {
+   "type": "context",
+   "ts": 1793717498723,
+   "tabId": 1245013354,
+   "url": "chrome://extensions/he60a6d8163",
+   "host": "extensions",
+   "title": "h8e974594cb",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|extensions|ha5d6f76e29",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "state",
+   "ts": 1793717498723,
+   "from": "away",
+   "to": "focused",
+   "budgetSec": 0,
+   "switches2m": 1
+  },
+  {
+   "type": "context",
+   "ts": 1793717498733,
+   "tabId": 1245013354,
+   "url": "chrome://extensions/he60a6d8163",
+   "host": "extensions",
+   "title": "h8e974594cb",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|extensions|ha5d6f76e29",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717499762,
+   "tabId": 1245013356,
+   "url": "https://www.reddit.com/hc82513799f",
+   "host": "reddit.com",
+   "title": "hecdcba0dd8",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|reddit.com|hb97ff03a3a",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717500718,
+   "tabId": 1245013356,
+   "url": "https://www.reddit.com/hc82513799f",
+   "host": "reddit.com",
+   "title": "hecdcba0dd8",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|reddit.com|hb97ff03a3a",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717502429,
+   "tabId": 1245013949,
+   "url": "",
+   "host": "",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81||hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717502680,
+   "tabId": 1245013949,
+   "url": "chrome://newtab/he60a6d8163",
+   "host": "newtab",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|newtab|hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717503193,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "he935d54f5b",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": [],
+    "late": true
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717505417,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717505647,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717506071,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active"
+  },
+  {
+   "type": "state",
+   "ts": 1793717506071,
+   "from": "focused",
+   "to": "away",
+   "budgetSec": 0,
+   "switches2m": 5
+  },
+  {
+   "type": "context",
+   "ts": 1793717514214,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "state",
+   "ts": 1793717514214,
+   "from": "away",
+   "to": "focused",
+   "budgetSec": 0,
+   "switches2m": 5
+  },
+  {
+   "type": "llm",
+   "ts": 1793717517537,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 13833,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717517538,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "llm",
+   "latencyMs": 13833,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "state",
+   "ts": 1793717517538,
+   "from": "focused",
+   "to": "detour",
+   "budgetSec": 6,
+   "switches2m": 5
+  },
+  {
+   "type": "llm",
+   "ts": 1793717528445,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 28564,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717528446,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|reddit.com|hb97ff03a3a",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "llm",
+   "latencyMs": 28564,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793717530721,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717532795,
+   "node": "composeNudge",
+   "model": "meta",
+   "latencyMs": 15252,
+   "ok": true
+  },
+  {
+   "type": "context",
+   "ts": 1793717537291,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/h48c376801e",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717539366,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/h48c376801e",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf|h68988b0d96|h396769712a",
+   "audible": false,
+   "surface": {
+    "kind": "conversation",
+    "labels": [
+     "h396769712a"
+    ]
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "tick",
+   "ts": 1793717541388
+  },
+  {
+   "type": "context",
+   "ts": 1793717545683,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/h48c376801e",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717546784,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/h48c376801e",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf|h68988b0d96|h396769712a",
+   "audible": false,
+   "surface": {
+    "kind": "conversation",
+    "labels": [
+     "h396769712a"
+    ]
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717547501,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/h48c376801e",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717547631,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717554592,
+   "node": "secondLook",
+   "model": "meta",
+   "latencyMs": 13190,
+   "ok": true,
+   "chars": 1000,
+   "redactions": 0,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": true,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "llm",
+   "ts": 1793717555826,
+   "node": "secondLook",
+   "model": "meta",
+   "latencyMs": 10129,
+   "ok": true,
+   "chars": 1000,
+   "redactions": 0,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "tick",
+   "ts": 1793717556388
+  },
+  {
+   "type": "state",
+   "ts": 1793717556388,
+   "from": "detour",
+   "to": "drifting",
+   "budgetSec": 45,
+   "switches2m": 7
+  },
+  {
+   "type": "second_look",
+   "ts": 1793717556397,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "composing": false,
+   "label": "unrelated",
+   "confidence": 0.95,
+   "source": "look-cache"
+  },
+  {
+   "type": "trigger",
+   "kind": "drift",
+   "ts": 1793717556397,
+   "id": "drift-1793717556397",
+   "evidence": {
+    "url": "https://www.instagram.com/he60a6d8163",
+    "host": "instagram.com",
+    "title": "h4f8c1ce879",
+    "surface": {
+     "kind": "page",
+     "labels": []
+    },
+    "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+    "agent": null,
+    "agentAgain": false,
+    "dwellSec": 9,
+    "awaySec": 53,
+    "budgetSec": 45,
+    "switches2m": 7,
+    "lastRelevant": {
+     "tabId": 1245013359,
+     "title": "he30a76059a",
+     "ts": 1793717470720,
+     "url": "https://chatgpt.com/hda1ba3f883"
+    },
+    "unsure": false
+   },
+   "level": 1
+  },
+  {
+   "type": "context",
+   "ts": 1793717560719,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717571431,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717571431,
+   "from": "drifting",
+   "to": "away",
+   "budgetSec": 60,
+   "switches2m": 7
+  },
+  {
+   "type": "llm",
+   "ts": 1793717571706,
+   "node": "composeNudge",
+   "model": "meta",
+   "latencyMs": 15295,
+   "ok": true
+  },
+  {
+   "type": "context",
+   "ts": 1793717584959,
+   "tabId": 1245013941,
+   "url": "https://www.linkedin.com/h4b0da63e62",
+   "host": "linkedin.com",
+   "title": "h2ee85f10a9",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h2d12c76d1d|h232e97a1bf|h68988b0d96|h31ab369167",
+   "audible": false,
+   "surface": {
+    "kind": "conversation",
+    "labels": [
+     "h29a01cc6c6"
+    ]
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717584959,
+   "from": "away",
+   "to": "focused",
+   "budgetSec": 60,
+   "switches2m": 8
+  },
+  {
+   "type": "context",
+   "ts": 1793717584974,
+   "tabId": 1245013941,
+   "url": "https://www.linkedin.com/h4b0da63e62",
+   "host": "linkedin.com",
+   "title": "h2ee85f10a9",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h2d12c76d1d|h232e97a1bf|h68988b0d96|h31ab369167",
+   "audible": false,
+   "surface": {
+    "kind": "conversation",
+    "labels": [
+     "h29a01cc6c6"
+    ]
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717587148,
+   "tabId": 1245013938,
+   "url": "https://openpets.dev/he60a6d8163",
+   "host": "openpets.dev",
+   "title": "hd34914b3a0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717590719,
+   "tabId": 1245013938,
+   "url": "https://openpets.dev/he60a6d8163",
+   "host": "openpets.dev",
+   "title": "hd34914b3a0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717620720,
+   "tabId": 1245013938,
+   "url": "https://openpets.dev/he60a6d8163",
+   "host": "openpets.dev",
+   "title": "hd34914b3a0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717650720,
+   "tabId": 1245013938,
+   "url": "https://openpets.dev/he60a6d8163",
+   "host": "openpets.dev",
+   "title": "hd34914b3a0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717653480,
+   "tabId": 1245013935,
+   "url": "https://www.shutterstock.com/h045afca713",
+   "host": "shutterstock.com",
+   "title": "h60d70fab98",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|shutterstock.com|h1fdc3413f7|h7dc2cc0f6b",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.6,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717657256,
+   "tabId": 1245013360,
+   "url": "https://github.com/h34c1471402",
+   "host": "github.com",
+   "title": "h0578b0c93d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|github.com|h6b81304fea",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717659060,
+   "tabId": 1245013360,
+   "url": "https://github.com/h34c1471402",
+   "host": "github.com",
+   "title": "h0578b0c93d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|github.com|h6b81304fea",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717659060,
+   "from": "focused",
+   "to": "away",
+   "budgetSec": 0,
+   "switches2m": 5
+  },
+  {
+   "type": "context",
+   "ts": 1793717667356,
+   "tabId": 1245013360,
+   "url": "https://github.com/h34c1471402",
+   "host": "github.com",
+   "title": "h0578b0c93d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|github.com|h6b81304fea",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717667356,
+   "from": "away",
+   "to": "focused",
+   "budgetSec": 0,
+   "switches2m": 5
+  },
+  {
+   "type": "context",
+   "ts": 1793717679235,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717680720,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717687080,
+   "tabId": 1245013952,
+   "url": "",
+   "host": "",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81||hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717687371,
+   "tabId": 1245013952,
+   "url": "chrome://newtab/he60a6d8163",
+   "host": "newtab",
+   "title": "hac62c6b72d",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|newtab|hde77504c71",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717693054,
+   "tabId": 1245013952,
+   "url": "https://www.google.com/h21a277fbf8",
+   "host": "google.com",
+   "title": "h2cf74b2353",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|hcd164c4b7a",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": [],
+    "late": true
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717694314,
+   "tabId": 1245013952,
+   "url": "https://www.google.com/h21a277fbf8",
+   "host": "google.com",
+   "title": "h2cf74b2353",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|hcd164c4b7a",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717707346,
+   "tabId": 1245013952,
+   "url": "https://www.google.com/h21a277fbf8",
+   "host": "google.com",
+   "title": "hea0940b306",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|he36e4e9c34",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717707406,
+   "tabId": 1245013952,
+   "url": "https://www.google.com/h21a277fbf8",
+   "host": "google.com",
+   "title": "hea0940b306",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|he36e4e9c34",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717708520,
+   "tabId": 1245013952,
+   "url": "https://www.google.com/h416b9ccf38",
+   "host": "google.com",
+   "title": "hea0940b306",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|he36e4e9c34",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": [],
+    "late": true
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717709550,
+   "tabId": 1245013952,
+   "url": "https://www.google.com/h416b9ccf38",
+   "host": "google.com",
+   "title": "hea0940b306",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|he36e4e9c34",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717710719,
+   "tabId": 1245013952,
+   "url": "https://www.google.com/h416b9ccf38",
+   "host": "google.com",
+   "title": "hea0940b306",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|he36e4e9c34",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717716496,
+   "tabId": 1245013952,
+   "url": "https://www.google.com/hd6fb33eba5",
+   "host": "google.com",
+   "title": "hea0940b306",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|he36e4e9c34",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717716967,
+   "tabId": 1245013952,
+   "url": "https://www.google.com/h0cfd1ae98c",
+   "host": "google.com",
+   "title": "hea0940b306",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|google.com|he36e4e9c34",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717740354,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717740354,
+   "from": "focused",
+   "to": "detour",
+   "budgetSec": 0,
+   "switches2m": 10
+  },
+  {
+   "type": "context",
+   "ts": 1793717740722,
+   "tabId": 1245013949,
+   "url": "https://www.instagram.com/he60a6d8163",
+   "host": "instagram.com",
+   "title": "h4f8c1ce879",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|instagram.com|ha679e292bf",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "unrelated",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717740933,
+   "tabId": 1245013941,
+   "url": "https://www.linkedin.com/h4b0da63e62",
+   "host": "linkedin.com",
+   "title": "h2ee85f10a9",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|linkedin.com|h2d12c76d1d|h232e97a1bf|h68988b0d96|h31ab369167",
+   "audible": false,
+   "surface": {
+    "kind": "conversation",
+    "labels": [
+     "h29a01cc6c6"
+    ]
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 0.9,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717740933,
+   "from": "detour",
+   "to": "focused",
+   "budgetSec": 1,
+   "switches2m": 11
+  },
+  {
+   "type": "context",
+   "ts": 1793717742119,
+   "tabId": 1245013938,
+   "url": "https://openpets.dev/he60a6d8163",
+   "host": "openpets.dev",
+   "title": "hd34914b3a0",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|openpets.dev|h72d484b733|h67f427cbf1",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717744035,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717755908,
+   "node": "composeNudge",
+   "model": "meta",
+   "latencyMs": 15547,
+   "ok": true
+  },
+  {
+   "type": "context",
+   "ts": 1793717770720,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717788606,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": false,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717788606,
+   "from": "focused",
+   "to": "away",
+   "budgetSec": 0,
+   "switches2m": 11
+  },
+  {
+   "type": "context",
+   "ts": 1793717803469,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "state",
+   "ts": 1793717803469,
+   "from": "away",
+   "to": "focused",
+   "budgetSec": 0,
+   "switches2m": 10
+  },
+  {
+   "type": "context",
+   "ts": 1793717817661,
+   "tabId": 1245013955,
+   "url": "https://brand.github.com/he6489e4bab",
+   "host": "brand.github.com",
+   "title": "h631cc37d9e",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|brand.github.com|h7a6f6568b7",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": [],
+    "late": true
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717818337,
+   "tabId": 1245013955,
+   "url": "https://brand.github.com/he6489e4bab",
+   "host": "brand.github.com",
+   "title": "h631cc37d9e",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|brand.github.com|h7a6f6568b7",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "context",
+   "ts": 1793717830719,
+   "tabId": 1245013955,
+   "url": "https://brand.github.com/he6489e4bab",
+   "host": "brand.github.com",
+   "title": "h631cc37d9e",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|brand.github.com|h7a6f6568b7",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active"
+  },
+  {
+   "type": "llm",
+   "ts": 1793717837304,
+   "node": "classifyRelevance",
+   "model": "meta",
+   "latencyMs": 19133,
+   "ok": true,
+   "sent": {
+    "examples": 0,
+    "notes": 0,
+    "profile": true,
+    "conversation": false,
+    "commitments": 4
+   }
+  },
+  {
+   "type": "relevance",
+   "ts": 1793717837305,
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|brand.github.com|h7a6f6568b7",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "llm",
+   "latencyMs": 19133,
+   "intentId": "8d06888c-39b4-45f8-911e-ea0146f95d81"
+  },
+  {
+   "type": "context",
+   "ts": 1793717840068,
+   "tabId": 1245013359,
+   "url": "https://chatgpt.com/hda1ba3f883",
+   "host": "chatgpt.com",
+   "title": "he30a76059a",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81|chatgpt.com|ha9ec873c20",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "related",
+   "confidence": 0.7,
+   "source": "cache"
+  },
+  {
+   "type": "context",
+   "ts": 1793717844930,
+   "tabId": 1245013958,
+   "url": "",
+   "host": "",
+   "title": "",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81||",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717844944,
+   "tabId": 1245013958,
+   "url": "",
+   "host": "",
+   "title": "",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81||",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  },
+  {
+   "type": "context",
+   "ts": 1793717844960,
+   "tabId": 1245013958,
+   "url": "",
+   "host": "",
+   "title": "",
+   "key": "8d06888c-39b4-45f8-911e-ea0146f95d81||",
+   "audible": false,
+   "surface": {
+    "kind": "page",
+    "labels": []
+   },
+   "browserFocused": true,
+   "idleState": "active",
+   "label": "neutral",
+   "confidence": 1,
+   "source": "builtin"
+  }
+ ]
+}
