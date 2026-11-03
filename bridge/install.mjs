@@ -29,9 +29,16 @@ export function withTuckHooks(existing, command) {
   return { ...existing, hooks };
 }
 
-function chromeHostsDir() {
-  if (process.platform !== "darwin") throw new Error("Only macOS is set up for now.");
-  return path.join(os.homedir(), "Library/Application Support/Google/Chrome/NativeMessagingHosts");
+// Where each browser looks for a host's manifest. Linux has one folder per browser, and
+// either may be the one in use. A Flatpak browser has its own sandbox and is not covered.
+export function chromeHostsDirs(platform = process.platform, home = os.homedir()) {
+  if (platform === "darwin") return [path.join(home, "Library/Application Support/Google/Chrome/NativeMessagingHosts")];
+  if (platform === "linux")
+    return [
+      path.join(home, ".config/google-chrome/NativeMessagingHosts"),
+      path.join(home, ".config/chromium/NativeMessagingHosts"),
+    ];
+  throw new Error("Only macOS and Linux are set up for now.");
 }
 
 function install(project) {
@@ -43,23 +50,22 @@ function install(project) {
   const launcher = path.join(here, "host-launcher.sh");
   fs.writeFileSync(launcher, `#!/bin/sh\nexec "${node}" "${path.join(here, "host.mjs")}"\n`, { mode: 0o755 });
 
-  const hostsDir = chromeHostsDir();
-  fs.mkdirSync(hostsDir, { recursive: true });
   const id = extensionId(manifest.key);
-  fs.writeFileSync(
-    path.join(hostsDir, `${HOST_NAME}.json`),
-    JSON.stringify(
-      {
-        name: HOST_NAME,
-        description: "Tells Tuck whose turn it is in Muse Code",
-        path: launcher,
-        type: "stdio",
-        allowed_origins: [`chrome-extension://${id}/`],
-      },
-      null,
-      2,
-    ),
+  const hostManifest = JSON.stringify(
+    {
+      name: HOST_NAME,
+      description: "Tells Tuck whose turn it is in Muse Code",
+      path: launcher,
+      type: "stdio",
+      allowed_origins: [`chrome-extension://${id}/`],
+    },
+    null,
+    2,
   );
+  for (const hostsDir of chromeHostsDirs()) {
+    fs.mkdirSync(hostsDir, { recursive: true });
+    fs.writeFileSync(path.join(hostsDir, `${HOST_NAME}.json`), hostManifest);
+  }
 
   const hooksFile = path.join(project, ".muse", "hooks.json");
   const existing = fs.existsSync(hooksFile) ? JSON.parse(fs.readFileSync(hooksFile, "utf8")) : {};
