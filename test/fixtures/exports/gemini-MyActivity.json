@@ -1,0 +1,7 @@
+[
+  { "header": "Gemini Apps", "title": "Prompted what is the capital of Peru", "time": "2026-11-02T09:00:00.000Z", "products": ["Gemini Apps"], "details": [{ "name": "https://gemini.google.com/app/def456" }], "safeHtmlItem": [{ "html": "<p>Lima.</p>" }] },
+  { "header": "Gemini Apps", "title": "Prompted Also remind me to email Ece on Friday about the budget.", "time": "2026-11-01T10:05:00.000Z", "products": ["Gemini Apps"], "details": [{ "name": "https://gemini.google.com/app/abc123" }] },
+  { "header": "Gemini Apps", "title": "Gave feedback: Good response", "time": "2026-11-01T10:04:00.000Z", "products": ["Gemini Apps"] },
+  { "header": "Gemini Apps", "title": "Prompted I need to finish the grant report by 2026-11-12, can you outline it?", "time": "2026-11-01T10:00:00.000Z", "products": ["Gemini Apps"], "details": [{ "name": "https://gemini.google.com/app/abc123" }], "safeHtmlItem": [{ "html": "<p>Here is an <b>outline</b> &amp; a plan:</p><ul><li>Budget</li><li>Results</li></ul>" }] },
+  { "header": "Gemini Apps", "title": "Prompted I have to renew the passport by 2026-07-20.", "time": "2026-07-01T12:00:00.000Z", "products": ["Gemini Apps"], "details": [{ "name": "https://gemini.google.com/app/ghi789" }], "safeHtmlItem": [{ "html": "<p>Book an appointment.</p>" }] }
+]

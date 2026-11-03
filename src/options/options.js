@@ -1,5 +1,17 @@
 import { stillOpen, taskList, taskKey } from "../attention/reminders.js";
-import { Memory, redact, previewPaste, importPasted, ASK_YOUR_ASSISTANT, MAX_PASTE_CHARS } from "../memory/index.js";
+import {
+  Memory,
+  redact,
+  previewPaste,
+  importPasted,
+  ASK_YOUR_ASSISTANT,
+  MAX_PASTE_CHARS,
+  readExport,
+  selectConversations,
+  conversationText,
+  importExport,
+  exportEntries,
+} from "../memory/index.js";
 import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks, taskByConstruction } from "../agent/tasks.js";
@@ -119,7 +131,7 @@ $("brain-status").textContent = await brainStatus(await memory.brainState().catc
 
 // ---- Other memory --------------------------------------------------------
 
-const KINDS = { md: "Notes folder", paste: "Pasted memory" };
+const KINDS = { md: "Notes folder", paste: "Pasted memory", export: "Assistant export" };
 
 // After an import or a removal, as after a brain sync: the worker judges pages again, and
 // the profile and the tasks are read again.
@@ -144,6 +156,7 @@ async function showSources() {
             if (!confirm(`Remove "${s.name}" from Tuck's memory? Nothing in the folder or your assistant changes.`))
               return;
             await memory.removeSource(s.origin);
+            if (s.kind === "export") await forgetExport(s.origin);
             $("source-status").textContent = `Removed "${s.name}".`;
             await sourcesChanged();
           });
@@ -176,6 +189,96 @@ $("add-folder").onclick = async () => {
     await sourcesChanged();
   } catch (err) {
     if (err.name !== "AbortError") $("source-status").textContent = `Failed: ${err.message}`;
+  }
+};
+
+// An assistant's export. The whole file is read here, in the page; the preview says how
+// many of its conversations go to the model, and nothing is sent before Import. What each
+// conversation gave is kept by origin in exportCache, so the same file again sends only
+// what is new or changed, and a run that stopped halfway picks up where it was.
+const EXPORT_NAMES = { claude: "Claude export", gemini: "Gemini export" };
+let exportFile = null; // { kind, origin, name, conversations, chosen }
+
+const exportCaches = async () => (await chrome.storage.local.get("exportCache")).exportCache ?? {};
+async function forgetExport(origin) {
+  const caches = await exportCaches();
+  delete caches[origin];
+  await chrome.storage.local.set({ exportCache: caches });
+}
+
+$("add-export").onclick = () => $("export-file").click();
+$("export-file").onchange = async () => {
+  const file = $("export-file").files[0];
+  $("export-file").value = ""; // so the same file can be chosen again
+  if (!file) return;
+  exportFile = null;
+  $("import-export").hidden = true;
+  $("export-status").textContent = "Reading the file…";
+  try {
+    const { kind, conversations } = readExport(JSON.parse(await file.text()));
+    const s = selectConversations(conversations, { today: localDate() });
+    const origin = `export:${kind}:${file.name}`;
+    const cache = (await exportCaches())[origin] ?? {};
+    const fresh = s.chosen.filter((c) => cache[c.id]?.stamp !== c.updated);
+    const chars = fresh.reduce((n, c) => n + conversationText(c).text.length, 0);
+    const dates = s.chosen.map((c) => c.updated.slice(0, 10)).sort();
+    exportFile = { kind, origin, name: file.name, conversations, chosen: s.chosen };
+    $("export-status").textContent = [
+      `${EXPORT_NAMES[kind]} "${file.name}": ${conversations.length} conversations.`,
+      s.chosen.length
+        ? `${s.chosen.length} are from the last 30 days and name a date or a to-do in your own words, ${dates[0]} to ${dates.at(-1)}.`
+        : "None is from the last 30 days with a date or a to-do in your own words.",
+      fresh.length < s.chosen.length ? `${s.chosen.length - fresh.length} were read before.` : null,
+      `${fresh.length} will be sent, one at a time: ${chars.toLocaleString()} characters, secrets removed, to Muse Spark 1.3 (not Contributor).`,
+      `Left out: ${s.tooOld} older, ${s.noCue} with nothing owed` +
+        (s.overCap ? `, ${s.overCap} over the limit of 50` : "") +
+        ".",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    $("import-export").hidden = !s.chosen.length;
+  } catch (err) {
+    $("export-status").textContent = `Could not read it: ${err.message}`;
+  }
+};
+$("import-export").onclick = async () => {
+  const f = exportFile;
+  if (!f) return;
+  $("import-export").hidden = true;
+  try {
+    const settings = await loadModelSettings();
+    if (!settings) {
+      $("import-export").hidden = false;
+      return ($("export-status").textContent = "Set up a model above first.");
+    }
+    $("export-status").textContent = "Reading…";
+    const r = await importExport(modelClient(privateSettings(settings)), f.chosen, {
+      kind: f.kind,
+      cache: (await exportCaches())[f.origin] ?? {},
+      topics: (await memory.profile().catch(() => null))?.topics ?? [],
+      onSaved: async (cache) =>
+        chrome.storage.local.set({ exportCache: { ...(await exportCaches()), [f.origin]: cache } }),
+      onProgress: ({ done, total }) => ($("export-status").textContent = `Reading… ${done} of ${total}`),
+    });
+    const failed = r.failed
+      ? `${r.failed} conversations could not be read (${r.errors.join(" | ")}); import the file again to retry them.`
+      : null;
+    const entries = exportEntries(r.cache, f.conversations);
+    if (!entries.length) return ($("export-status").textContent = failed ?? "Nothing in it could be read as memory.");
+    const stored = await memory.importEntries({ origin: f.origin, name: f.name, entries });
+    exportFile = null;
+    $("export-status").textContent = [
+      `${stored.entries} entries from "${f.name}"` +
+        (r.redactions ? `, ${r.redactions} secrets removed first` : "") +
+        ".",
+      failed,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    await sourcesChanged();
+  } catch (err) {
+    $("export-status").textContent = `Failed: ${err.message}`;
+    $("import-export").hidden = false;
   }
 };
 
