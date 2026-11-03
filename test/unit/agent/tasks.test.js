@@ -261,14 +261,14 @@ test("a single entry still cut at the limit fails, and the error names the limit
   assert.deepEqual(r.errors, ["reply cut at max_tokens (length): 3,998 reasoning tokens"]);
 });
 
-test("the node asks with a high cap, and sends reasoning_effort only when told to", async () => {
+test("the node asks with a high cap and low reasoning effort, unless told otherwise", async () => {
   const seen = [];
   const complete = async (_, opts) => (seen.push(opts), '{"items":[{"n":1,"is_task":false,"still_open":false}]}');
   await judgeBatch(complete, [{ entry: entry("a"), later: [] }]);
-  await judgeBatch(complete, [{ entry: entry("a"), later: [] }], { effort: "low" });
+  await judgeBatch(complete, [{ entry: entry("a"), later: [] }], { effort: null });
   assert.equal(seen[0].maxTokens, 32000);
-  assert.equal(seen[0].reasoningEffort, null);
-  assert.equal(seen[1].reasoningEffort, "low");
+  assert.equal(seen[0].reasoningEffort, "low");
+  assert.equal(seen[1].reasoningEffort, null);
 });
 
 test("refreshTasks keeps why a run failed, and clears it after one that works", async () => {
