@@ -1,6 +1,6 @@
 # Notes decide what a page means: page region, notes in the prompt and reminders
 
-Status: open
+Status: done (#48)
 
 Issues: #9 (page region), #8 (notes and labels), #10 (reminders), #18 (stale index, Safa)
 
