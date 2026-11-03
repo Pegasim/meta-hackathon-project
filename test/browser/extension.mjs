@@ -24,6 +24,7 @@ const calls = [];
 const nudgeCalls = [];
 const greetCalls = [];
 const taskCalls = [];
+const pairCalls = []; // which open loops are one commitment (#47)
 let tasksCut = false; // the task node's replies are cut at the token limit (#43)
 // Typed into a reply box, then left: form values are never read, so it must never
 // reach the model. Not secret-shaped, so redaction alone would not hide it.
@@ -214,6 +215,20 @@ const server = http.createServer((req, res) => {
           };
         });
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ items }) } }] }));
+    }
+    // Which tasks are one commitment (agent/tasks.js, #47): the same place on both sides.
+    if (/same commitment/.test(messages[0].content)) {
+      pairCalls.push(messages);
+      const pairs = messages
+        .at(-1)
+        .content.split("\n\n")
+        .filter((b) => /^\d+\.\n/.test(b))
+        .map((b) => {
+          const [a, c] = b.split(/\n {3}B: /);
+          const place = (t) => (/lyon/i.test(t) ? "lyon" : /rome/i.test(t) ? "rome" : null);
+          return { n: Number(b.match(/^\d+/)[0]), same: !!place(a) && place(a) === place(c) };
+        });
+      return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ pairs }) } }] }));
     }
     calls.push(messages);
     // A page for something else on the to-do list.
@@ -976,6 +991,63 @@ await reread();
 const taskTextAfter = await settingsPage.locator("#task-list").innerText();
 const askedAgain = taskCalls.length - askedTasks;
 
+// Issue #47: one commitment, one row. Two notes and a notes-folder checkbox about the same
+// train tickets are one row that names where they came from, and Done on it takes all
+// three off. Two trip tasks the model wrongly called one are split with Not the same, and
+// stay apart. A re-import with nothing new asks about no pair.
+const pairNotes = [
+  ["lyon1", "todo", 5, "Train tickets to Lyon", "Buy the train tickets"],
+  ["lyon2", "event", 3, "Lyon train tickets still to buy", "Buy them"],
+  ["rome1", "todo", 4, "Rome trip: hotel", "Find a hotel"],
+  ["rome2", "todo", 4, "Rome trip: flights", "Find the flights"],
+].map(([id, kind, ago, title, next]) => ({
+  path: `notes/log/2026/${id}.md`,
+  text: [
+    "---",
+    `title: "${title}"`,
+    `kind: ${kind}`,
+    "topic: trip",
+    `date: ${new Date(Date.now() - ago * 86400000).toISOString().slice(0, 10)}`,
+    "source: test",
+    `id: ${id}`,
+    "---",
+    "",
+    "- **Context:** Invented for the test.",
+    "- **Decision/Result:** Noted.",
+    "- **Evidence:** none",
+    `- **Next action:** ${next}`,
+  ].join("\n"),
+}));
+const importTrip = () =>
+  settingsPage.evaluate(async (files) => {
+    const { Memory } = await import("/memory/index.js");
+    const { fromMarkdownFolder } = await import("/memory/markdown.js");
+    const memory = await Memory.open();
+    await memory.importFiles(files);
+    const vault = fromMarkdownFolder([{ path: "todo.md", text: "- [ ] train tickets to Lyon" }], {
+      folderName: "Vault",
+    });
+    await memory.importEntries({ origin: "md:Vault", name: "Vault", ...vault });
+  }, pairNotes);
+await importTrip();
+await reread();
+const groupedText = await settingsPage.locator("#task-list").innerText();
+const groupedRows = await settingsPage.locator("#task-list .row").count();
+const askedPairs = pairCalls.length;
+await settingsPage
+  .locator("#task-list .row", { hasText: "Rome" })
+  .getByRole("button", { name: "Not the same" })
+  .click();
+await settingsPage.waitForTimeout(300);
+const splitRows = await settingsPage.locator("#task-list .row").count();
+await settingsPage.locator("#task-list .row", { hasText: /Lyon/i }).getByRole("button", { name: "Done" }).click();
+await settingsPage.waitForTimeout(300);
+await importTrip();
+await reread();
+const tripTextAfter = await settingsPage.locator("#task-list").innerText();
+const pairsAgain = pairCalls.length - askedPairs;
+const tripLoops = await settingsPage.evaluate(async () => (await chrome.storage.local.get("loops")).loops);
+
 // Issue #46: a goal that ran out while the browser was closed is summed up at the next
 // start: one entry in memory, with no page title, and the greeting says how it went, in
 // the template while the model's line is not ready, then in the model's words. The day
@@ -1254,6 +1326,16 @@ assert.doesNotMatch(allTaskText, /conversion|venue|Book the/i, "no watch note, a
 assert.doesNotMatch(taskTextAfter, /Run errand 1\b/, "Not a task holds over a re-import");
 assert.match(taskTextAfter, /Run errand 2/);
 assert.equal(askedAgain, 0, "a re-import with nothing new asks nothing");
+assert.equal(groupedRows, 2, "the Lyon tickets and the Rome trip: one row each");
+assert.match(groupedText, /Lyon[^\n]*\(brain ×2, Vault\)/i, "the row names its sources");
+assert.equal(askedPairs, 1, "four candidate pairs, one call");
+assert.equal(splitRows, 3, "Not the same: the Rome tasks apart");
+assert.doesNotMatch(tripTextAfter, /Lyon/i, "Done on the row took every entry in it off, over a re-import");
+assert.match(tripTextAfter, /Rome trip: hotel[\s\S]*Rome trip: flights|Rome trip: flights[\s\S]*Rome trip: hotel/);
+const lyonDone = tripLoops.lyon1?.doneAt;
+assert.ok(lyonDone && tripLoops.lyon2?.doneAt === lyonDone, "both notes marked");
+assert.equal(Object.values(tripLoops).filter((l) => l.doneAt === lyonDone).length, 3, "and the checkbox");
+assert.equal(pairsAgain, 0, "a re-import with nothing new asks about no pair");
 assert.ok(
   taskCalls.every((m) => !m.at(-1).content.includes(DRAFT)),
   "the task node sees only notes",

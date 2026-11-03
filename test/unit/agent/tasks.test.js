@@ -9,8 +9,12 @@ import {
   extractTasks,
   refreshTasks,
   taskByConstruction,
+  candidatePairs,
+  pairMessages,
+  parsePairs,
+  judgePairs,
 } from "../../../src/agent/tasks.js";
-import { taskList } from "../../../src/attention/reminders.js";
+import { taskList, pairKey } from "../../../src/attention/reminders.js";
 import { modelClient } from "../../../src/memory/model.js";
 
 const entry = (id, fields = {}) => ({
@@ -291,4 +295,125 @@ test("refreshTasks keeps why a run failed, and clears it after one that works", 
   assert.equal(stored.taskProblem, "down");
   await refreshTasks(fakeModel().complete, { memory, storage, today: "2026-11-02" });
   assert.equal(stored.taskProblem, null);
+});
+
+// ---- One commitment, one row (#47) -------------------------------------------------
+
+const listed = (id, task, fields = {}) => ({ key: id, entry: entry(id, fields), task });
+
+test("candidate pairs: most words shared, or fewer with the same deadline; a word on many tasks counts for nothing", () => {
+  const items = [
+    listed("acc1", "Decide on the spring accelerator batch", { title: "Accelerator: apply on time?" }),
+    listed("acc2", "Pick spring or autumn accelerator batch", {
+      title: "Accelerator batches compared",
+      topic: "startup",
+    }),
+    listed("grant1", "Write the grant budget", { title: "Grant budget", due: "2026-11-20" }),
+    listed("grant2", "Finish the budget part", { title: "Budget part of the form", due: "2026-11-20", topic: "money" }),
+    listed("dentist", "Book a dentist appointment", { title: "Dentist", topic: "health" }),
+    listed("haircut", "Book a haircut appointment", { title: "Haircut", topic: "personal" }),
+    listed("heat1", "Get the heating repaired", { title: "Heating", topic: "home" }),
+    listed("heat2", "Radiator heating", { title: "Radiators", topic: "home", date: "2026-10-22" }),
+  ];
+  const keys = candidatePairs(items).map((p) => p.key);
+  assert.ok(keys.includes(pairKey("acc1", "acc2")), "restated: shared words across topics");
+  assert.ok(keys.includes(pairKey("grant1", "grant2")), "fewer shared words, the same deadline");
+  assert.ok(!keys.includes(pairKey("dentist", "haircut")), "one word of two, other topics, no deadline: not asked");
+  assert.ok(keys.includes(pairKey("heat1", "heat2")), "half the words, the same topic two days apart");
+  const many = Array.from({ length: 10 }, (_, i) => listed(`e${i}`, `Errand ${i}`, { title: `Errand ${i}` }));
+  assert.equal(candidatePairs(many).length, 0, "a word on most tasks says nothing about which task");
+});
+
+test("the pair prompt goes through clean and numbers each pair; a reply is read pair by pair", () => {
+  const pairs = [
+    { key: "a~b", a: listed("a", "Fix the login"), b: listed("b", "Fix the redirect", { origin: "md:Vault" }) },
+  ];
+  const messages = pairMessages(pairs, { clean: (s) => s.replace("login", "[x]") });
+  assert.match(messages[0].content, /same commitment/);
+  const user = messages[1].content;
+  assert.match(user, /^1\.\n {3}A: \[shop\] todo, 2026-10-20: Task a/m);
+  assert.match(user, /Task: Fix the \[x\]/);
+  assert.match(user, /B: .*Task b/);
+  const got = parsePairs('{"pairs":[{"n":1,"same":true},{"n":2,"same":"yes"},{"n":9,"same":false}]}', 2);
+  assert.deepEqual([...got], [[1, true]], "only well-formed items in range");
+  assert.throws(() => parsePairs('{"pairs":[]}', 1), /no valid/);
+});
+
+function pairModel(same = () => false) {
+  const calls = [];
+  const complete = async (messages) => {
+    calls.push(messages);
+    const count = (messages.at(-1).content.match(/^\d+\.$/gm) ?? []).length;
+    return JSON.stringify({ pairs: Array.from({ length: count }, (_, i) => ({ n: i + 1, same: same(i + 1) })) });
+  };
+  return { complete, calls };
+}
+
+test("judgePairs asks only about new or changed pairs, at most `max` a run, in calls of up to 20", async () => {
+  const items = Array.from({ length: 30 }, (_, i) => listed(`t${i}`, `Task ${i}`));
+  const pairs = items.slice(1).map((it, i) => ({ key: pairKey("t0", it.key), a: items[0], b: it }));
+  const model = pairModel((n) => n === 1);
+  const first = await judgePairs(model.complete, pairs, { max: 25 });
+  assert.equal(model.calls.length, 2, "25 pairs: 20 and 5");
+  assert.equal(first.asked, 25);
+  assert.equal(Object.keys(first.cache).length, 25);
+  const second = await judgePairs(model.complete, pairs, { cache: first.cache, max: 25 });
+  assert.equal(model.calls.length, 3, "the 4 left over in one call");
+  assert.equal(second.asked, 4);
+  const again = await judgePairs(model.complete, pairs, { cache: second.cache, max: 25 });
+  assert.equal(model.calls.length, 3, "nothing new: no call");
+  assert.equal(again.asked, 0);
+  const changed = pairs.map((p, i) =>
+    i === 3 ? { ...p, b: listed(p.b.key, "Task 4, renamed", { title: "New" }) } : p,
+  );
+  const fourth = await judgePairs(model.complete, changed, { cache: again.cache, max: 25 });
+  assert.equal(fourth.asked, 1, "a changed entry asks again about its pairs only");
+});
+
+test("a failed pair call groups nothing and is asked again next time", async () => {
+  const pairs = [{ key: "a~b", a: listed("a", "A"), b: listed("b", "B") }];
+  const r = await judgePairs(async () => {
+    throw new Error("down");
+  }, pairs);
+  assert.deepEqual(r.cache, {});
+  assert.equal(r.failed, 1);
+  assert.deepEqual(r.errors, ["down"]);
+});
+
+test("refreshTasks judges candidate pairs among the tasks it kept and stores them for taskList", async () => {
+  const queue = [
+    entry("lyon1", { title: "Lyon trip", next: "Buy the train tickets to Lyon", date: "2026-10-28" }),
+    entry("lyon2", { title: "Lyon", next: "Book the train tickets to Lyon", date: "2026-10-21" }),
+    entry("watch", { title: "Lyon weather", next: "Keep an eye on the train strike" }),
+  ];
+  const memory = {
+    taskQueue: async () => queue,
+    profileSample: async () => queue.map(({ topic, title }) => ({ topic, title })),
+  };
+  const stored = {};
+  const storage = { get: async () => ({ ...stored }), set: async (o) => Object.assign(stored, o) };
+  const calls = [];
+  const complete = async (messages) => {
+    calls.push(messages);
+    if (/same commitment/.test(messages[0].content)) return '{"pairs":[{"n":1,"same":true}]}';
+    return JSON.stringify({
+      items: [
+        { n: 1, is_task: true, still_open: true, task: "Buy the Lyon train tickets", who: null, personal: false },
+        { n: 2, is_task: true, still_open: true, task: "Book the Lyon train tickets", who: null, personal: false },
+        { n: 3, is_task: false, still_open: true, task: "", who: null, personal: false },
+      ],
+    });
+  };
+  const r = await refreshTasks(complete, { memory, storage, today: "2026-11-02" });
+  assert.equal(calls.length, 2, "one task call, one pair call");
+  assert.doesNotMatch(calls[1].at(-1).content, /weather/, "a note the node found no task is not paired");
+  assert.deepEqual(Object.keys(stored.taskPairs), [pairKey("lyon1", "lyon2")]);
+  assert.equal(r.pairCalls, 1);
+  const list = taskList(queue, { verdicts: stored.taskVerdicts, pairs: stored.taskPairs });
+  assert.deepEqual(
+    list.map((e) => e.title),
+    ["Buy the Lyon train tickets"],
+  );
+  await refreshTasks(complete, { memory, storage, today: "2026-11-02" });
+  assert.equal(calls.length, 2, "a re-import with nothing new asks nothing");
 });

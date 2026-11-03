@@ -18,7 +18,17 @@ import {
   labelHolds,
 } from "../attention/relevance.js";
 import { readingSettings, mayRead } from "../attention/reading.js";
-import { stillOpen, sayable, pickReminder, markSaid, markDone, markNotTask, taskList } from "../attention/reminders.js";
+import {
+  stillOpen,
+  sayable,
+  pickReminder,
+  markSaid,
+  markDone,
+  markNotTask,
+  markAll,
+  splitRow,
+  taskList,
+} from "../attention/reminders.js";
 import { ENDS_DETOUR, initialState, step, nextWakeAt } from "../attention/engine.js";
 import { makeIntent, isExpired, dayKey } from "../attention/intents.js";
 import { daySummary, summaryEntry } from "../attention/summary.js";
@@ -55,12 +65,22 @@ const loadLoops = async () => (await chrome.storage.local.get("loops")).loops ??
 const saveLoops = (loops) => chrome.storage.local.set({ loops });
 
 // The to-do list: memory's queue with what the task node made of it (attention/reminders.js
-// taskList, agent/tasks.js). Before the node has run, memory's queue as it is.
+// taskList, agent/tasks.js), one row per commitment (#47). Before the node has run,
+// memory's queue as it is.
 async function toDo(today = localDate()) {
   const queue = await (await memory).taskQueue({ today, limit: Infinity }).catch(() => []);
-  const { taskVerdicts = {}, taskSettings = {} } = await chrome.storage.local.get(["taskVerdicts", "taskSettings"]);
-  return taskList(queue, { verdicts: taskVerdicts, hidePersonal: !!taskSettings.hidePersonal });
+  const got = await chrome.storage.local.get(["taskVerdicts", "taskSettings", "loops", "taskPairs", "taskSplits"]);
+  return taskList(queue, {
+    verdicts: got.taskVerdicts ?? {},
+    hidePersonal: !!got.taskSettings?.hidePersonal,
+    loops: got.loops ?? {},
+    pairs: got.taskPairs ?? {},
+    splits: got.taskSplits ?? {},
+  });
 }
+
+// The row an entry id stands in: an answer on it is an answer on all of its entries.
+const rowOf = async (id) => (await toDo()).find((e) => e.id === id || e.members?.includes(id)) ?? { id };
 
 // ---- Schedules -----------------------------------------------------------
 
@@ -359,7 +379,7 @@ async function otherCommitments(intent) {
     () => [],
   );
   return open
-    .filter((e) => e.id !== intent.fromLoopId && e.title !== intent.title)
+    .filter((e) => e.id !== intent.fromLoopId && !e.members?.includes(intent.fromLoopId) && e.title !== intent.title)
     .slice(0, COMMITMENTS_SENT)
     .map((e) => redact(e.title).text);
 }
@@ -650,11 +670,17 @@ async function showWithReminder(tabId, view, goalTitle) {
 }
 
 // On it: nothing more today, already noted when it was said. Done stays done, and so does
-// Not a task (from settings). Switch: it becomes the goal.
+// Not a task (from settings), for every entry in the row. Not the same (from settings):
+// the row's entries are listed apart from now on. Switch: it becomes the goal.
 async function reminderAnswer({ id, title, choice }, sender) {
   await log({ type: "feedback", ts: Date.now(), kind: "reminder", payload: { id, choice } });
-  if (choice === "done") await saveLoops(markDone(await loadLoops(), id, Date.now()));
-  if (choice === "not_task") await saveLoops(markNotTask(await loadLoops(), id, Date.now()));
+  const row = choice === "switch" ? null : await rowOf(id);
+  if (choice === "done") await saveLoops(markAll(markDone, await loadLoops(), row, Date.now()));
+  if (choice === "not_task") await saveLoops(markAll(markNotTask, await loadLoops(), row, Date.now()));
+  if (choice === "not_same") {
+    const { taskSplits = {} } = await chrome.storage.local.get("taskSplits");
+    await chrome.storage.local.set({ taskSplits: splitRow(taskSplits, row, Date.now()) });
+  }
   // Off the list now: a page judged as that commitment is judged again.
   if (choice === "done" || choice === "not_task") await memoryChanged();
   if (choice === "switch") return setIntent({ title, from: "tuck", fromLoopId: id }, sender);
@@ -1068,7 +1094,8 @@ async function completeIntent() {
     if (!intent) return null;
     if (intent.memoryEntryId) await (await memory).completeIntent(intent.memoryEntryId).catch(() => {});
     await st.putIntent({ ...intent, doneAt: Date.now() });
-    if (intent.fromLoopId) await saveLoops(markDone(await loadLoops(), intent.fromLoopId, Date.now()));
+    if (intent.fromLoopId)
+      await saveLoops(markAll(markDone, await loadLoops(), await rowOf(intent.fromLoopId), Date.now()));
     await process({ type: "session", ts: Date.now(), kind: "intent_done", payload: { id: intent.id } });
     await summarizeEnded();
     // Tuck asks what's next, on the page in front.

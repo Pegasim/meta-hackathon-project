@@ -8,6 +8,9 @@ import {
   markDone,
   markNotTask,
   taskList,
+  pairKey,
+  markAll,
+  splitRow,
 } from "../../../src/attention/reminders.js";
 
 const today = "2026-11-02";
@@ -80,4 +83,90 @@ test("personal topics can be hidden, by the node's word or, unread, by the topic
     taskList(q, { verdicts, hidePersonal: true }).map((e) => e.id),
     ["a", "e"],
   );
+});
+
+// ---- One commitment, one row (#47) -------------------------------------------------
+
+const loop = (id, fields = {}) => ({
+  id,
+  title: id,
+  topic: "trip",
+  date: "2026-10-20",
+  due: null,
+  daysLeft: null,
+  ...fields,
+});
+const yes = (task) => ({ isTask: true, open: true, task, who: null, personal: false });
+
+test("entries the node found to be one commitment are one row: newest title, earliest deadline, sources", () => {
+  const q = [
+    loop("ticket-md", { origin: "md:Vault", due: "2026-11-10", daysLeft: 7, date: "2026-10-18" }),
+    loop("other", { due: "2026-11-12", daysLeft: 9 }),
+    loop("ticket-new", { origin: "brain", path: "notes/log/a.md", date: "2026-10-28" }),
+    loop("ticket-old", { path: "notes/log/b.md", date: "2026-10-21" }),
+  ];
+  const verdicts = {
+    "ticket-new": yes("Buy the train tickets to Lyon"),
+    "ticket-old": yes("Book the Lyon train"),
+    other: yes("Pack"),
+  };
+  const pairs = {
+    [pairKey("ticket-md", "ticket-new")]: { same: true },
+    [pairKey("ticket-new", "ticket-old")]: { same: true },
+  };
+  const list = taskList(q, { verdicts, pairs });
+  assert.deepEqual(
+    list.map((e) => e.id),
+    ["ticket-new", "other"],
+    "one row, where its first member stood in memory's order",
+  );
+  const row = list[0];
+  assert.equal(row.title, "Buy the train tickets to Lyon", "the newest member's words");
+  assert.equal(row.due, "2026-11-10", "the earliest deadline");
+  assert.equal(row.daysLeft, 7);
+  assert.deepEqual(row.members.sort(), ["ticket-md", "ticket-new", "ticket-old"]);
+  assert.equal(row.sources, "brain ×2, Vault");
+  assert.equal(list[1].members, undefined, "a single entry is left as it was");
+});
+
+test("a pair the node called different, or the person split, is never merged, even through a third", () => {
+  const q = [loop("a"), loop("b"), loop("c")];
+  const verdicts = { a: yes("A"), b: yes("B"), c: yes("C") };
+  const chain = { [pairKey("a", "b")]: { same: true }, [pairKey("b", "c")]: { same: true } };
+  assert.equal(taskList(q, { verdicts, pairs: chain }).length, 1, "a chain of same pairs is one row");
+  const conflict = { ...chain, [pairKey("a", "c")]: { same: false } };
+  assert.equal(taskList(q, { verdicts, pairs: conflict }).length, 2, "a and c are not one task");
+  const splits = { [pairKey("a", "b")]: 1 };
+  assert.deepEqual(
+    taskList(q, { verdicts, pairs: chain, splits }).map((e) => e.members ?? [e.id]),
+    [["a"], ["b", "c"]],
+    "Not the same is kept per pair",
+  );
+});
+
+test("a member already marked Done or Not a task stays out of the row, and the rest still show", () => {
+  const q = [loop("a", { date: "2026-10-28" }), loop("b")];
+  const verdicts = { a: yes("A"), b: yes("B") };
+  const pairs = { [pairKey("a", "b")]: { same: true } };
+  const list = taskList(q, { verdicts, pairs, loops: markDone({}, "a", 1) });
+  assert.deepEqual(
+    list.map((e) => e.id),
+    ["b"],
+  );
+  assert.equal(list[0].members, undefined);
+});
+
+test("Done and Not a task on a row mark every member", () => {
+  const row = { id: "a", members: ["a", "b"] };
+  const done = markAll(markDone, {}, row, 5);
+  assert.deepEqual(Object.keys(done).sort(), ["a", "b"]);
+  assert.equal(done.b.doneAt, 5);
+  assert.ok(stillOpen([loop("a"), loop("b")], markAll(markNotTask, {}, row, 6)).length === 0);
+  assert.deepEqual(Object.keys(markAll(markDone, {}, { id: "c" }, 1)), ["c"], "a single row marks itself");
+});
+
+test("Not the same splits every pair in the row", () => {
+  const splits = splitRow({}, { id: "a", members: ["a", "b", "c"] }, 9);
+  assert.deepEqual(Object.keys(splits).sort(), [pairKey("a", "b"), pairKey("a", "c"), pairKey("b", "c")].sort());
+  assert.equal(pairKey("b", "a"), pairKey("a", "b"), "a pair is the same both ways");
 });
