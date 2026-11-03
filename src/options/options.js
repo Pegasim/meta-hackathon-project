@@ -360,6 +360,8 @@ async function readProfile() {
 // profile. Only entries that are new or changed since the last read cost a call. Returns
 // a note, and never throws.
 // While it runs, taskProgress says how far it got, so a redraw in between keeps saying so.
+// It is cleared by the re-read that started it, right before its last draw, so the status
+// does not look settled while that draw, with the run's own note, is still to come.
 let taskProgress = null;
 async function readTasks() {
   const progress = (text) => ($("task-status").textContent = taskProgress = text);
@@ -377,8 +379,6 @@ async function readTasks() {
     return r.failed ? `${r.failed} entries could not be read: ${r.errors.join(" | ")}. Re-read to try again.` : null;
   } catch (err) {
     return `Could not read your tasks: ${err.message}`;
-  } finally {
-    taskProgress = null;
   }
 }
 
@@ -386,7 +386,15 @@ async function readTasks() {
 // checkboxes, are listed at once; the profile and the task node are then read side by
 // side, and each is drawn as soon as it is back. Drawing used to wait for both, one after
 // the other, so the list sat empty for the half minute the model took (#6).
-async function rereadMemory() {
+// Re-reads run one after another: a second one (a click while the first runs, or an
+// import) starts when the first is done, so the node is never asked twice at once and a
+// run's verdicts are never written over by one that started before it.
+function rereadMemory() {
+  rereadMemory.queue = (rereadMemory.queue ?? Promise.resolve()).then(rereadOnce, rereadOnce);
+  return rereadMemory.queue;
+}
+
+async function rereadOnce() {
   $("profile-status").textContent = "Reading…";
   const tasks = readTasks();
   await showTasks(await queueNow());
@@ -394,7 +402,7 @@ async function rereadMemory() {
     await drawProfile(note);
     return note;
   });
-  const [note, taskNote] = await Promise.all([profile, tasks]);
+  const [note, taskNote] = await Promise.all([profile, tasks]).finally(() => (taskProgress = null));
   await showProfile(note, taskNote);
 }
 
@@ -439,7 +447,9 @@ let allTasks = false;
 // the node has not judged may be a fact with a next action, so it is held back and counted,
 // not listed as a task (#43). A Markdown checkbox never needs judging. Entries the node
 // found to be one commitment are one row, with where they came from and Not the same (#47).
+let taskDraws = 0; // only the newest draw writes, so a slower, older one cannot win
 async function showTasks(queue, note) {
+  const draw = ++taskDraws;
   const {
     loops = {},
     taskVerdicts = {},
@@ -455,6 +465,7 @@ async function showTasks(queue, note) {
     "taskSplits",
     "taskProblem",
   ]);
+  if (draw !== taskDraws) return;
   $("hide-personal").checked = !!taskSettings.hidePersonal;
   // Goals set here are not tasks from the notes: they end with Done on the goal itself.
   const open = stillOpen(

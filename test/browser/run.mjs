@@ -168,6 +168,24 @@ const twoInstances = await page.evaluate(async () => {
   return { empty, afterImport, optionsBefore, optionsSees, afterRefresh };
 });
 
+// Two reads side by side right after another instance wrote, as the settings page reads
+// the profile and the tasks together (#6): both see the write. The first read used to
+// take the new version stamp before its reload finished, so the second one took the old
+// copy as current and listed what was there before the import.
+const sideBySide = await page.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const entry = (title) =>
+    `---\nkind: todo\ntopic: demo\ntitle: "${title}"\ndate: 2026-11-01\nsource: manual\nhost: x\n---\nContext: c\nDecision/Result: r\nEvidence: none\nNext action: do it\n`;
+  const page = await Memory.open("browser-test-side");
+  const other = await Memory.open("browser-test-side");
+  const titles = (loops) => loops.map((e) => e.title).sort();
+  await other.importFiles([{ path: "inbox/20261101T000000Z-x-y-aaaaaa.md", text: entry("Old task") }]);
+  await page.openLoops(); // this copy is now current
+  await other.importFiles([{ path: "inbox/20261101T000000Z-x-y-bbbbbb.md", text: entry("New task") }]);
+  const [a, b] = await Promise.all([page.openLoops(), page.taskQueue({ today: "2026-11-02", limit: Infinity })]);
+  return { first: titles(a), second: titles(b) };
+});
+
 // Taking an entry back (issue #25), as Forget on a label does: the other instance's recall
 // misses it at once; one not exported yet never is; one exported and still in the brain's
 // inbox/ is deleted there; one whose id changed in redaction goes by the id add() returned;
@@ -700,4 +718,6 @@ assert.match(exportAgain, /1 were read before/);
 assert.match(exportAgain, /0 will be sent/);
 assert.equal(pasteAfterAgain, pasteBefore + 1, "the same file again sends nothing");
 assert.deepEqual(cacheLeft, [], "Remove drops what was read from the export too");
+assert.deepEqual(sideBySide.first, ["New task"], "the first of two side-by-side reads sees the write");
+assert.deepEqual(sideBySide.second, ["New task"], "and so does the second: no read takes the old copy as current");
 console.log("browser test: ok");
