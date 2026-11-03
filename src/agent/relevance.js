@@ -118,10 +118,11 @@ export function relevanceMessages({
   ];
 }
 
-export function parseRelevance(text) {
+// labels: what the prompt offered; other_commitment only comes with a to-do list.
+export function parseRelevance(text, labels = LABELS) {
   const raw = extractJsonObject(text);
-  if (!LABELS.includes(raw.label))
-    throw new Error(`label must be one of ${LABELS.join("|")}, got ${JSON.stringify(raw.label)}`);
+  if (!labels.includes(raw.label))
+    throw new Error(`label must be one of ${labels.join("|")}, got ${JSON.stringify(raw.label)}`);
   const confidence = Number(raw.confidence);
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1)
     throw new Error(`confidence must be a number 0..1, got ${JSON.stringify(raw.confidence)}`);
@@ -131,12 +132,13 @@ export function parseRelevance(text) {
 export async function classifyRelevance(complete, input, { now = Date.now } = {}) {
   const started = now();
   const messages = relevanceMessages(input);
+  const offered = input.commitments?.length ? LABELS : LABELS.filter((l) => l !== "other_commitment");
   const opts = { maxTokens: 4000, temperature: 0 };
   let retried = false;
   try {
     const first = await complete(messages, opts);
     try {
-      return { ...parseRelevance(first), source: "llm", latencyMs: now() - started, retried };
+      return { ...parseRelevance(first, offered), source: "llm", latencyMs: now() - started, retried };
     } catch (err) {
       retried = true;
       const retry = [
@@ -144,7 +146,12 @@ export async function classifyRelevance(complete, input, { now = Date.now } = {}
         { role: "assistant", content: first },
         { role: "user", content: `Your last reply was invalid: ${err.message}. Reply with the JSON object only.` },
       ];
-      return { ...parseRelevance(await complete(retry, opts)), source: "llm", latencyMs: now() - started, retried };
+      return {
+        ...parseRelevance(await complete(retry, opts), offered),
+        source: "llm",
+        latencyMs: now() - started,
+        retried,
+      };
     }
   } catch (err) {
     return {

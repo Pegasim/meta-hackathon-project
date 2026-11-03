@@ -3,7 +3,7 @@
 // outputs (states, triggers) and side records (llm, feedback) are recomputed or
 // ignored, so a log recorded by an older engine still measures the current one.
 import { DEFAULTS } from "./config.js";
-import { initialState, step } from "./engine.js";
+import { ENDS_DETOUR, initialState, step } from "./engine.js";
 
 const INPUTS = new Set(["context", "relevance", "session", "response", "tick", "agent"]);
 
@@ -43,7 +43,7 @@ export function replay(log, { cfg = DEFAULTS, tickSec = 1 } = {}) {
       const a = recorded(o.key, o.ts);
       const verdict = a?.label ? { label: a.label, confidence: a.confidence } : {};
       // As live: a read-ahead speaks only when it found work; a look always answers.
-      if (o.type === "read_ahead" && ["related", "other_commitment"].includes(verdict.label))
+      if (o.type === "read_ahead" && ENDS_DETOUR.includes(verdict.label))
         feed({ type: "second_look", ts: o.ts, key: o.key, ...verdict });
       else if (o.type === "need_second_look")
         feed({ type: "second_look", ts: o.ts, key: o.key, composing: !!a?.composing, ...verdict });

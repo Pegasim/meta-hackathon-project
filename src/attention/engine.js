@@ -54,7 +54,7 @@ const labelOf = (current) => (!current || current.pending ? "neutral" : current.
 const onBreak = (s, ts) => s.breakUntil != null && ts < s.breakUntil;
 const agentWorking = (s) => s.agent?.status === "working";
 const AGENT_STOPS = ["waiting_for_user", "completed", "failed"];
-const ENDS_DETOUR = ["related", "other_commitment"];
+export const ENDS_DETOUR = ["related", "other_commitment"];
 
 // The state before modes: what the person is doing.
 function coreState(s, ts, cfg) {

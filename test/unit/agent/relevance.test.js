@@ -179,3 +179,19 @@ test("the second look gets the commitments too", () => {
   assert.match(system.content, /other_commitment/);
   assert.match(user.content, /File the taxes/);
 });
+
+test("other_commitment with no commitments sent is invalid: asked again", async () => {
+  const { complete, calls } = fakeModel(
+    reply({ label: "other_commitment", confidence: 0.8, reason: "r" }),
+    reply({ label: "unrelated", confidence: 0.9, reason: "r" }),
+  );
+  const r = await classifyRelevance(complete, input);
+  assert.equal(r.label, "unrelated");
+  assert.equal(r.retried, true);
+  assert.match(calls[1].messages.at(-1).content, /label must be one of related\|unrelated\|neutral,/);
+  const withList = fakeModel(reply({ label: "other_commitment", confidence: 0.8, reason: "r" }));
+  assert.equal(
+    (await classifyRelevance(withList.complete, { ...input, commitments: ["File the taxes"] })).label,
+    "other_commitment",
+  );
+});
