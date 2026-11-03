@@ -452,6 +452,45 @@ const settingsCard = await settings.evaluate(() => ({
 }));
 await settings.close();
 
+// A notes folder added in settings lists its checkboxes at once, without waiting for the
+// model (issue #6: the list sat empty for the half minute the profile and task reads took).
+// The fake model answers only after MODEL_DELAY_MS; the folder picker hands back the vault.
+const MODEL_DELAY_MS = 4000;
+const modelCalls = [];
+await ctx.route("http://fake-model.test/**", async (route) => {
+  const body = JSON.parse(route.request().postData() ?? "{}");
+  modelCalls.push(body.messages?.[0]?.content ?? "");
+  await new Promise((r) => setTimeout(r, MODEL_DELAY_MS));
+  await route.fulfill({ json: { choices: [{ message: { content: "[]" }, finish_reason: "stop" }] } }).catch(() => {});
+});
+const slow = await ctx.newPage();
+slow.on("pageerror", (e) => errors.push(String(e)));
+await slow.goto(`chrome-extension://${id}/options/options.html`);
+await slow.evaluate(async () => {
+  const { saveModelSettings } = await import("/memory/model.js");
+  await saveModelSettings(
+    { provider: "meta", baseUrl: "http://fake-model.test/v1", model: "fake", apiKey: "test-key" },
+    { remember: true },
+  );
+  window.showDirectoryPicker = async () => (await navigator.storage.getDirectory()).getDirectoryHandle("Vault-6");
+});
+const clicked = Date.now();
+await slow.click("#add-folder");
+await slow.waitForFunction(
+  () => document.getElementById("task-list").innerText.includes("Write the failing test for cart item removal"),
+  null,
+  { timeout: MODEL_DELAY_MS * 4 },
+);
+const listedAfter = Date.now() - clicked;
+await slow.waitForFunction(() => !/Reading/.test(document.getElementById("profile-status").textContent), null, {
+  timeout: MODEL_DELAY_MS * 6,
+});
+const slowDone = await slow.evaluate(() => ({
+  profile: document.getElementById("profile-status").textContent,
+  tasks: document.getElementById("task-status").textContent,
+}));
+await slow.close();
+
 await ctx.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
@@ -565,4 +604,11 @@ assert.deepEqual(own.kinds, [
 assert.equal(own.exported, 0, "nothing from a folder or a paste is written anywhere");
 assert.match(settingsCard.ask, /deadlines with dates/);
 assert.equal(settingsCard.importDisabled, true, "nothing is sent before a preview");
+assert.ok(
+  listedAfter < MODEL_DELAY_MS,
+  `the folder's tasks are listed before the model answers (${listedAfter} ms, model ${MODEL_DELAY_MS} ms)`,
+);
+assert.ok(modelCalls.length >= 1, "the profile was still read");
+assert.match(slowDone.profile, /Could not read your memory/, "the profile's answer is drawn when it comes");
+assert.doesNotMatch(slowDone.tasks, /Reading/, "the task status settles");
 console.log("browser test: ok");
