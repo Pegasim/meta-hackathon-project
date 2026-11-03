@@ -1,0 +1,208 @@
+<style>
+  .wrap { display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start; }
+  .big { width:300px; height:300px; background:#f4f1ea; border-radius:14px; }
+  .small { display:flex; gap:14px; align-items:center; margin-top:12px; }
+  .small svg { width:72px; height:72px; }
+  .small .dk { background:#24262d; border-radius:10px; padding:6px; }
+  .btns { display:flex; flex-direction:column; gap:8px; min-width:260px; }
+  .btns button { all:unset; cursor:pointer; padding:9px 14px; border:1px solid #cfd5dc; border-radius:10px; font-size:14px; background:#fff; }
+  .btns button.on { border-color:#2f6b57; box-shadow:inset 0 0 0 1px #2f6b57; }
+  .btns small { color:#6b717a; display:block; font-size:12px; }
+  .notes { font-size:13px; color:#4a4f58; max-width:760px; margin-top:22px; line-height:1.55; }
+
+  /* ---- the pet ---- */
+  .tk { --ease: cubic-bezier(.45,0,.55,1); }
+  .tk .head, .tk .ear, .tk .eye, .tk .happy, .tk .closed { transition: transform .5s var(--ease), opacity .3s var(--ease); }
+  .tk .head { transform-box: view-box; transform-origin: 50px 82px; }
+  .tk .ear { transform-origin: 0 0; }
+  .tk .earR { transition-delay: .06s; }            /* follow-through: ears trail a beat */
+  .tk .eye { transform-box: fill-box; transform-origin: 50% 50%; }
+  .tk .happy, .tk .closed { opacity: 0; }
+  .tk .mouth { transition: opacity .3s var(--ease), transform .4s var(--ease); transform-box: fill-box; transform-origin: 50% 0; opacity: 0; }
+  .tk .m-w { opacity: 1; }
+  .tk[data-x="happy"] .m-w, .tk[data-x="alert"] .m-w, .tk[data-x="curious"] .m-w { opacity: 0; }
+  .tk[data-x="happy"] .m-open { opacity: 1; }
+  .tk[data-x="alert"] .m-open { opacity: 1; transform: scale(.75); }
+  .tk[data-x="curious"] .m-o { opacity: 1; }
+  .tk[data-x="sleep"] .m-w { transform: scale(.8); }
+
+  .tk[data-x="rest"] .earL { transform: rotate(-26deg); } .tk[data-x="rest"] .earR { transform: rotate(26deg); }
+  .tk[data-x="rest"] .eye { animation: blink 4.5s infinite; }
+  .tk[data-x="work"] .earL { animation: flick 3s var(--ease) infinite; } .tk[data-x="work"] .earR { transform: rotate(2deg); }
+  .tk[data-x="work"] .eye { animation: blink 4.5s 1s infinite; }
+  .tk[data-x="alert"] .earL, .tk[data-x="alert"] .earR { transform: rotate(0deg); }
+  .tk[data-x="alert"] .eye { transform: scale(1.12); }
+  .tk[data-x="curious"] .head { transform: rotate(-11deg); }
+  .tk[data-x="curious"] .earL { transform: rotate(-4deg); }
+  .tk[data-x="curious"] .earR { transform: rotate(48deg) scaleY(.72); }
+  .tk[data-x="curious"] .eyeL { transform: scale(1.1); }
+  .tk[data-x="happy"] .earL { transform: rotate(-30deg); } .tk[data-x="happy"] .earR { transform: rotate(30deg); }
+  .tk[data-x="happy"] .eye { opacity: 0; } .tk[data-x="happy"] .happy { opacity: 1; }
+  .tk[data-x="sleep"] .head { transform: translateY(5px) rotate(-4deg); }
+  .tk[data-x="sleep"] .earL { transform: rotate(-78deg) scaleY(.7); } .tk[data-x="sleep"] .earR { transform: rotate(78deg) scaleY(.7); }
+  .tk[data-x="sleep"] .eye { opacity: 0; } .tk[data-x="sleep"] .closed { opacity: 1; }
+
+  @keyframes blink { 0%,94%,100% { transform: scaleY(1); } 96.5% { transform: scaleY(.1); } }
+  @keyframes flick { 0%,70%,100% { transform: rotate(-2deg); } 78% { transform: rotate(-20deg); } 86% { transform: rotate(2deg); } }
+  @media (prefers-reduced-motion: reduce) { .tk * { animation: none !important; transition: none !important; } }
+
+  .tk .hp { transform-box: view-box; transform-origin: 0 0; transition: transform .55s var(--ease); }
+  .tk .pose { transition: opacity .3s var(--ease); opacity: 0; }
+  .tk[data-pose="lie"] .p-lie, .tk[data-pose="sit"] .p-sit, .tk[data-pose="curl"] .p-curl { opacity: 1; }
+  .tk[data-pose="lie"] .hp { transform: translate(13px, 20.8px) scale(.62); }
+  .tk[data-pose="lie"][data-x="curious"] .hp { transform: translate(12px, 15px) scale(.62); }
+  .tk[data-pose="sit"] .hp { transform: translate(29px, 7px) scale(.62); }
+  .tk[data-pose="curl"] .hp { transform: translate(15px, 43px) scale(.55); }
+  .tk .paw { transform-box: view-box; transform-origin: 69px 76px; transition: transform .45s var(--ease) .1s; transform: rotate(0); }
+  .tk[data-x="alert"] .paw { transform: rotate(-125deg) scaleY(.8); }
+  .tk .tail { transform-box: fill-box; transform-origin: 0% 100%; }
+  .tk[data-x="work"] .p-lie .tail { animation: sway 3s var(--ease) infinite; }
+  .tk[data-x="happy"] .p-lie .tail { animation: wag .32s var(--ease) 3; }
+  @keyframes sway { 0%,100% { transform: rotate(0); } 50% { transform: rotate(14deg); } }
+  @keyframes wag { 0%,100% { transform: rotate(0); } 50% { transform: rotate(-26deg); } }
+  .small .dk svg { filter: drop-shadow(0 0 .6px rgba(255,255,255,.9)) drop-shadow(0 0 .6px rgba(255,255,255,.5)); }
+  .big { width:360px !important; height:300px !important; }
+
+  .tk .item { transition: opacity .3s var(--ease); opacity: 0; }
+  .tk[data-item="bandana"] .item-bandana, .tk[data-item="frisbee"] .item-frisbee,
+  .tk[data-item="both"] .item-bandana, .tk[data-item="both"] .item-frisbee { opacity: 1; }
+  .tk .pads { opacity: 0; transition: opacity .2s var(--ease) .25s; }
+  .tk[data-pose="curl"] .item-bandana { opacity: 0 !important; }
+  .tk[data-x="alert"] .pads { opacity: 1; } .tk[data-x="alert"] .toes { opacity: 0; }
+  .itemrow { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .itemrow button { all:unset; cursor:pointer; padding:6px 12px; border:1px solid #cfd5dc; border-radius:999px; font-size:13px; background:#fff; }
+  .itemrow button.on { border-color:#2f6b57; box-shadow:inset 0 0 0 1px #2f6b57; }
+  .tk .pupil { transition: transform .5s var(--ease); }
+  .tk[data-x="work"] .pupil { transform: translate(2.2px, -1.2px); }
+  .tk[data-pose="lie"][data-x="rest"] .hp { transform: translate(14px, 28px) scale(.62) rotate(4deg); }
+  .tk[data-pose="lie"][data-x="work"] .hp { transform: translate(12px, 17px) scale(.62); }
+
+  /* floppy ears: rotating clockwise lifts the left ear, counter-clockwise the right */
+  .tk[data-x] .earL, .tk[data-x] .earR { transform: rotate(0deg); }
+  .tk[data-x="work"] .earL { transform: rotate(18deg); } .tk[data-x="work"] .earR { transform: rotate(-18deg); }
+  .tk[data-x="alert"] .earL { transform: rotate(28deg); } .tk[data-x="alert"] .earR { transform: rotate(-28deg); }
+  .tk[data-x="curious"] .earL { transform: rotate(32deg); } .tk[data-x="curious"] .earR { transform: rotate(10deg); }
+  .tk[data-x="happy"] .earL { transform: rotate(12deg); } .tk[data-x="happy"] .earR { transform: rotate(-12deg); }
+  .tk[data-x="sleep"] .earL { transform: rotate(-16deg); } .tk[data-x="sleep"] .earR { transform: rotate(16deg); }
+  @keyframes flick { 0%,70%,100% { transform: rotate(18deg); } 78% { transform: rotate(32deg); } 86% { transform: rotate(14deg); } }
+  .modes { display:flex; gap:8px; margin:0 0 14px; }
+  .modes button { all:unset; cursor:pointer; padding:6px 12px; border:1px solid #cfd5dc; border-radius:999px; font-size:13px; background:#fff; }
+  .modes button.on { border-color:#2f6b57; box-shadow:inset 0 0 0 1px #2f6b57; }
+  .small .dk svg { filter: drop-shadow(0 0 .6px rgba(255,255,255,.9)); }
+</style>
+
+
+<h2>Tuck v1: smooth, floppy ears</h2>
+<p class="subtitle">The keeper. Flat vector, floppy ears with pink inside, ruff, white paws and tail tip, mint bandana and frisbee. Pick a state, then an item.</p>
+
+<div class="wrap">
+  <div>
+    <div class="big" id="bigHost"></div>
+    <div class="small"><span id="s1"></span><span class="dk" id="s2"></span><span style="font-size:12px;color:#6b717a">72px, light and dark</span></div>
+  </div>
+  <div><div class="btns" id="btns"></div><div class="itemrow" id="items"></div></div>
+</div>
+
+<script>
+const C = "#222", W = "#fff";
+const ear = (side) => `
+  <g transform="translate(${side === "L" ? 37 : 63} 41)">
+    <g class="ear ear${side}"><g transform="scale(${side === "L" ? 1 : -1} 1)">
+      <path d="M6 -2 Q -4 -13 -15 -6 Q -23 0 -23 12 Q -19 16 -14.5 11 Q -11 4 -5 4 Z" fill="${C}" stroke="${C}" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M-3 -3.5 Q -11 -5 -16.5 2 Q -18 7 -15 6.5 Q -11 0.5 -4.5 0 Z" fill="#e98a95"/>
+    </g></g>
+  </g>`;
+const eye = (x, cls) => `
+  <g class="eye ${cls}">
+    <circle cx="${x}" cy="56" r="6.2" fill="${W}"/>
+    <circle class="pupil" cx="${x + 0.6}" cy="56.8" r="4.6" fill="${C}"/>
+    <circle class="pupil" cx="${x - 1}" cy="54.6" r="1.4" fill="${W}"/>
+  </g>`;
+
+const lie = `
+  <g class="pose p-lie">
+    <g class="tail"><path d="M93 79 C 101 77, 105 70, 103 63" fill="none" stroke="${C}" stroke-width="9" stroke-linecap="round"/><path d="M103.7 66.5 C 103.6 65, 103.4 64, 103 63" fill="none" stroke="${W}" stroke-width="9" stroke-linecap="round"/></g>
+    <ellipse cx="68" cy="80" rx="28" ry="13" fill="${C}"/>
+    <path d="M33 70 Q 34 84 50 86 L 62 76 Q 52 68 52 52 L 36 52 Z" fill="${C}"/>
+    <path d="M37 70 L 47 69 L 45 73 L 49 75 L 46.5 78.5 L 50.5 81 L 50 85 Q 40 85 37 76 Z" fill="${W}" stroke="${W}" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M64 88.5 L 36 88.5" stroke="${C}" stroke-width="8" stroke-linecap="round"/>
+    <ellipse cx="35" cy="88.5" rx="5.4" ry="4.4" fill="${W}"/><path d="M30.1 86.9 L 32.300000000000004 87.3 M30.1 90.1 L 32.300000000000004 89.7" stroke="${C}" stroke-width=".9" stroke-linecap="round"/>
+    <path d="M70 90.5 L 50 90.5" stroke="${C}" stroke-width="8" stroke-linecap="round"/>
+    <ellipse cx="49" cy="90.5" rx="5.4" ry="4.4" fill="${W}"/><path d="M44.1 88.9 L 46.300000000000004 89.3 M44.1 92.1 L 46.300000000000004 91.7" stroke="${C}" stroke-width=".9" stroke-linecap="round"/>
+  </g>`;
+const sit = `
+  <g class="pose p-sit">
+    <path d="M77 93 C 88 93, 92 86, 88 80" fill="none" stroke="${C}" stroke-width="9" stroke-linecap="round"/><path d="M89.3 83 C 89 81.8, 88.6 80.8, 88 80" fill="none" stroke="${W}" stroke-width="9" stroke-linecap="round"/>
+    <path d="M44 94 C 42 76, 48 60, 60 56 C 72 60, 78 76, 76 94 Z" fill="${C}"/>
+    <path d="M51 80 L 51 90" stroke="${C}" stroke-width="8" stroke-linecap="round"/>
+    <ellipse cx="51" cy="91" rx="5.2" ry="4" fill="${W}"/><path d="M49.4 95 L 49.7 93 M52.6 95 L 52.3 93" stroke="${C}" stroke-width=".9" stroke-linecap="round"/>
+    <path d="M56 92 C 55 80, 57 70, 60 66 C 63 70, 65 80, 64 92 Q 60 94 56 92 Z" fill="${W}"/>
+    <g class="paw"><path d="M69 76 L 69 90" stroke="${C}" stroke-width="8" stroke-linecap="round"/>
+      <ellipse cx="69" cy="91" rx="5.2" ry="4" fill="${W}"/><g class="toes"><path d="M67.4 95 L 67.7 93 M70.6 95 L 70.3 93" stroke="${C}" stroke-width=".9" stroke-linecap="round"/></g><g class="pads"><ellipse cx="69" cy="89.6" rx="2.4" ry="1.8" fill="#e98a95"/><circle cx="66.6" cy="92.4" r="1" fill="#e98a95"/><circle cx="69" cy="93.2" r="1" fill="#e98a95"/><circle cx="71.4" cy="92.4" r="1" fill="#e98a95"/></g></g>
+  </g>`;
+const curl = `
+  <g class="pose p-curl">
+    <ellipse cx="64" cy="82" rx="30" ry="13" fill="${C}"/>
+    <path d="M93 82 C 96 94, 70 97, 46 93" fill="none" stroke="${C}" stroke-width="8" stroke-linecap="round"/>
+    <path d="M47 93.2 L 46 93" stroke="${W}" stroke-width="8" stroke-linecap="round"/>
+  </g>`;
+const pet = (id) => `
+  <svg class="tk" data-x="rest" data-pose="lie" data-item="both" viewBox="0 0 120 100" id="${id}">
+    <g class="pixel">
+    <ellipse cx="64" cy="95" rx="38" ry="3" fill="#000" opacity=".08"/>
+    <g class="item item-frisbee"><ellipse cx="106" cy="93.5" rx="9" ry="2.8" fill="#94BFAE"/><ellipse cx="106" cy="93" rx="5" ry="1.3" fill="#7aa694"/></g>${lie}${sit}${curl}
+    <g class="hp"><g class="head">
+      ${ear("L")}${ear("R")}
+      <g class="item item-bandana"><path d="M31 78 Q 50 88 69 78 L 52 99 Q 50 101 48 99 Z" fill="#94BFAE" stroke="#94BFAE" stroke-width="2" stroke-linejoin="round"/><circle cx="44" cy="86" r="1.3" fill="#fff" opacity=".8"/><circle cx="53" cy="90" r="1.3" fill="#fff" opacity=".8"/><circle cx="58" cy="84.5" r="1.3" fill="#fff" opacity=".8"/></g><path d="M27 58 L 19.5 68 L 29 71 Z M73 58 L 80.5 68 L 71 71 Z" fill="${C}" stroke="${C}" stroke-width="3" stroke-linejoin="round"/><ellipse cx="50" cy="60" rx="27" ry="25" fill="${C}"/>
+      <path d="M50 38 L 46.5 64 Q 39.5 68 40.5 75 Q 43 82 50 82 Q 57 82 59.5 75 Q 60.5 68 53.5 64 Z" fill="${W}"/>
+      <ellipse cx="50" cy="68.6" rx="3.4" ry="2.3" fill="${C}"/>
+      <g class="mouth m-w" fill="none" stroke="${C}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M50 70.5 L 50 73.2"/><path d="M45.6 72.6 Q 47.8 75.6 50 73.2 Q 52.2 75.6 54.4 72.6"/>
+      </g>
+      <g class="mouth m-open">
+        <path d="M50 70.5 L 50 72.6" stroke="${C}" stroke-width="1.5" stroke-linecap="round"/>
+        <path d="M45 72.4 Q 50 72.4 55 72.4 Q 54.6 79.4 50 79.4 Q 45.4 79.4 45 72.4 Z" fill="${C}"/>
+        <ellipse cx="50" cy="77.6" rx="2.9" ry="1.9" fill="#e98a95"/>
+      </g>
+      <g class="mouth m-o">
+        <path d="M50 70.5 L 50 72.4" stroke="${C}" stroke-width="1.5" stroke-linecap="round"/>
+        <ellipse cx="50" cy="75" rx="1.7" ry="2" fill="${C}"/>
+      </g>
+      ${eye(39, "eyeL")}${eye(61, "eyeR")}
+      <g class="happy" fill="none" stroke="${W}" stroke-width="3" stroke-linecap="round">
+        <path d="M33.5 58 Q 39 51 44.5 58"/><path d="M55.5 58 Q 61 51 66.5 58"/>
+      </g>
+      <g class="closed" fill="none" stroke="${W}" stroke-width="2.6" stroke-linecap="round">
+        <path d="M34 57 Q 39 60 44 57"/><path d="M56 57 Q 61 60 66 57"/>
+      </g>
+    </g>
+    </g>
+  </g></svg>`;
+document.getElementById("bigHost").innerHTML = pet("big");
+document.getElementById("s1").innerHTML = pet("sm1");
+document.getElementById("s2").innerHTML = pet("sm2");
+const X = [
+  ["rest","lie","Resting","chin down, ears loose, slow blink"],
+  ["work","lie","Agent working","head up, ears up, eyes on the terminal; ear flick, tail sways"],
+  ["alert","sit","Agent waiting","sits up, lifts a paw, small smile"],
+  ["curious","lie","Drifted","lifts and tilts head, a little oh?"],
+  ["happy","lie","Back on track","big smile, three quick tail wags"],
+  ["sleep","curl","Break","curls up, eyes closed"],
+  ["rest","sit","Start of day","sits facing you, waiting for the goal"],
+];
+const host = document.getElementById("btns");
+host.innerHTML = X.map(([k,p,t,d],i) => `<button data-k="${k}" data-p="${p}" class="${i===0?"on":""}">${t}<small>${d}</small></button>`).join("");
+host.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  host.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".tk").forEach((s) => { s.dataset.x = b.dataset.k; s.dataset.pose = b.dataset.p; });
+});
+
+const IT = [["none","No item"],["bandana","Bandana"],["frisbee","Frisbee"],["both","Both"]];
+const ih = document.getElementById("items");
+ih.innerHTML = IT.map(([k,t]) => `<button data-i="${k}" class="${k==="both"?"on":""}">${t}</button>`).join("");
+ih.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return;
+  ih.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".tk").forEach((s) => (s.dataset.item = b.dataset.i)); });
+
+</script>
