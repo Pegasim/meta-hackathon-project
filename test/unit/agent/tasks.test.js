@@ -11,6 +11,7 @@ import {
   taskByConstruction,
 } from "../../../src/agent/tasks.js";
 import { taskList } from "../../../src/attention/reminders.js";
+import { modelClient } from "../../../src/memory/model.js";
 
 const entry = (id, fields = {}) => ({
   id,
@@ -209,4 +210,85 @@ test("a Markdown checkbox is a task by construction: no model call, listed under
   const mixed = await extractTasks(model.complete, { candidates: [...md, entry("brain-1")], sample: [] });
   assert.equal(mixed.calls, 1);
   assert.equal((model.calls[0].at(-1).content.match(/^\d+\. /gm) ?? []).length, 1);
+});
+
+// The real client on a fake API: cut(numberOfEntries) says which requests hit the limit.
+function clientCutting(cut) {
+  const sizes = [];
+  const fetchImpl = async (_, init) => {
+    const { messages } = JSON.parse(init.body);
+    const ns = [...messages.at(-1).content.matchAll(/^(\d+)\. /gm)].map((m) => Number(m[1]));
+    sizes.push(ns.length);
+    const body = cut(ns.length, sizes.length)
+      ? {
+          choices: [{ message: { content: null }, finish_reason: "length" }],
+          usage: { completion_tokens_details: { reasoning_tokens: 3998 } },
+        }
+      : {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  items: ns.map((n) => ({ n, is_task: true, still_open: true, task: "Do it", who: null })),
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        };
+    return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) };
+  };
+  return { complete: modelClient({ provider: "meta", apiKey: "k" }, fetchImpl), sizes };
+}
+
+test("a batch cut at the limit is split and asked again, and its entries get verdicts", async () => {
+  const candidates = ["a", "b", "c", "d"].map((id) => entry(id));
+  const { complete, sizes } = clientCutting((_, call) => call === 1);
+  const r = await extractTasks(complete, { candidates, sample: [], concurrency: 1 });
+  assert.deepEqual(sizes, [4, 2, 2]);
+  assert.equal(r.failed, 0);
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(Object.keys(r.cache).sort(), ["a", "b", "c", "d"]);
+});
+
+test("a single entry still cut at the limit fails, and the error names the limit", async () => {
+  const candidates = ["a", "b"].map((id) => entry(id));
+  const { complete, sizes } = clientCutting((n) => n > 0);
+  const r = await extractTasks(complete, { candidates, sample: [], concurrency: 1 });
+  assert.deepEqual(sizes, [2, 1, 1]);
+  assert.equal(r.failed, 2);
+  assert.deepEqual(r.cache, {});
+  assert.deepEqual(r.errors, ["reply cut at max_tokens (length): 3,998 reasoning tokens"]);
+});
+
+test("the node asks with a high cap, and sends reasoning_effort only when told to", async () => {
+  const seen = [];
+  const complete = async (_, opts) => (seen.push(opts), '{"items":[{"n":1,"is_task":false,"still_open":false}]}');
+  await judgeBatch(complete, [{ entry: entry("a"), later: [] }]);
+  await judgeBatch(complete, [{ entry: entry("a"), later: [] }], { effort: "low" });
+  assert.equal(seen[0].maxTokens, 32000);
+  assert.equal(seen[0].reasoningEffort, null);
+  assert.equal(seen[1].reasoningEffort, "low");
+});
+
+test("refreshTasks keeps why a run failed, and clears it after one that works", async () => {
+  const queue = [entry("a")];
+  const memory = {
+    taskQueue: async () => queue,
+    profileSample: async () => queue.map(({ topic, title }) => ({ topic, title })),
+  };
+  const stored = {};
+  const storage = {
+    get: async () => ({ ...stored }),
+    set: async (o) => Object.assign(stored, o),
+  };
+  await refreshTasks(
+    async () => {
+      throw new Error("down");
+    },
+    { memory, storage, today: "2026-11-02" },
+  );
+  assert.equal(stored.taskProblem, "down");
+  await refreshTasks(fakeModel().complete, { memory, storage, today: "2026-11-02" });
+  assert.equal(stored.taskProblem, null);
 });

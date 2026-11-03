@@ -2,7 +2,7 @@ import { stillOpen, taskList, taskKey } from "../attention/reminders.js";
 import { Memory, redact, previewPaste, importPasted, ASK_YOUR_ASSISTANT, MAX_PASTE_CHARS } from "../memory/index.js";
 import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
 import { buildProfile } from "../agent/profile.js";
-import { refreshTasks } from "../agent/tasks.js";
+import { refreshTasks, taskByConstruction } from "../agent/tasks.js";
 import { privateSettings } from "../agent/relevance.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { NEVER_READ, readingSettings } from "../attention/reading.js";
@@ -313,26 +313,30 @@ let allTasks = false;
 
 // The tasks the node kept, in memory's order (deadline, then recency). Nothing in the
 // notes marks a task done, so one stays until it is marked here or answered in Tuck's
-// bubble. Not a task takes out what the node got wrong; both survive a re-import.
+// bubble. Not a task takes out what the node got wrong; both survive a re-import. A note
+// the node has not judged may be a fact with a next action, so it is held back and counted,
+// not listed as a task (#43). A Markdown checkbox never needs judging.
 async function showTasks(queue, note) {
   const {
     loops = {},
     taskVerdicts = {},
     taskSettings = {},
-  } = await chrome.storage.local.get(["loops", "taskVerdicts", "taskSettings"]);
+    taskProblem,
+  } = await chrome.storage.local.get(["loops", "taskVerdicts", "taskSettings", "taskProblem"]);
   $("hide-personal").checked = !!taskSettings.hidePersonal;
   // Goals set here are not tasks from the notes: they end with Done on the goal itself.
   const open = stillOpen(
     taskList(queue, { verdicts: taskVerdicts, hidePersonal: !!taskSettings.hidePersonal }),
     loops,
   ).filter((e) => e.source !== "extension");
-  const unread = open.filter((e) => !taskVerdicts[taskKey(e)]).length;
+  const tasks = open.filter((e) => taskVerdicts[taskKey(e)] || taskByConstruction(e));
+  const waiting = open.length - tasks.length;
   const answer = (e, choice) => async () => {
     await chrome.runtime.sendMessage({ type: "reminder-answer", id: e.id, title: e.title, choice });
     await showProfile();
   };
   $("task-list").replaceChildren(
-    ...open.slice(0, allTasks ? open.length : FIRST_TASKS).map((e) => {
+    ...tasks.slice(0, allTasks ? tasks.length : FIRST_TASKS).map((e) => {
       const row = listRow(
         `${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}`,
         "Done",
@@ -342,12 +346,16 @@ async function showTasks(queue, note) {
       return row;
     }),
   );
-  $("all-tasks").hidden = open.length <= FIRST_TASKS;
-  $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${open.length}`;
+  $("all-tasks").hidden = tasks.length <= FIRST_TASKS;
+  $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${tasks.length}`;
+  const notes = waiting === 1 ? "1 note" : `${waiting} notes`;
+  const why = note ? "" : taskProblem ? `: ${taskProblem}` : " (needs a model above)";
   $("task-status").textContent = [
     note,
-    open.length ? null : "No open tasks.",
-    unread ? `${unread} not read by Tuck yet: press Re-read my memory (needs a model above).` : null,
+    waiting
+      ? `Tuck could not read your notes yet${why}, so ${notes} with a next action are not listed. Press Re-read my memory to try again.`
+      : null,
+    tasks.length || waiting ? null : "No open tasks.",
   ]
     .filter(Boolean)
     .join("\n");
