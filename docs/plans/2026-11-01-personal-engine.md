@@ -1,6 +1,6 @@
 # Notes decide what a page means: page region, notes in the prompt and reminders
 
-Status: open
+Status: done (#48)
 
 Issues: #9 (page region), #8 (notes and labels), #10 (reminders), #18 (stale index, Safa)
 
@@ -70,8 +70,8 @@ Each step is its own commit and leaves `npm test` green.
 | 3 | Notes in the prompt, per-person keys, judging again on import | Same chat, two memories, two responses | done |
 | 4 | Remembered no, forgetting labels in settings | Tuck stops asking; a wrong label can go | done |
 | 5 | `pickReminder`, answers | "Due today. Still on your list?" | done |
-| 6 | `other_commitment` | A page for another commitment gets no nudge | next |
-| 7 | Recorded session, full evals | Both error rates reported | |
+| 6 | `other_commitment` | A page for another commitment gets no nudge | done |
+| 7 | Recorded session, full evals | Both error rates reported | done |
 
 ## Test plan
 

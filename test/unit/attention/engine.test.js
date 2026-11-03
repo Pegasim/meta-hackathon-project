@@ -1126,3 +1126,44 @@ test("the wake time includes the next asking", () => {
   const { state } = run(inputs, { until: t0 + 11 * S, cfg: WORDS });
   assert.equal(nextWakeAt(state, WORDS), t0 + 31 * S);
 });
+
+// A page for something else the person has to do is not drift (#8).
+const TAX = ["https://tax.example/form", "Tax form"];
+
+test("a page for another commitment adds nothing to the budget and gets no word", () => {
+  const inputs = [setIntent(t0), ctx(t0, VIDEO, "unrelated"), ctx(t0 + 20 * S, TAX, "other_commitment")];
+  const { state, triggers } = run(inputs, { until: t0 + 200 * S, cfg: WORDS });
+  assert.equal(state.budgetSec, 20, "held, as on a neutral page");
+  assert.equal(state.state, "focused");
+  assert.equal(triggers.length, 0);
+});
+
+test("the wait on such a page adds nothing either", () => {
+  const inputs = [setIntent(t0), ctx(t0, TAX), answer37(t0 + 10 * S, TAX, "other_commitment")];
+  assert.equal(run(inputs, { until: t0 + 30 * S }).state.budgetSec, 0);
+});
+
+test("another commitment is no place to go back to", () => {
+  const inputs = [setIntent(t0), ctx(t0, REPO, "related"), ctx(t0 + S, TAX, "other_commitment")];
+  assert.equal(run(inputs, { until: t0 + 2 * S }).state.lastRelevant.url, REPO[0]);
+});
+
+test("a second look that finds another commitment ends the detour", () => {
+  const cfg = withOverrides({ decide: stubDecide });
+  let r = step(initialState(), setIntent(t0), cfg);
+  r = step(r.state, ctx(t0, TAX, "unrelated"), cfg);
+  r = step(
+    r.state,
+    {
+      type: "second_look",
+      ts: t0 + 5 * S,
+      key: relevanceKey(intent.id, ...TAX),
+      label: "other_commitment",
+      confidence: 0.9,
+    },
+    cfg,
+  );
+  assert.equal(r.state.state, "focused");
+  assert.equal(r.state.current.label, "other_commitment");
+  assert.equal(r.state.lastRelevant, null);
+});

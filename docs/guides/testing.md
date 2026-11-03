@@ -59,10 +59,13 @@ agent never runs it on its own initiative.
 
 ## Not checked yet
 
-- **Relevance accuracy (LLM#1)** — the eval exists (`npm run eval`) but has no accepted baseline yet: the case labels await İrem's review and the first real run.
+- **Relevance accuracy (LLM#1)** — the eval (`npm run eval`) has no accepted baseline
+  (`evals/baseline.json`) yet. First full run with the real model, 2026-11-03: 98.0%
+  accurate, false "unrelated" 5.0%, exactly at the limit (`shop-gh-pr`, one run in three).
 - **No unfair warnings / drift is caught** — `test/unit/attention/criteria.test.js` checks
-  both on every `test/fixtures/<name>.log.json` + `<name>.labels.json`, but no real
-  session is recorded yet, so it runs no cases today.
+  both on every `test/fixtures/<name>.log.json` + `<name>.labels.json`. One recording so
+  far (`2026-11-03-avatar`, 15 minutes, one person, two drifts); more are needed before
+  the rates mean much.
 - **Intervention speed** — threshold open in `docs/INTENT.md`; an e2e timing test
   comes once the threshold is set.
 - **Demo flow works** — `test:e2e` covers the engine flow (goal → drift → nudge →

@@ -34,6 +34,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(`<title>${title}</title><p>${title}`);
   if (req.url === "/repo") return page("cart.js · acme/shop");
   if (req.url === "/video") return page("Top 10 F1 crashes - Video");
+  if (req.url === "/tax") return page("Tax form");
   // Issue #5: one social site, three pages. The title says "Social" on all of them.
   const reply = `<textarea id="reply" placeholder="Write a message"></textarea>`;
   if (req.url === "/chat")
@@ -205,8 +206,21 @@ const server = http.createServer((req, res) => {
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ items }) } }] }));
     }
     calls.push(messages);
-    // Notes that name the person spoken to: that conversation is work.
+    // A page for something else on the to-do list.
     const prompt = messages.at(-1).content;
+    if (/Their other commitments:[\s\S]*Page title: Tax form/.test(prompt))
+      return res.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({ label: "other_commitment", confidence: 0.9, reason: "Their other task." }),
+              },
+            },
+          ],
+        }),
+      );
+    // Notes that name the person spoken to: that conversation is work.
     if (/From their own notes:[\s\S]*Deniz Kaya[\s\S]*In a conversation with: Deniz Kaya/.test(prompt))
       return res.end(
         JSON.stringify({
@@ -754,6 +768,19 @@ await agentSays("unknown");
 await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 
+// A page for something else on the to-do list is not drift (#8), and is no place to go back to.
+const beforeTax = await lastTrigger();
+const taxTab = await ctx.newPage();
+await taxTab.goto(`http://localhost:${port}/tax`);
+await taxTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await taxTab.waitForTimeout(6000);
+const afterTax = await lastTrigger();
+const taxStatus = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }));
+await taxTab.close();
+await chatTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+
 // Review I1: changing the goal closes the old one; Done leaves no goal behind.
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
@@ -1096,6 +1123,10 @@ assert.ok(
 assert.equal(drift4.kind, "drift", "drift is still caught after a restart");
 assert.equal(backAfterRestart, repo, "Take me back still works after a restart");
 assert.equal(duringWait.id, beforeWait.id, "no nudge while the agent works");
+assert.equal(taxStatus.engine.current.label, "other_commitment");
+assert.equal(afterTax.id, beforeTax.id, "no word on a page for another commitment");
+assert.equal(taxStatus.engine.state, "focused");
+assert.ok(!taxStatus.engine.lastRelevant?.url?.endsWith("/tax"));
 assert.equal(waitStatus.engine.state, "agent_working");
 assert.equal(waitBadge, "", "waiting for the agent: no drift badge left behind");
 assert.ok(duringWait.respondedAt || duringWait.resolvedAt, "nor a drift word left open");

@@ -6,7 +6,7 @@ import { hostOf } from "../attention/relevance.js";
 import { renderProfile } from "./profile.js";
 import { DEFAULT_PROVIDER } from "../memory/model.js";
 
-export const LABELS = ["related", "unrelated", "neutral"];
+export const LABELS = ["related", "unrelated", "neutral", "other_commitment"];
 
 const LABEL_LINES = [
   "- related: serves the goal or one of its steps: docs, tools, research, files,",
@@ -65,6 +65,14 @@ const NOTES_RULE = [
   "a feed, whatever the notes say.",
 ].join("\n");
 
+// What else the person has to do, when the to-do list holds anything. Without it the label
+// is not offered, and the prompt stays as it is.
+const COMMITMENT_RULE = [
+  'One more label, "other_commitment": the page clearly serves one of their other',
+  "commitments listed below, not the goal. Use it only for a page about that commitment;",
+  "a feed, a video or shopping that merely shares a word with one stays unrelated.",
+].join("\n");
+
 export function relevanceMessages({
   intent,
   url,
@@ -74,6 +82,7 @@ export function relevanceMessages({
   excerpt,
   notes = [],
   conversationWith,
+  commitments = [],
 }) {
   const steps = intent.steps?.length ? `Steps: ${intent.steps.join("; ")}` : null;
   const own = examples.length
@@ -82,12 +91,16 @@ export function relevanceMessages({
   const found = notes.length
     ? ["From their own notes:", ...notes.map((n) => `- [${n.topic}] ${n.title}: ${n.text}`)].join("\n")
     : null;
+  const others = commitments.length
+    ? ["Their other commitments:", ...commitments.map((c) => `- ${c}`)].join("\n")
+    : null;
   const user = [
     `Goal: ${intent.title}`,
     steps,
     renderProfile(profile),
     own,
     found,
+    others,
     "",
     `Page site: ${hostOf(url)}`,
     `Page title: ${title || "(no title)"}`,
@@ -96,17 +109,20 @@ export function relevanceMessages({
   ]
     .filter((l) => l !== null)
     .join("\n");
-  const system = excerpt ? SYSTEM_EXCERPT : SYSTEM;
+  const system = [excerpt ? SYSTEM_EXCERPT : SYSTEM, found && NOTES_RULE, others && COMMITMENT_RULE]
+    .filter(Boolean)
+    .join("\n");
   return [
-    { role: "system", content: found ? `${system}\n${NOTES_RULE}` : system },
+    { role: "system", content: system },
     { role: "user", content: user },
   ];
 }
 
-export function parseRelevance(text) {
+// labels: what the prompt offered; other_commitment only comes with a to-do list.
+export function parseRelevance(text, labels = LABELS) {
   const raw = extractJsonObject(text);
-  if (!LABELS.includes(raw.label))
-    throw new Error(`label must be one of ${LABELS.join("|")}, got ${JSON.stringify(raw.label)}`);
+  if (!labels.includes(raw.label))
+    throw new Error(`label must be one of ${labels.join("|")}, got ${JSON.stringify(raw.label)}`);
   const confidence = Number(raw.confidence);
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1)
     throw new Error(`confidence must be a number 0..1, got ${JSON.stringify(raw.confidence)}`);
@@ -116,12 +132,13 @@ export function parseRelevance(text) {
 export async function classifyRelevance(complete, input, { now = Date.now } = {}) {
   const started = now();
   const messages = relevanceMessages(input);
+  const offered = input.commitments?.length ? LABELS : LABELS.filter((l) => l !== "other_commitment");
   const opts = { maxTokens: 4000, temperature: 0 };
   let retried = false;
   try {
     const first = await complete(messages, opts);
     try {
-      return { ...parseRelevance(first), source: "llm", latencyMs: now() - started, retried };
+      return { ...parseRelevance(first, offered), source: "llm", latencyMs: now() - started, retried };
     } catch (err) {
       retried = true;
       const retry = [
@@ -129,7 +146,12 @@ export async function classifyRelevance(complete, input, { now = Date.now } = {}
         { role: "assistant", content: first },
         { role: "user", content: `Your last reply was invalid: ${err.message}. Reply with the JSON object only.` },
       ];
-      return { ...parseRelevance(await complete(retry, opts)), source: "llm", latencyMs: now() - started, retried };
+      return {
+        ...parseRelevance(await complete(retry, opts), offered),
+        source: "llm",
+        latencyMs: now() - started,
+        retried,
+      };
     }
   } catch (err) {
     return {

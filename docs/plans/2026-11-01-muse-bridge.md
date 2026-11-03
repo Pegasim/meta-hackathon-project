@@ -1,6 +1,6 @@
 # Tuck knows whose turn it is: Muse Code status in the engine
 
-Status: open
+Status: done (#41)
 
 Issue: #11
 

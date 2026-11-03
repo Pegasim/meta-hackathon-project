@@ -19,7 +19,7 @@ import {
 } from "../attention/relevance.js";
 import { readingSettings, mayRead } from "../attention/reading.js";
 import { stillOpen, sayable, pickReminder, markSaid, markDone, markNotTask, taskList } from "../attention/reminders.js";
-import { initialState, step, nextWakeAt } from "../attention/engine.js";
+import { ENDS_DETOUR, initialState, step, nextWakeAt } from "../attention/engine.js";
 import { makeIntent, isExpired, dayKey } from "../attention/intents.js";
 import { createSerialQueue } from "../attention/queue.js";
 import { openStore } from "../attention/store.js";
@@ -160,7 +160,7 @@ async function apply(s, input, cfg) {
       if (o.type === "state" && ["focused", "no_intent", "paused", "agent_working"].includes(o.to))
         await setBadge(null);
       // Back on a work page before answering (a new tab or a search is not back yet).
-      const backAtWork = o.type === "state" && o.to === "focused" && r.state.current?.label === "related";
+      const backAtWork = o.type === "state" && o.to === "focused" && ENDS_DETOUR.includes(r.state.current?.label);
       if (backAtWork && ["detour", "drifting", "agent_working"].includes(o.from)) await selfReturn(o.ts);
       // Waiting for the agent now: a word about drifting no longer holds.
       if (o.type === "state" && o.to === "agent_working" && o.from !== "agent_working") await selfReturn(o.ts);
@@ -300,11 +300,11 @@ async function knownLabel(intent, url, title, cfg, surface) {
     for (const from of ["focus", "view"]) {
       const look = await st.getCached(`look|${from}|${key}`);
       if (
-        look?.label === "related" &&
+        ENDS_DETOUR.includes(look?.label) &&
         look.confidence >= cfg.unsureConfidence &&
         now - look.ts < cfg.lookHoldMin * 60000
       )
-        return { label: "related", confidence: look.confidence, source: "look" };
+        return { label: look.label, confidence: look.confidence, source: "look" };
     }
   if (notWork) return { label: "unrelated", confidence: 1, source: "label" };
   const own = await st.getCached(key);
@@ -322,6 +322,7 @@ async function knownLabel(intent, url, title, cfg, surface) {
 // candidates on any shared word, notesAbout keeps those really about it. The goal stays
 // out of the query: a page nothing is known about keeps the plain prompt.
 const NOTES_SEARCHED = 20;
+const COMMITMENTS_SENT = 5; // the most urgent, by the to-do list's own order
 async function notesFor(url, title, surface) {
   const name = surface?.labels?.[0];
   const query = [title, hostOf(url), name].filter(Boolean).join(" ");
@@ -331,6 +332,32 @@ async function notesFor(url, title, surface) {
     title: redact(note.title).text,
     text: redact(note.text).text,
   }));
+}
+
+// What a relevance call was given, as counts: the log can say why a page was judged as it
+// was, but keeps none of the notes, profile or to-do titles themselves.
+function sentCounts(input) {
+  return {
+    examples: input.examples?.length ?? 0,
+    notes: input.notes.length,
+    profile: Boolean(input.profile),
+    conversation: Boolean(input.conversationWith),
+    commitments: input.commitments.length,
+  };
+}
+
+// What else is on the to-do list: time on a page for one of these is not drift.
+// The goal itself is left out by id where it came from the list, else by title. A failed
+// read sends no list: the page is still judged.
+async function otherCommitments(intent) {
+  const open = await Promise.all([toDo(), loadLoops()]).then(
+    ([todo, loops]) => stillOpen(todo, loops),
+    () => [],
+  );
+  return open
+    .filter((e) => e.id !== intent.fromLoopId && e.title !== intent.title)
+    .slice(0, COMMITMENTS_SENT)
+    .map((e) => redact(e.title).text);
 }
 
 // The person's notes changed. What was judged without them is judged again, and an
@@ -381,9 +408,10 @@ async function judge(need) {
     .filter((l) => l.topic === intent.topic && labelHolds(l, Date.now()) && l.surface !== "conversation")
     .slice(0, 5)
     .map(({ host, title, label }) => ({ host, title, label }));
+  let input;
   let r;
   try {
-    r = await classifyRelevance(modelClient(used), {
+    input = {
       intent,
       url: need.url,
       title: need.title,
@@ -391,7 +419,9 @@ async function judge(need) {
       profile: await (await memory).profile().catch(() => null),
       notes: await notesFor(need.url, need.title, need.surface),
       conversationWith: need.surface?.labels?.[0],
-    });
+      commitments: await otherCommitments(intent),
+    };
+    r = await classifyRelevance(modelClient(used), input);
   } catch (err) {
     // No model set up: the page stays neutral.
     r = { label: "neutral", confidence: 0, source: "fallback", latencyMs: 0, error: err.message ?? String(err) };
@@ -403,6 +433,7 @@ async function judge(need) {
     model: settings ? (used.model ?? used.provider) : null,
     latencyMs: r.latencyMs,
     ok: r.source === "llm",
+    ...(input && { sent: sentCounts(input) }),
     ...(r.error && { error: r.error }),
   });
   if (generation !== memoryGeneration) return; // judged from notes since replaced: asked again
@@ -453,7 +484,7 @@ async function typingOn(tabId) {
 function readAhead(need) {
   typingOn(need.tabId)
     .then((typing) => excerptVerdict(need, typing ? "focus" : "view"))
-    .then((v) => v.label === "related" && feed({ type: "second_look", ts: Date.now(), key: need.key, ...v }))
+    .then((v) => ENDS_DETOUR.includes(v.label) && feed({ type: "second_look", ts: Date.now(), key: need.key, ...v }))
     .catch((err) => log({ type: "llm", ts: Date.now(), node: "secondLook", ok: false, error: String(err) }));
 }
 
@@ -522,7 +553,7 @@ async function judgeExcerpt(need, from) {
     return { skipped: "no model" };
   }
   const profile = await (await memory).profile().catch(() => null);
-  const r = await classifyRelevance(complete, {
+  const input = {
     intent,
     url: need.url,
     title: need.title,
@@ -530,7 +561,9 @@ async function judgeExcerpt(need, from) {
     excerpt: text,
     notes: await notesFor(need.url, need.title, need.surface),
     conversationWith: need.surface?.labels?.[0],
-  });
+    commitments: await otherCommitments(intent),
+  };
+  const r = await classifyRelevance(complete, input);
   await log({
     type: "llm",
     ts: Date.now(),
@@ -540,6 +573,7 @@ async function judgeExcerpt(need, from) {
     ok: r.source === "llm",
     chars: text.length, // the size only: neither the text nor the model's reason, which may retell it
     redactions: count,
+    sent: sentCounts(input),
     ...(r.error && { error: r.error }),
   });
   if (r.source !== "llm") return { skipped: "model failed" };
@@ -617,6 +651,8 @@ async function reminderAnswer({ id, title, choice }, sender) {
   await log({ type: "feedback", ts: Date.now(), kind: "reminder", payload: { id, choice } });
   if (choice === "done") await saveLoops(markDone(await loadLoops(), id, Date.now()));
   if (choice === "not_task") await saveLoops(markNotTask(await loadLoops(), id, Date.now()));
+  // Off the list now: a page judged as that commitment is judged again.
+  if (choice === "done" || choice === "not_task") await memoryChanged();
   if (choice === "switch") return setIntent({ title, from: "tuck", fromLoopId: id }, sender);
   return { ok: true };
 }
