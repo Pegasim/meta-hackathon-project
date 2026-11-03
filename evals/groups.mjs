@@ -9,18 +9,23 @@
 //
 // A wrong merge hides a task, so it is the worse error and its limit is the tighter one.
 // A missed merge only shows a task twice. The code's share says how many of the pairs
-// that are one commitment it would ask about at all.
+// that are one commitment it would ask about at all. The English match keys the code also
+// compares come from the task node, run once over every entry as at import (a Markdown
+// checkbox is never sent, so it has none), and the code's share is reported with and
+// without them.
 import fs from "node:fs";
 import path from "node:path";
 import { modelClient } from "../src/memory/model.js";
 import { privateSettings } from "../src/agent/relevance.js";
-import { candidatePairs, judgePairs } from "../src/agent/tasks.js";
+import { candidatePairs, judgePairs, extractTasks, taskByConstruction } from "../src/agent/tasks.js";
 import { pairKey } from "../src/attention/reminders.js";
 
 // Written before the first run (2026-11-03).
 const WRONG_MAX = 0.05; // of the pairs that are separate work, called the same
 const MISSED_MAX = 0.3; // of the pairs that are one commitment, called different
 const FOUND_MIN = 0.7; // of the pairs that are one commitment, picked by the code
+// Written before the first run with match keys (2026-11-03).
+const LANGUAGE_FOUND_MIN = 0.7; // of the same pairs written in two languages, picked by the code
 const PER_CALL = 20;
 const dir = import.meta.dirname;
 const reps = Number(process.env.REPS ?? 3);
@@ -39,9 +44,23 @@ const settings = privateSettings({
 });
 const complete = modelClient(settings);
 
+// Every entry id once: the pair verdicts are keyed by the two ids.
+const ids = cases.flatMap((c) => [c.a.entry.id, c.b.entry.id]);
+const twice = ids.filter((id, i) => ids.indexOf(id) !== i);
+if (twice.length) throw new Error(`entry ids used twice: ${twice.join(", ")}`);
+
+// The node's English keys, one pass over every entry the import would send.
+const entries = [...new Map(cases.flatMap((c) => [c.a.entry, c.b.entry]).map((e) => [e.id, e])).values()];
+const keyRun = Date.now();
+const node = await extractTasks(complete, { candidates: entries.filter((e) => !taskByConstruction(e)), sample: [] });
+const keySeconds = Math.round((Date.now() - keyRun) / 100) / 10;
+const matchOf = (e) => node.cache[e.id]?.match;
+
 // Each pair on its own, as two tasks of a list: does the code ask about it?
-const item = (side) => ({ key: side.entry.id, entry: side.entry, task: side.task });
+const item = (side) => ({ key: side.entry.id, entry: side.entry, task: side.task, match: matchOf(side.entry) });
+const wordsOnly = (side) => ({ ...item(side), match: undefined });
 const found = new Map(cases.map((c) => [c.id, candidatePairs([item(c.a), item(c.b)]).length > 0]));
+const foundByWords = new Map(cases.map((c) => [c.id, candidatePairs([wordsOnly(c.a), wordsOnly(c.b)]).length > 0]));
 
 // The model sees every case, found or not, so its answers are measured on all of them.
 const pairs = cases.map((c) => ({ key: pairKey(c.a.entry.id, c.b.entry.id), a: item(c.a), b: item(c.b) }));
@@ -67,10 +86,12 @@ const results = cases.map((c) => {
     got: got.filter((v) => v === true).length * 2 > got.length,
     unread: got.filter((v) => v == null).length,
     found: found.get(c.id),
+    foundByWords: foundByWords.get(c.id),
   };
 });
 const same = results.filter((r) => r.expect);
 const apart = results.filter((r) => !r.expect);
+const sameLanguages = same.filter((r) => r.kind === "language");
 const rate = (xs, f) => xs.filter(f).length / (xs.length || 1);
 const report = {
   date: new Date().toISOString(),
@@ -81,7 +102,14 @@ const report = {
   wrongMerges: rate(apart, (r) => r.got),
   missedMerges: rate(same, (r) => !r.got),
   foundByCode: rate(same, (r) => r.found),
+  foundByWordsOnly: rate(same, (r) => r.foundByWords),
+  languageFound: rate(sameLanguages, (r) => r.found),
+  languageFoundByWordsOnly: rate(sameLanguages, (r) => r.foundByWords),
   askedApart: rate(apart, (r) => r.found),
+  askedApartByWordsOnly: rate(apart, (r) => r.foundByWords),
+  keyCalls: node.calls,
+  keySeconds,
+  keysMissing: entries.filter((e) => !matchOf(e)).map((e) => e.id),
   secondsPerCall: times.map((t) => Math.round(t / 100) / 10),
   unread: results.reduce((a, r) => a + r.unread, 0),
   errors: [...errors],
@@ -98,7 +126,10 @@ const pct = (x) => `${(x * 100).toFixed(1)}%`;
 console.log(`
 wrong merges   ${pct(report.wrongMerges)}   of ${apart.length} separate pairs (max ${pct(WRONG_MAX)})
 missed merges  ${pct(report.missedMerges)}   of ${same.length} same pairs (max ${pct(MISSED_MAX)})
-found by code  ${pct(report.foundByCode)}   of the same pairs (min ${pct(FOUND_MIN)}); separate pairs asked: ${pct(report.askedApart)}
+found by code  ${pct(report.foundByCode)}   of the same pairs (min ${pct(FOUND_MIN)}); words only ${pct(report.foundByWordsOnly)}
+two languages  ${pct(report.languageFound)}   of ${sameLanguages.length} same pairs (min ${pct(LANGUAGE_FOUND_MIN)}); words only ${pct(report.languageFoundByWordsOnly)}
+separate asked ${pct(report.askedApart)}   of the separate pairs; words only ${pct(report.askedApartByWordsOnly)}
+keys           ${report.keyCalls} node calls, ${report.keySeconds} s; none for ${report.keysMissing.join(", ") || "-"}
 per call       ${report.secondsPerCall.join(", ")} s (${Math.ceil(cases.length / PER_CALL)} calls a run)
 unread         ${report.unread}/${results.length * reps}`);
 
@@ -107,5 +138,10 @@ const out = path.join(dir, "reports", `groups-${report.date.replace(/[:.]/g, "-"
 fs.writeFileSync(out, JSON.stringify(report, null, 2));
 console.log(`report: ${path.relative(process.cwd(), out)}`);
 process.exit(
-  report.wrongMerges > WRONG_MAX || report.missedMerges > MISSED_MAX || report.foundByCode < FOUND_MIN ? 1 : 0,
+  report.wrongMerges > WRONG_MAX ||
+    report.missedMerges > MISSED_MAX ||
+    report.foundByCode < FOUND_MIN ||
+    report.languageFound < LANGUAGE_FOUND_MIN
+    ? 1
+    : 0,
 );
