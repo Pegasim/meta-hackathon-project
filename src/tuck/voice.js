@@ -67,6 +67,29 @@ export function templateNudge({ kind, level, site, awayMin = 0, unsure = false, 
   }
 }
 
+// The day's greeting once the last goal is known (attention/summary.js): how it went, in
+// plain facts. The goal itself is offered below it, to pick up. when: whenSaid().
+export function templateGreeting({ goal, onGoalMin = 0, site, finished }, when) {
+  const what = asPhrase(goal);
+  if (finished) return `Done ${when.toLowerCase()}: ${what}. What's next?`;
+  const time = onGoalMin >= 3 ? `${spokenTime(onGoalMin)} on ${what}` : what;
+  return site ? `${when}: ${time}, last on ${siteName(site)}.` : `${when}: ${time}.`;
+}
+
+function spokenTime(min) {
+  if (min < 60) return `${min} minutes`;
+  const h = Math.floor(min / 60);
+  return min % 60 ? `${h}h ${min % 60}m` : `${h} hour${h === 1 ? "" : "s"}`;
+}
+
+// The day a goal was on, from today's: both as dayKey() gives them (YYYY-MM-DD).
+export function whenSaid(date, today) {
+  if (date === today) return "Earlier today";
+  const yesterday = new Date(`${today}T12:00:00Z`);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  return date === yesterday.toISOString().slice(0, 10) ? "Yesterday" : "Last time";
+}
+
 // A deadline said aloud at a natural moment. when: "today", "tomorrow", "3 days ago".
 export function reminderLine(when) {
   return /ago|yesterday/.test(when) ? `That was due ${when}. Still on your list?` : `Due ${when}. Still on your list?`;

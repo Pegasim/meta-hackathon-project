@@ -38,10 +38,18 @@ const SITUATION = {
     "They keep moving between tabs that do not look like their task: invite them to pick one thing, without blaming the switching.",
   return: () => "They are back at the computer after a while: welcome them and name where they were.",
   break_over: () => "Their break just ended: invite them back.",
+  session_start: () =>
+    "A new session starts. Say in a few words how their last goal went (Last time), and if it is not finished, offer to pick it up. Do not name the day.",
 };
 
+// How the last goal went, for the greeting (#46): its numbers, never a guess.
+const lastTime = ({ onGoalMin, finished, site }) =>
+  [`${onGoalMin} minutes on it`, finished ? "finished" : "not finished", site ? `last on ${site}` : null]
+    .filter(Boolean)
+    .join(", ");
+
 // input: {kind, level, site, awayMin, unsure, task: {title, step}, lastWork, hour,
-//         today, due: [{title, when}]}
+//         today, due: [{title, when}], last: {onGoalMin, finished, site} for session_start}
 // `due` holds only what the caller judged close enough to say aloud — the model is
 // never handed a deadline it is not allowed to mention.
 export function nudgeMessages(input) {
@@ -51,7 +59,8 @@ export function nudgeMessages(input) {
     `Their task: ${input.task?.title ?? "(none)"}`,
     input.task?.step ? `Next step: ${input.task.step}` : null,
     input.site ? `Site now: ${input.site}` : null,
-    `Away from work: ${input.awayMin ?? 0} minutes`,
+    input.kind === "session_start" ? null : `Away from work: ${input.awayMin ?? 0} minutes`,
+    input.last ? `Last time: ${lastTime(input.last)}` : null,
     input.lastWork ? `Last work page: ${input.lastWork}` : null,
     input.today ? `Today: ${input.today}` : null,
     input.hour != null ? `Local hour: ${input.hour}` : null,
