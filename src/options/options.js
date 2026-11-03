@@ -95,9 +95,7 @@ $("connect").onclick = async () => {
     const r = await memory.connectBrain(dir);
     await chrome.runtime.sendMessage({ type: "memory-changed" });
     $("brain-status").textContent = await brainStatus({ connected: true, name: dir.name, ...r });
-    $("profile-status").textContent = "Reading…";
-    const note = await readProfile();
-    await showProfile(note, await readTasks());
+    await rereadMemory();
   } catch (err) {
     if (err.name !== "AbortError") $("brain-status").textContent = `Failed: ${err.message}`;
   }
@@ -111,10 +109,7 @@ $("sync").onclick = async () => {
     const exported = r.connected && !r.needsPermission ? await memory.exportPending({ prompt: true }) : null;
     $("brain-status").textContent =
       (await brainStatus(r)) + (exported?.exported ? `\n${exported.exported} new entries written to inbox/` : "");
-    if (r.connected && !r.needsPermission) {
-      const note = await readProfile();
-      await showProfile(note, await readTasks());
-    }
+    if (r.connected && !r.needsPermission) await rereadMemory();
   } catch (err) {
     $("brain-status").textContent = `Failed: ${err.message}`;
   }
@@ -131,9 +126,7 @@ const KINDS = { md: "Notes folder", paste: "Pasted memory" };
 async function sourcesChanged() {
   await chrome.runtime.sendMessage({ type: "memory-changed" });
   await showSources();
-  $("profile-status").textContent = "Reading…";
-  const note = await readProfile();
-  await showProfile(note, await readTasks());
+  await rereadMemory();
 }
 
 function sourceText(s) {
@@ -263,8 +256,11 @@ async function readProfile() {
 // Which open loops are real tasks (agent/tasks.js), read here for the same reason as the
 // profile. Only entries that are new or changed since the last read cost a call. Returns
 // a note, and never throws.
+// While it runs, taskProgress says how far it got, so a redraw in between keeps saying so.
+let taskProgress = null;
 async function readTasks() {
-  $("task-status").textContent = "Reading your tasks…";
+  const progress = (text) => ($("task-status").textContent = taskProgress = text);
+  progress("Reading your tasks…");
   try {
     const settings = await loadModelSettings();
     if (!settings) return null;
@@ -273,24 +269,47 @@ async function readTasks() {
       storage: chrome.storage.local,
       today: localDate(),
       clean: (text) => redact(text).text,
-      onProgress: ({ done, total }) => ($("task-status").textContent = `Reading your tasks… ${done} of ${total}`),
+      onProgress: ({ done, total }) => progress(`Reading your tasks… ${done} of ${total}`),
     });
     return r.failed ? `${r.failed} entries could not be read: ${r.errors.join(" | ")}. Re-read to try again.` : null;
   } catch (err) {
     return `Could not read your tasks: ${err.message}`;
+  } finally {
+    taskProgress = null;
   }
 }
 
-async function showProfile(note, taskNote) {
+// After an import or a sync. The tasks that need no model, such as a notes folder's
+// checkboxes, are listed at once; the profile and the task node are then read side by
+// side, and each is drawn as soon as it is back. Drawing used to wait for both, one after
+// the other, so the list sat empty for the half minute the model took (#6).
+async function rereadMemory() {
+  $("profile-status").textContent = "Reading…";
+  const tasks = readTasks();
+  await showTasks(await queueNow());
+  const profile = readProfile().then(async (note) => {
+    await drawProfile(note);
+    return note;
+  });
+  const [note, taskNote] = await Promise.all([profile, tasks]);
+  await showProfile(note, taskNote);
+}
+
+const queueNow = () => memory.taskQueue({ today: localDate(), limit: Infinity });
+
+async function drawProfile(note) {
   const profile = await memory.profile();
-  const queue = await memory.taskQueue({ today: localDate(), limit: Infinity });
   const lines = [
     note,
     profile ? `Tuck knows you as: ${profile.summary}` : "Nothing read yet.",
     profile?.topics?.length ? `Your topics: ${profile.topics.join(", ")}` : null,
   ].filter(Boolean);
   $("profile-status").textContent = lines.join("\n");
-  await showTasks(queue, taskNote);
+}
+
+async function showProfile(note, taskNote) {
+  await drawProfile(note);
+  await showTasks(await queueNow(), taskNote);
   await showLabels();
 }
 
@@ -367,6 +386,7 @@ async function showTasks(queue, note) {
   $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${tasks.length}`;
   const notes = waiting === 1 ? "1 note" : `${waiting} notes`;
   const why = note ? "" : taskProblem ? `: ${taskProblem}` : " (needs a model above)";
+  if (taskProgress) return void ($("task-status").textContent = taskProgress);
   $("task-status").textContent = [
     note,
     waiting
@@ -408,11 +428,8 @@ async function showLabels() {
 }
 
 $("reread").onclick = async () => {
-  $("profile-status").textContent = "Reading…";
-  $("task-status").textContent = "Reading your tasks…";
   try {
-    const note = await readProfile();
-    await showProfile(note, await readTasks());
+    await rereadMemory();
   } catch (err) {
     $("profile-status").textContent = `Failed: ${err.message}`;
   }
