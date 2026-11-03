@@ -315,18 +315,34 @@ let allTasks = false;
 // notes marks a task done, so one stays until it is marked here or answered in Tuck's
 // bubble. Not a task takes out what the node got wrong; both survive a re-import. A note
 // the node has not judged may be a fact with a next action, so it is held back and counted,
-// not listed as a task (#43). A Markdown checkbox never needs judging.
+// not listed as a task (#43). A Markdown checkbox never needs judging. Entries the node
+// found to be one commitment are one row, with where they came from and Not the same (#47).
 async function showTasks(queue, note) {
   const {
     loops = {},
     taskVerdicts = {},
     taskSettings = {},
+    taskPairs = {},
+    taskSplits = {},
     taskProblem,
-  } = await chrome.storage.local.get(["loops", "taskVerdicts", "taskSettings", "taskProblem"]);
+  } = await chrome.storage.local.get([
+    "loops",
+    "taskVerdicts",
+    "taskSettings",
+    "taskPairs",
+    "taskSplits",
+    "taskProblem",
+  ]);
   $("hide-personal").checked = !!taskSettings.hidePersonal;
   // Goals set here are not tasks from the notes: they end with Done on the goal itself.
   const open = stillOpen(
-    taskList(queue, { verdicts: taskVerdicts, hidePersonal: !!taskSettings.hidePersonal }),
+    taskList(queue, {
+      verdicts: taskVerdicts,
+      hidePersonal: !!taskSettings.hidePersonal,
+      loops,
+      pairs: taskPairs,
+      splits: taskSplits,
+    }),
     loops,
   ).filter((e) => e.source !== "extension");
   const tasks = open.filter((e) => taskVerdicts[taskKey(e)] || taskByConstruction(e));
@@ -338,11 +354,12 @@ async function showTasks(queue, note) {
   $("task-list").replaceChildren(
     ...tasks.slice(0, allTasks ? tasks.length : FIRST_TASKS).map((e) => {
       const row = listRow(
-        `${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}`,
+        `${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}${e.members ? ` (${e.sources})` : ""}`,
         "Done",
         answer(e, "done"),
       );
       row.append(button("Not a task", answer(e, "not_task")));
+      if (e.members) row.append(button("Not the same", answer(e, "not_same")));
       return row;
     }),
   );

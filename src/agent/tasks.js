@@ -7,7 +7,7 @@
 // is urgent: the deadline is read from the text in code and the order stays memory's
 // (docs/INTENT.md, "Facts and timing are deterministic").
 import { extractJsonObject } from "./json.js";
-import { taskKey } from "../attention/reminders.js";
+import { taskKey, pairKey } from "../attention/reminders.js";
 
 const BATCH = 15;
 const CONCURRENCY = 3;
@@ -21,6 +21,10 @@ const FIELD_CHARS = 300;
 // 14-20 s per batch of 15 against 50-58 s, under the worker's 30-second fetch limit.
 const MAX_TOKENS = 32000;
 const EFFORT = "low";
+// One commitment, one row (#47): candidate pairs per call, and at most this many asked in
+// one run; the rest are asked at the next import.
+const PAIRS_PER_CALL = 20;
+const PAIRS_MAX = 60;
 
 const SYSTEM = [
   "You read entries from someone's own notes. Each one names a next action. Say for each",
@@ -229,18 +233,156 @@ export async function extractTasks(
   return { cache: next, judged: todo.length - failed, failed, calls, errors: [...errors] };
 }
 
+// ---- One commitment, one row (#47) ------------------------------------------
+
+// A word on many of the tasks (a project's name) says nothing about which task it is.
+const COMMON_SHARE = 0.2;
+// Nor does the verb: "book the dentist" and "book a haircut" share only how it is done.
+const ACTIONS = new Set(
+  "book call send write make finish check prepare review update decide pick start draft order file plan read submit reply email meet apply renew".split(
+    " ",
+  ),
+);
+// Six letters: "application" and "applications", "submit" and "submitted" are one word.
+const stems = (s) => new Set([...wordsOf(s)].filter((w) => !ACTIONS.has(w)).map((w) => w.slice(0, 6)));
+
+// items: [{ key, entry, task }], the tasks the list keeps (task: the node's title). The
+// pairs worth asking the model about, most shared words first. Words are the node's title
+// and the entry's; a long note shares words with many others, so what counts is the share
+// of the shorter one's words: all of them, or half (two at least), or a quarter with the
+// same deadline, or half on the same topic within three days (a third, with two words).
+// On one real brain's 229 open loops these rules gave about 100 pairs, against 26,000
+// for every two. Code only, so the model never sees every two tasks.
+export function candidatePairs(items) {
+  const bags = items.map(({ entry, task }) => stems(`${task} ${entry.title}`));
+  const df = new Map();
+  for (const bag of bags) for (const w of bag) df.set(w, (df.get(w) ?? 0) + 1);
+  const limit = Math.max(3, Math.ceil(items.length * COMMON_SHARE));
+  const useful = bags.map((bag) => [...bag].filter((w) => df.get(w) <= limit));
+  const days = (a, b) => Math.abs(Date.parse(a) - Date.parse(b)) / 864e5;
+  const out = [];
+  for (let i = 0; i < items.length; i++)
+    for (let j = i + 1; j < items.length; j++) {
+      const shared = useful[i].filter((w) => useful[j].includes(w)).length;
+      if (!shared) continue;
+      const share = shared / Math.min(useful[i].length, useful[j].length);
+      const [a, b] = [items[i].entry, items[j].entry];
+      const sameDue = !!a.due && a.due === b.due;
+      const near = a.topic === b.topic && days(a.date, b.date) <= 3;
+      const close = near && (share >= 0.5 || (shared >= 2 && share >= 0.33));
+      if (share === 1 || (shared >= 2 && share >= 0.5) || (sameDue && share >= 0.25) || close)
+        out.push({ key: pairKey(items[i].key, items[j].key), a: items[i], b: items[j], shared });
+    }
+  return out.sort((x, y) => y.shared - x.shared);
+}
+
+const PAIR_SYSTEM = [
+  "You compare pairs of tasks from someone's own notes, so their to-do list can show each",
+  "commitment once. For each pair, say whether A and B are the same commitment: one piece",
+  "of work, where doing it once finishes both. A later note that restates, narrows or",
+  "updates the same task is the same, also when it comes from another notebook or app.",
+  "Two tasks are different when they are separate pieces of work, even on the same",
+  "project, with the same person or by the same deadline (writing a talk's abstract and",
+  "booking its venue; the October and the November newsletter). When unsure, say false:",
+  "a task listed twice is better than a task hidden.",
+  'Reply with one JSON object only: {"pairs": [{"n": 1, "same": false}]}, one item per',
+  "pair, in order.",
+].join("\n");
+
+const side = (label, { entry: e, task }, clean) =>
+  [
+    `   ${label}: [${e.topic}] ${e.kind}, ${e.date}: ${clean(cut(e.title, 120))}`,
+    `      Task: ${clean(cut(task, 120))}`,
+    `      Next action: ${clean(cut(e.next))}`,
+    `      Context: ${clean(cut(e.context, 200))}`,
+    e.due ? `      Due: ${e.due}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+// pairs: candidatePairs' output. clean: what each text goes through first (redact).
+export function pairMessages(pairs, { clean = (s) => s } = {}) {
+  const blocks = pairs.map((p, i) => [`${i + 1}.`, side("A", p.a, clean), side("B", p.b, clean)].join("\n"));
+  return [
+    { role: "system", content: PAIR_SYSTEM },
+    { role: "user", content: ["The pairs:", ...blocks].join("\n\n") },
+  ];
+}
+
+// Returns same-or-not by pair number; an item that does not parse is left out, and that
+// pair is asked again at the next import.
+export function parsePairs(text, count) {
+  const raw = extractJsonObject(text);
+  if (!Array.isArray(raw.pairs)) throw new Error("pairs must be an array");
+  const out = new Map();
+  for (const it of raw.pairs) {
+    const n = Number(it?.n);
+    if (!Number.isInteger(n) || n < 1 || n > count || out.has(n) || typeof it.same !== "boolean") continue;
+    out.set(n, it.same);
+  }
+  if (!out.size) throw new Error("no valid item in the reply");
+  return out;
+}
+
+// A verdict on a pair holds while both entries and the node's titles are unchanged.
+const pairHash = ({ a, b }) => taskHash({ ...a.entry, title: `${a.entry.title}|${a.task}` }, [b.entry, b.task]);
+
+// cache: { [pairKey]: { same, hash, at } } from the last run. Only new or changed pairs
+// are asked, at most `max` of them; a call that fails leaves its pairs unasked, and so
+// ungrouped. Returns { cache, asked, failed, calls, errors }.
+export async function judgePairs(
+  complete,
+  pairs,
+  { cache = {}, clean, now = Date.now, max = PAIRS_MAX, perCall = PAIRS_PER_CALL, effort = EFFORT } = {},
+) {
+  const next = {};
+  const todo = [];
+  for (const p of pairs) {
+    const hash = pairHash(p);
+    if (cache[p.key]?.hash === hash) next[p.key] = cache[p.key];
+    else if (todo.length < max) todo.push({ ...p, hash });
+  }
+  const opts = { maxTokens: MAX_TOKENS, temperature: 0, reasoningEffort: effort, whole: true };
+  let calls = 0;
+  let failed = 0;
+  const errors = new Set();
+  for (let i = 0; i < todo.length; i += perCall) {
+    const chunk = todo.slice(i, i + perCall);
+    calls += 1;
+    try {
+      const got = parsePairs(await complete(pairMessages(chunk, { clean }), opts), chunk.length);
+      chunk.forEach((p, j) => {
+        if (got.has(j + 1)) next[p.key] = { same: got.get(j + 1), hash: p.hash, at: now() };
+        else failed += 1;
+      });
+    } catch (err) {
+      failed += chunk.length;
+      errors.add(err.message ?? String(err));
+    }
+  }
+  return { cache: next, asked: todo.length, failed, calls, errors: [...errors] };
+}
+
 // The whole step, for the settings page and the worker alike. storage: chrome.storage.local
 // (or a fake), where the verdicts live under "taskVerdicts", next to "loops"
 // (attention/reminders.js). Goals set in the extension and loops already answered are not
 // asked about.
 export async function refreshTasks(complete, { memory, storage, today, clean, onProgress }) {
-  const { taskVerdicts = {}, loops = {} } = await storage.get(["taskVerdicts", "loops"]);
+  const { taskVerdicts = {}, taskPairs = {}, loops = {} } = await storage.get(["taskVerdicts", "taskPairs", "loops"]);
   const candidates = (await memory.taskQueue({ today, limit: Infinity })).filter(
     (e) => e.source !== "extension" && !loops[e.id]?.doneAt && !loops[e.id]?.notTaskAt,
   );
   const sample = await memory.profileSample({ limit: Infinity });
   const r = await extractTasks(complete, { candidates, sample, cache: taskVerdicts, clean, onProgress });
+  // Then which of the tasks it kept are one commitment (#47). A pair that fails is not
+  // grouped, and the list still works, so it is not a problem to report.
+  const kept = candidates.flatMap((entry) => {
+    const v = r.cache[taskKey(entry)];
+    if (taskByConstruction(entry)) return [{ key: taskKey(entry), entry, task: entry.title }];
+    return v?.isTask && v.open ? [{ key: taskKey(entry), entry, task: v.task }] : [];
+  });
+  const p = await judgePairs(complete, candidatePairs(kept), { cache: taskPairs, clean });
   // Why this run left entries unread, for a settings page opened later.
-  await storage.set({ taskVerdicts: r.cache, taskProblem: r.errors.join(" | ") || null });
-  return { ...r, candidates: candidates.length };
+  await storage.set({ taskVerdicts: r.cache, taskPairs: p.cache, taskProblem: r.errors.join(" | ") || null });
+  return { ...r, candidates: candidates.length, pairCalls: p.calls, pairsAsked: p.asked, pairErrors: p.errors };
 }

@@ -45,6 +45,9 @@ URL and title cannot tell a work chat from a feed on the same site: Safa was nud
 **"This is for my task" on a whole site lasts 30 minutes; for good only after 3 different days (2026-11-01, issue #5).**
 One click meant "this visit is work", but it made the whole site work forever, which hides the next real drift there (the feed after the chat). Title labels (YouTube and the like) still last.
 
+**One commitment written in several notes is one row in the to-do list, and the entries stay as they are (2026-11-03, issue #47).**
+A note restated on a later day, or the same task in the brain, a notes folder and a pasted memory, listed the task several times, and Done on one row left the others open. Code picks the pairs that share most of their words (about 100 of 26,000 on one real brain), and the model says of each whether it is one piece of work. The grouping is a view over the entries, so nothing in anyone's notes is rewritten or deleted. A pair the model called different, or the person split with Not the same, is never merged, not even through a third entry, because a wrong merge hides a task, which is worse than a task listed twice.
+
 **{{The decision, in one sentence.}}**
 {{Why, and what it rules out.}}
 
