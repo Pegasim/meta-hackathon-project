@@ -54,6 +54,7 @@ const labelOf = (current) => (!current || current.pending ? "neutral" : current.
 const onBreak = (s, ts) => s.breakUntil != null && ts < s.breakUntil;
 const agentWorking = (s) => s.agent?.status === "working";
 const AGENT_STOPS = ["waiting_for_user", "completed", "failed"];
+const ENDS_DETOUR = ["related", "other_commitment"];
 
 // The state before modes: what the person is doing.
 function coreState(s, ts, cfg) {
@@ -307,12 +308,16 @@ function applySecondLook(s, input, cfg) {
   // An answer for a page already left changes nothing.
   if (s.look?.key === input.key)
     s.look.answer = { composing: !!input.composing, label: input.label ?? null, confidence: input.confidence ?? 0 };
-  // The excerpt shows work (read ahead or at the word): the page counts as related, but
-  // is no place to go back to.
-  if (input.label === "related" && (input.confidence ?? 0) >= cfg.unsureConfidence && s.current?.key === input.key) {
-    Object.assign(s.current, { label: "related", confidence: input.confidence, pending: false, source: "look" });
+  // The excerpt shows work, or another of the person's commitments (read ahead or at the
+  // word): the page counts as that, but is no place to go back to.
+  if (
+    ENDS_DETOUR.includes(input.label) &&
+    (input.confidence ?? 0) >= cfg.unsureConfidence &&
+    s.current?.key === input.key
+  ) {
+    Object.assign(s.current, { label: input.label, confidence: input.confidence, pending: false, source: "look" });
     const last = s.timeline.at(-1);
-    if (last?.key === input.key) last.label = "related";
+    if (last?.key === input.key) last.label = input.label;
   }
 }
 

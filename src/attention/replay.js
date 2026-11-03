@@ -43,7 +43,7 @@ export function replay(log, { cfg = DEFAULTS, tickSec = 1 } = {}) {
       const a = recorded(o.key, o.ts);
       const verdict = a?.label ? { label: a.label, confidence: a.confidence } : {};
       // As live: a read-ahead speaks only when it found work; a look always answers.
-      if (o.type === "read_ahead" && verdict.label === "related")
+      if (o.type === "read_ahead" && ["related", "other_commitment"].includes(verdict.label))
         feed({ type: "second_look", ts: o.ts, key: o.key, ...verdict });
       else if (o.type === "need_second_look")
         feed({ type: "second_look", ts: o.ts, key: o.key, composing: !!a?.composing, ...verdict });

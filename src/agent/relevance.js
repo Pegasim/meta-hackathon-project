@@ -6,7 +6,7 @@ import { hostOf } from "../attention/relevance.js";
 import { renderProfile } from "./profile.js";
 import { DEFAULT_PROVIDER } from "../memory/model.js";
 
-export const LABELS = ["related", "unrelated", "neutral"];
+export const LABELS = ["related", "unrelated", "neutral", "other_commitment"];
 
 const LABEL_LINES = [
   "- related: serves the goal or one of its steps: docs, tools, research, files,",
@@ -65,6 +65,14 @@ const NOTES_RULE = [
   "a feed, whatever the notes say.",
 ].join("\n");
 
+// What else the person has to do, when the to-do list holds anything. Without it the label
+// is not offered, and the prompt stays as it is.
+const COMMITMENT_RULE = [
+  'One more label, "other_commitment": the page clearly serves one of their other',
+  "commitments listed below, not the goal. Use it only for a page about that commitment;",
+  "a feed, a video or shopping that merely shares a word with one stays unrelated.",
+].join("\n");
+
 export function relevanceMessages({
   intent,
   url,
@@ -74,6 +82,7 @@ export function relevanceMessages({
   excerpt,
   notes = [],
   conversationWith,
+  commitments = [],
 }) {
   const steps = intent.steps?.length ? `Steps: ${intent.steps.join("; ")}` : null;
   const own = examples.length
@@ -82,12 +91,16 @@ export function relevanceMessages({
   const found = notes.length
     ? ["From their own notes:", ...notes.map((n) => `- [${n.topic}] ${n.title}: ${n.text}`)].join("\n")
     : null;
+  const others = commitments.length
+    ? ["Their other commitments:", ...commitments.map((c) => `- ${c}`)].join("\n")
+    : null;
   const user = [
     `Goal: ${intent.title}`,
     steps,
     renderProfile(profile),
     own,
     found,
+    others,
     "",
     `Page site: ${hostOf(url)}`,
     `Page title: ${title || "(no title)"}`,
@@ -96,9 +109,11 @@ export function relevanceMessages({
   ]
     .filter((l) => l !== null)
     .join("\n");
-  const system = excerpt ? SYSTEM_EXCERPT : SYSTEM;
+  const system = [excerpt ? SYSTEM_EXCERPT : SYSTEM, found && NOTES_RULE, others && COMMITMENT_RULE]
+    .filter(Boolean)
+    .join("\n");
   return [
-    { role: "system", content: found ? `${system}\n${NOTES_RULE}` : system },
+    { role: "system", content: system },
     { role: "user", content: user },
   ];
 }

@@ -322,6 +322,7 @@ async function knownLabel(intent, url, title, cfg, surface) {
 // candidates on any shared word, notesAbout keeps those really about it. The goal stays
 // out of the query: a page nothing is known about keeps the plain prompt.
 const NOTES_SEARCHED = 20;
+const COMMITMENTS_SENT = 5; // the most urgent, by the to-do list's own order
 async function notesFor(url, title, surface) {
   const name = surface?.labels?.[0];
   const query = [title, hostOf(url), name].filter(Boolean).join(" ");
@@ -331,6 +332,26 @@ async function notesFor(url, title, surface) {
     title: redact(note.title).text,
     text: redact(note.text).text,
   }));
+}
+
+// What a relevance call was given, as counts: the log can say why a page was judged as it
+// was, but keeps none of the notes, profile or to-do titles themselves.
+function sentCounts(input) {
+  return {
+    examples: input.examples?.length ?? 0,
+    notes: input.notes.length,
+    profile: Boolean(input.profile),
+    conversation: Boolean(input.conversationWith),
+    commitments: input.commitments.length,
+  };
+}
+
+// What else is on the to-do list: time on a page for one of these is not drift.
+async function otherCommitments(goalTitle) {
+  return stillOpen(await toDo(), await loadLoops())
+    .filter((e) => e.title !== goalTitle)
+    .slice(0, COMMITMENTS_SENT)
+    .map((e) => redact(e.title).text);
 }
 
 // The person's notes changed. What was judged without them is judged again, and an
@@ -381,9 +402,10 @@ async function judge(need) {
     .filter((l) => l.topic === intent.topic && labelHolds(l, Date.now()) && l.surface !== "conversation")
     .slice(0, 5)
     .map(({ host, title, label }) => ({ host, title, label }));
+  let input;
   let r;
   try {
-    r = await classifyRelevance(modelClient(used), {
+    input = {
       intent,
       url: need.url,
       title: need.title,
@@ -391,7 +413,9 @@ async function judge(need) {
       profile: await (await memory).profile().catch(() => null),
       notes: await notesFor(need.url, need.title, need.surface),
       conversationWith: need.surface?.labels?.[0],
-    });
+      commitments: await otherCommitments(intent.title),
+    };
+    r = await classifyRelevance(modelClient(used), input);
   } catch (err) {
     // No model set up: the page stays neutral.
     r = { label: "neutral", confidence: 0, source: "fallback", latencyMs: 0, error: err.message ?? String(err) };
@@ -403,6 +427,7 @@ async function judge(need) {
     model: settings ? (used.model ?? used.provider) : null,
     latencyMs: r.latencyMs,
     ok: r.source === "llm",
+    ...(input && { sent: sentCounts(input) }),
     ...(r.error && { error: r.error }),
   });
   if (generation !== memoryGeneration) return; // judged from notes since replaced: asked again
@@ -453,7 +478,11 @@ async function typingOn(tabId) {
 function readAhead(need) {
   typingOn(need.tabId)
     .then((typing) => excerptVerdict(need, typing ? "focus" : "view"))
-    .then((v) => v.label === "related" && feed({ type: "second_look", ts: Date.now(), key: need.key, ...v }))
+    .then(
+      (v) =>
+        ["related", "other_commitment"].includes(v.label) &&
+        feed({ type: "second_look", ts: Date.now(), key: need.key, ...v }),
+    )
     .catch((err) => log({ type: "llm", ts: Date.now(), node: "secondLook", ok: false, error: String(err) }));
 }
 
@@ -522,7 +551,7 @@ async function judgeExcerpt(need, from) {
     return { skipped: "no model" };
   }
   const profile = await (await memory).profile().catch(() => null);
-  const r = await classifyRelevance(complete, {
+  const input = {
     intent,
     url: need.url,
     title: need.title,
@@ -530,7 +559,9 @@ async function judgeExcerpt(need, from) {
     excerpt: text,
     notes: await notesFor(need.url, need.title, need.surface),
     conversationWith: need.surface?.labels?.[0],
-  });
+    commitments: await otherCommitments(intent.title),
+  };
+  const r = await classifyRelevance(complete, input);
   await log({
     type: "llm",
     ts: Date.now(),
@@ -540,6 +571,7 @@ async function judgeExcerpt(need, from) {
     ok: r.source === "llm",
     chars: text.length, // the size only: neither the text nor the model's reason, which may retell it
     redactions: count,
+    sent: sentCounts(input),
     ...(r.error && { error: r.error }),
   });
   if (r.source !== "llm") return { skipped: "model failed" };
