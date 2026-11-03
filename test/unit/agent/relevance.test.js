@@ -195,3 +195,24 @@ test("other_commitment with no commitments sent is invalid: asked again", async 
     "other_commitment",
   );
 });
+
+test("a caller can set the reasoning effort; the retry asks the same way", async () => {
+  const { complete, calls } = fakeModel("not json", reply({ label: "related", confidence: 0.8, reason: "x" }));
+  await classifyRelevance(complete, input, { effort: "minimal" });
+  assert.deepEqual(
+    calls.map((c) => c.opts.reasoningEffort),
+    ["minimal", "minimal"],
+  );
+});
+
+test("another part of the goal's own project counts as related, in both prompts", () => {
+  const rule = /another part of the same project/;
+  assert.match(relevanceMessages(input)[0].content, rule);
+  assert.match(relevanceMessages({ ...input, excerpt: "A feed of F1 clips." })[0].content, rule);
+});
+
+test("the node asks at low reasoning effort by default", async () => {
+  const { complete, calls } = fakeModel(reply({ label: "unrelated", confidence: 0.9, reason: "x" }));
+  await classifyRelevance(complete, input);
+  assert.equal(calls[0].opts.reasoningEffort, "low");
+});

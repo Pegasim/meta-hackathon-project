@@ -10,7 +10,8 @@ export const LABELS = ["related", "unrelated", "neutral", "other_commitment"];
 
 const LABEL_LINES = [
   "- related: serves the goal or one of its steps: docs, tools, research, files,",
-  "  communication about it",
+  "  communication about it. Work on another part of the same project or course counts",
+  "  too: a neighbouring file, issue, pull request, chapter or slide",
   "- unrelated: entertainment, social feeds, shopping, news or another topic",
 ];
 const REPLY = [
@@ -129,11 +130,16 @@ export function parseRelevance(text, labels = LABELS) {
   return { label: raw.label, confidence, reason: String(raw.reason ?? "").slice(0, 200) };
 }
 
-export async function classifyRelevance(complete, input, { now = Date.now } = {}) {
+// Low effort: on the relevance eval (65 cases x 3, two runs each, issue #49) it missed no
+// case where the provider's default missed one, with under half the reasoning tokens and a
+// slightly lower median latency. Calls over 30 s happened at both. null: the provider's own.
+const EFFORT = "low";
+
+export async function classifyRelevance(complete, input, { now = Date.now, effort = EFFORT } = {}) {
   const started = now();
   const messages = relevanceMessages(input);
   const offered = input.commitments?.length ? LABELS : LABELS.filter((l) => l !== "other_commitment");
-  const opts = { maxTokens: 4000, temperature: 0 };
+  const opts = { maxTokens: 4000, temperature: 0, reasoningEffort: effort };
   let retried = false;
   try {
     const first = await complete(messages, opts);

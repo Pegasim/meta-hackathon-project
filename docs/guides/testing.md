@@ -59,9 +59,6 @@ agent never runs it on its own initiative.
 
 ## Not checked yet
 
-- **Relevance accuracy (LLM#1)** — the eval (`npm run eval`) has no accepted baseline
-  (`evals/baseline.json`) yet. First full run with the real model, 2026-11-03: 98.0%
-  accurate, false "unrelated" 5.0%, exactly at the limit (`shop-gh-pr`, one run in three).
 - **No unfair warnings / drift is caught** — `test/unit/attention/criteria.test.js` checks
   both on every `test/fixtures/<name>.log.json` + `<name>.labels.json`. One recording so
   far (`2026-11-03-avatar`, 15 minutes, one person, two drifts); more are needed before
