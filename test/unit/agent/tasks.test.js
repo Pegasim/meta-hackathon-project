@@ -417,3 +417,86 @@ test("refreshTasks judges candidate pairs among the tasks it kept and stores the
   await refreshTasks(complete, { memory, storage, today: "2026-11-02" });
   assert.equal(calls.length, 2, "a re-import with nothing new asks nothing");
 });
+
+// ---- The same commitment in two languages -------------------------------------------
+
+test("the node is asked for an English match key, and a reply keeps it short and lowercase", () => {
+  const [system] = taskMessages([{ entry: entry("a"), later: [] }]);
+  assert.match(system.content, /match: .*English/);
+  assert.match(system.content, /never shown/);
+  const items = parseTasks(
+    JSON.stringify({
+      items: [
+        {
+          n: 1,
+          is_task: true,
+          still_open: true,
+          task: "Kira sözleşmesini imzala",
+          match: "Sign the Lease Renewal, now!",
+        },
+        { n: 2, is_task: true, still_open: true, task: "Do it", match: "one two three four five six seven eight" },
+        { n: 3, is_task: true, still_open: true, task: "Do it" },
+      ],
+    }),
+    3,
+  );
+  assert.equal(items.get(1).match, "sign the lease renewal now");
+  assert.equal(items.get(1).task, "Kira sözleşmesini imzala", "the shown title stays in the note's language");
+  assert.equal(items.get(2).match, "one two three four five six", "at most 6 words");
+  assert.equal("match" in items.get(3), false, "no key in the reply: none stored");
+});
+
+test("candidate pairs: a Turkish and an English note for one task are found by their match keys", () => {
+  const visaTr = {
+    ...listed("visaTr", "Almanya vize randevusu al", { title: "Vize", topic: "seyahat" }),
+    match: "book german visa appointment",
+  };
+  const visaEn = {
+    ...listed("visaEn", "Book the German visa appointment", { title: "Visa for the Berlin trip", topic: "travel" }),
+    match: "book german visa appointment",
+  };
+  const hotel = {
+    ...listed("hotel", "Book the hotel in Berlin", { title: "Berlin hotel", topic: "travel" }),
+    match: "book berlin hotel",
+  };
+  const keys = candidatePairs([visaTr, visaEn, hotel]).map((p) => p.key);
+  assert.ok(keys.includes(pairKey("visaEn", "visaTr")), "no shared word, the same key");
+  assert.ok(!keys.includes(pairKey("hotel", "visaTr")), "another task of the same trip: keys differ");
+  const plain = ({ match, ...item }) => item;
+  assert.ok(
+    !candidatePairs([plain(visaTr), plain(visaEn)]).length,
+    "without keys (a verdict from before, or a Markdown checkbox) the words decide, as before",
+  );
+});
+
+test("refreshTasks pairs by the node's match keys, and a verdict from before keys is kept, not asked again", async () => {
+  const queue = [
+    entry("tr", { topic: "ev", title: "Kira sözleşmesi", next: "Kira sözleşmesi yenilemesini imzala" }),
+    entry("en", { topic: "home", title: "Lease renewal", next: "Sign the lease renewal", date: "2026-10-22" }),
+  ];
+  const memory = {
+    taskQueue: async () => queue,
+    profileSample: async () => queue.map(({ topic, title }) => ({ topic, title })),
+  };
+  const stored = {};
+  const storage = { get: async () => ({ ...stored }), set: async (o) => Object.assign(stored, o) };
+  const calls = [];
+  const complete = async (messages) => {
+    calls.push(messages);
+    if (/same commitment/.test(messages[0].content)) return '{"pairs":[{"n":1,"same":true}]}';
+    return JSON.stringify({
+      items: [
+        { n: 1, is_task: true, still_open: true, task: "Kira yenilemesini imzala", match: "sign lease renewal" },
+        { n: 2, is_task: true, still_open: true, task: "Sign the lease renewal", match: "sign lease renewal" },
+      ],
+    });
+  };
+  await refreshTasks(complete, { memory, storage, today: "2026-11-02" });
+  assert.equal(calls.length, 2, "one task call, one pair call: the key costs no call of its own");
+  assert.deepEqual(Object.keys(stored.taskPairs), [pairKey("en", "tr")]);
+  // A verdict stored before keys existed still holds: no call to fill the key in.
+  for (const v of Object.values(stored.taskVerdicts)) delete v.match;
+  stored.taskPairs = {};
+  await refreshTasks(complete, { memory, storage, today: "2026-11-02" });
+  assert.equal(calls.length, 2, "nothing changed: no task call, and without keys no pair either");
+});

@@ -14,6 +14,7 @@ const CONCURRENCY = 3;
 const LATER = 6; // later notes on the same topic shown with each entry
 const KIN = 4; // and notes on the topic whose titles share its words
 const TASK_WORDS = 10;
+const MATCH_WORDS = 6;
 const FIELD_CHARS = 300;
 // Hidden reasoning counts against max_tokens: 15 invented entries took 6,700 to 10,629
 // reasoning tokens at the default effort (#43). A cap, not a target. Low effort: on the
@@ -37,22 +38,25 @@ const SYSTEM = [
   "  done, submitted, merged, sent, cancelled or replaced. True when nothing shows that.",
   "- task: the action in at most 10 words, as an instruction, in the note's language. No",
   "  dates: the deadline is read separately.",
+  "- match: the same action in 2 to 6 plain English words, lowercase, whatever language",
+  "  the note is in. It is never shown: it only finds the same task written in another",
+  "  language.",
   "- who: the person it is with or for, when the note names one; else null.",
   "- personal: true for health, body, dating, family, money or home; false for work,",
   "  study and projects.",
   "Write nothing you cannot point to in the notes.",
   'Reply with one JSON object only: {"items": [{"n": 1, "is_task": true,',
-  '"still_open": true, "task": "...", "who": null, "personal": false}]}, one item per',
-  "entry, in order.",
+  '"still_open": true, "task": "...", "match": "...", "who": null, "personal": false}]},',
+  "one item per entry, in order.",
 ].join("\n");
 
 const fold = (s) => s.replace(/[İIı]/g, "i").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 const COMMON = new Set("the and for with from that this into after before when what then than".split(" "));
-const wordsOf = (s = "") =>
+const wordsOf = (s = "", min = 4) =>
   new Set(
     fold(s)
       .split(/[^\p{L}\p{N}]+/u)
-      .filter((w) => w.length > 3 && !COMMON.has(w)),
+      .filter((w) => w.length >= min && !COMMON.has(w)),
   );
 
 // sample: memory.profileSample({ limit: Infinity }), newest first. The other notes on the
@@ -119,7 +123,10 @@ export function taskMessages(items, { clean = (s) => s } = {}) {
   ];
 }
 
-const words = (s) => s.trim().split(/\s+/).slice(0, TASK_WORDS).join(" ");
+const words = (s, n = TASK_WORDS) => s.trim().split(/\s+/).slice(0, n).join(" ");
+// The English key, as plain lowercase words: only ever compared, never shown.
+const matchKey = (s) =>
+  typeof s === "string" ? words(s.toLowerCase().replace(/[^\p{L}\p{N}\s]+/gu, " "), MATCH_WORDS).slice(0, 60) : "";
 
 // Returns the valid items by entry number; an item that does not parse is left out, and
 // that entry is asked again at the next import.
@@ -133,12 +140,14 @@ export function parseTasks(text, count) {
     if (typeof it.is_task !== "boolean" || typeof it.still_open !== "boolean") continue;
     const task = typeof it.task === "string" ? words(it.task).slice(0, 100) : "";
     if (it.is_task && it.still_open && !task) continue;
+    const match = matchKey(it.match);
     out.set(n, {
       isTask: it.is_task,
       open: it.still_open,
       task,
       who: typeof it.who === "string" && it.who.trim() ? it.who.trim().slice(0, 60) : null,
       personal: it.personal === true,
+      ...(match && { match }),
     });
   }
   if (!out.size) throw new Error("no valid item in the reply");
@@ -244,36 +253,58 @@ const ACTIONS = new Set(
   ),
 );
 // Six letters: "application" and "applications", "submit" and "submitted" are one word.
-const stems = (s) => new Set([...wordsOf(s)].filter((w) => !ACTIONS.has(w)).map((w) => w.slice(0, 6)));
+const stems = (s, min) => new Set([...wordsOf(s, min)].filter((w) => !ACTIONS.has(w)).map((w) => w.slice(0, 6)));
 
-// items: [{ key, entry, task }], the tasks the list keeps (task: the node's title). The
-// pairs worth asking the model about, most shared words first. Words are the node's title
-// and the entry's; a long note shares words with many others, so what counts is the share
-// of the shorter one's words: all of them, or half (two at least), or a quarter with the
-// same deadline, or half on the same topic within three days (a third, with two words).
-// On one real brain's 229 open loops these rules gave about 100 pairs, against 26,000
-// for every two. Code only, so the model never sees every two tasks.
+// items: [{ key, entry, task, match? }], the tasks the list keeps (task: the node's title,
+// match: its English key). The pairs worth asking the model about, most shared words first.
+// Words are the node's title and the entry's; a long note shares words with many others, so
+// what counts is the share of the shorter one's words: all of them, or half (two at least),
+// or a quarter with the same deadline, or half on the same topic within three days (a
+// third, with two words). The same rules run once more on the English keys, so a Turkish
+// note and an English one for the same task are found; an item without a key (a verdict
+// from before keys, a Markdown checkbox) is found by its words only. On one real brain's
+// 229 open loops the word rules gave about 100 pairs, against 26,000 for every two. Code
+// only, so the model never sees every two tasks.
 export function candidatePairs(items) {
-  const bags = items.map(({ entry, task }) => stems(`${task} ${entry.title}`));
-  const df = new Map();
-  for (const bag of bags) for (const w of bag) df.set(w, (df.get(w) ?? 0) + 1);
-  const limit = Math.max(3, Math.ceil(items.length * COMMON_SHARE));
-  const useful = bags.map((bag) => [...bag].filter((w) => df.get(w) <= limit));
+  const words = usefulWords(
+    items.map(({ entry, task }) => stems(`${task} ${entry.title}`)),
+    items.length,
+  );
+  // Three letters in a key: "car", "tax" and "vet" are the whole task.
+  const keyed = items.filter(({ match }) => match).length;
+  const keys = usefulWords(
+    items.map(({ match }) => (match ? stems(match, 3) : new Set())),
+    keyed,
+  );
   const days = (a, b) => Math.abs(Date.parse(a) - Date.parse(b)) / 864e5;
   const out = [];
   for (let i = 0; i < items.length; i++)
     for (let j = i + 1; j < items.length; j++) {
-      const shared = useful[i].filter((w) => useful[j].includes(w)).length;
-      if (!shared) continue;
-      const share = shared / Math.min(useful[i].length, useful[j].length);
       const [a, b] = [items[i].entry, items[j].entry];
       const sameDue = !!a.due && a.due === b.due;
       const near = a.topic === b.topic && days(a.date, b.date) <= 3;
-      const close = near && (share >= 0.5 || (shared >= 2 && share >= 0.33));
-      if (share === 1 || (shared >= 2 && share >= 0.5) || (sameDue && share >= 0.25) || close)
+      const by = [words, keys].map((bags) => overlap(bags[i], bags[j], { sameDue, near }));
+      const shared = Math.max(...by.map((o) => o.shared));
+      if (by.some((o) => o.pair))
         out.push({ key: pairKey(items[i].key, items[j].key), a: items[i], b: items[j], shared });
     }
   return out.sort((x, y) => y.shared - x.shared);
+}
+
+// Each bag without the words on many of the n tasks.
+function usefulWords(bags, n) {
+  const df = new Map();
+  for (const bag of bags) for (const w of bag) df.set(w, (df.get(w) ?? 0) + 1);
+  const limit = Math.max(3, Math.ceil(n * COMMON_SHARE));
+  return bags.map((bag) => [...bag].filter((w) => df.get(w) <= limit));
+}
+
+function overlap(x, y, { sameDue, near }) {
+  const shared = x.filter((w) => y.includes(w)).length;
+  if (!shared) return { shared, pair: false };
+  const share = shared / Math.min(x.length, y.length);
+  const close = near && (share >= 0.5 || (shared >= 2 && share >= 0.33));
+  return { shared, pair: share === 1 || (shared >= 2 && share >= 0.5) || (sameDue && share >= 0.25) || close };
 }
 
 const PAIR_SYSTEM = [
@@ -379,7 +410,7 @@ export async function refreshTasks(complete, { memory, storage, today, clean, on
   const kept = candidates.flatMap((entry) => {
     const v = r.cache[taskKey(entry)];
     if (taskByConstruction(entry)) return [{ key: taskKey(entry), entry, task: entry.title }];
-    return v?.isTask && v.open ? [{ key: taskKey(entry), entry, task: v.task }] : [];
+    return v?.isTask && v.open ? [{ key: taskKey(entry), entry, task: v.task, match: v.match }] : [];
   });
   const p = await judgePairs(complete, candidatePairs(kept), { cache: taskPairs, clean });
   // Why this run left entries unread, for a settings page opened later.
