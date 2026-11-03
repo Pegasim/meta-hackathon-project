@@ -331,12 +331,35 @@ await settingsPage.evaluate(async (baseUrl) => {
   });
 }, `http://127.0.0.1:${port}/v1`);
 
+// Waits for the goal box in Tuck's greeting. Under CPU load the greeting still shows within
+// about a second (issue #52, 10 of 10 runs beside 16 busy cores), so a timeout here means a
+// greeting that never came, not a slow one: it then says what the worker held.
+async function greetingShown(tuck) {
+  try {
+    await tuck.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
+  } catch (err) {
+    const held = await settingsPage
+      .evaluate(async () => {
+        const { openStore } = await import("/attention/store.js");
+        const { pendingGreeting, engine } = await chrome.storage.session.get(["pendingGreeting", "engine"]);
+        const events = (await (await openStore()).eventsSince(Date.now() - 60000)).slice(-12);
+        return {
+          pendingGreeting,
+          engine: engine && { state: engine.state, intent: engine.intent?.title, url: engine.current?.url },
+          events: events.map((e) => [e.type, e.kind ?? e.label ?? e.to ?? "", e.url ?? ""].join(" ")),
+        };
+      })
+      .catch((e) => String(e));
+    throw new Error(`${err.message}\nno greeting; the worker held: ${JSON.stringify(held, null, 1)}`);
+  }
+}
+
 // Getting started on the page: the settings page took the day's first look (Tuck
 // cannot appear there), so Tuck greets on the first normal page and asks for the goal.
 const repoTab = await ctx.newPage();
 await repoTab.goto(repo);
 const tuck = repoTab.locator("#tuck-companion");
-await tuck.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
+await greetingShown(tuck);
 const greeting = await tuck.locator(".bubble .text").textContent();
 const greetState = await tuck.locator("svg.tuck").getAttribute("data-state");
 if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-greeting.png") });
@@ -1104,7 +1127,7 @@ const greetAfterRestart = async () => {
   const tab = await ctx.newPage();
   await tab.goto(repo);
   const t = tab.locator("#tuck-companion");
-  await t.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
+  await greetingShown(t);
   const said = await t.locator(".bubble .text").textContent();
   await tab.close();
   return said;
