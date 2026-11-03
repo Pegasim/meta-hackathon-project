@@ -16,10 +16,11 @@ const KIN = 4; // and notes on the topic whose titles share its words
 const TASK_WORDS = 10;
 const FIELD_CHARS = 300;
 // Hidden reasoning counts against max_tokens: 15 invented entries took 6,700 to 10,629
-// reasoning tokens at the default effort (#43). A cap, not a target. null: the provider's
-// default effort, until `npm run eval:tasks` has compared the settings.
+// reasoning tokens at the default effort (#43). A cap, not a target. Low effort: on the
+// task eval it got the same answers as the default (21 of 22) in a third of the time,
+// 14-20 s per batch of 15 against 50-58 s, under the worker's 30-second fetch limit.
 const MAX_TOKENS = 32000;
-const EFFORT = null;
+const EFFORT = "low";
 
 const SYSTEM = [
   "You read entries from someone's own notes. Each one names a next action. Say for each",

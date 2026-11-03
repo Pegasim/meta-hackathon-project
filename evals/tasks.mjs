@@ -6,7 +6,7 @@
 //   MODEL_PROVIDER  meta (default) | ...; Contributor is never used for notes
 //   MODEL_BASE_URL, MODEL_ID  optional overrides
 //   REPS            runs per case, default 3 (the majority answer counts)
-//   REASONING_EFFORT  low | minimal | ...; unset: the node's own setting
+//   REASONING_EFFORT  low | minimal | ...; "default": the provider's own; unset: the node's setting
 //
 // What counts is whether an entry ends up on the list (a task, still open). Dropping a
 // real open task is the worse error: the person loses it. Listing a non-task is noise
@@ -22,7 +22,8 @@ const DROPPED_MAX = 0.1;
 const BATCH = 15;
 const dir = import.meta.dirname;
 const reps = Number(process.env.REPS ?? 3);
-const effort = process.env.REASONING_EFFORT || undefined; // unset: the node's own setting
+const raw = process.env.REASONING_EFFORT || undefined; // unset: the node's own setting
+const effort = raw === "default" ? null : raw;
 
 const cases = fs
   .readFileSync(path.join(dir, "tasks/cases.jsonl"), "utf8")
@@ -71,7 +72,7 @@ const report = {
   date: new Date().toISOString(),
   provider: settings.provider,
   model: settings.model ?? null,
-  reasoningEffort: effort ?? "default",
+  reasoningEffort: raw ?? "the node's own",
   reps,
   cases: results.length,
   accuracy: results.filter((r) => r.got === r.expect).length / results.length,
