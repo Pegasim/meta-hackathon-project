@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-03T18:29:26.488Z",
+  "provider": "meta",
+  "model": null,
+  "reasoningEffort": "low (the node's own)",
+  "reps": 3,
+  "cases": 65,
+  "related": 33,
+  "accuracy": 1,
+  "falseUnrelated": 0,
+  "p50LatencyMs": 5284,
+  "p95LatencyMs": 14112,
+  "maxLatencyMs": 62419,
+  "overWorkerLimit": 2
+}

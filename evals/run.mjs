@@ -6,6 +6,7 @@
 //   MODEL_PROVIDER  meta-contributor (default) | meta | ...
 //   MODEL_BASE_URL, MODEL_ID  optional overrides
 //   REPS            runs per case, default 3 (the majority label counts)
+//   REASONING_EFFORT  low | minimal | ...; "default": the provider's own; unset: the node's setting
 import fs from "node:fs";
 import path from "node:path";
 import { modelClient } from "../src/memory/model.js";
@@ -17,6 +18,10 @@ const REGRESSION_TOLERANCE = 0.05;
 const dir = import.meta.dirname;
 const reps = Number(process.env.REPS ?? 3);
 const provider = process.env.MODEL_PROVIDER ?? "meta-contributor";
+const rawEffort = process.env.REASONING_EFFORT || undefined; // unset: the node's own setting
+const effortOpt = rawEffort === undefined ? {} : { effort: rawEffort === "default" ? null : rawEffort };
+// The service worker can be stopped while a fetch takes longer than this.
+const WORKER_FETCH_MS = 30000;
 
 const cases = fs
   .readFileSync(path.join(dir, "relevance/cases.jsonl"), "utf8")
@@ -44,7 +49,7 @@ const pct = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sor
 const results = [];
 for (const c of cases) {
   const runs = [];
-  for (let i = 0; i < reps; i++) runs.push(await classifyRelevance(complete, c));
+  for (let i = 0; i < reps; i++) runs.push(await classifyRelevance(complete, c, effortOpt));
   const m = majority(runs);
   results.push({ id: c.id, expect: c.expect, got: m.label, confidence: m.confidence, runs });
   process.stdout.write(m.label === c.expect ? "." : "x");
@@ -57,12 +62,16 @@ const report = {
   date: new Date().toISOString(),
   provider,
   model: process.env.MODEL_ID ?? null,
+  reasoningEffort: rawEffort ?? "the node's own",
   reps,
   cases: results.length,
+  related: related.length,
   accuracy: results.filter((r) => r.got === r.expect).length / results.length,
   falseUnrelated: related.filter((r) => r.got === "unrelated" && r.confidence >= 0.6).length / (related.length || 1),
   p50LatencyMs: pct(latencies, 0.5),
   p95LatencyMs: pct(latencies, 0.95),
+  maxLatencyMs: latencies.at(-1) ?? 0,
+  overWorkerLimit: latencies.filter((ms) => ms > WORKER_FETCH_MS).length,
   fallbacks: results.flatMap((r) => r.runs).filter((x) => x.source === "fallback").length,
   errors: [
     ...new Set(
@@ -83,8 +92,9 @@ for (const m of report.misses)
 if (report.errors.length) console.log("\nErrors:", report.errors.join(" | "));
 console.log(`
 accuracy        ${(report.accuracy * 100).toFixed(1)}%   (min ${ACCURACY_MIN * 100}%)
-false unrelated ${(report.falseUnrelated * 100).toFixed(1)}%   (max ${FALSE_UNRELATED_MAX * 100}%)
-latency         p50 ${report.p50LatencyMs} ms, p95 ${report.p95LatencyMs} ms
+false unrelated ${(report.falseUnrelated * 100).toFixed(1)}%   (max ${FALSE_UNRELATED_MAX * 100}%, of ${related.length} related cases)
+latency         p50 ${report.p50LatencyMs} ms, p95 ${report.p95LatencyMs} ms, max ${report.maxLatencyMs} ms
+over 30 s       ${report.overWorkerLimit}/${latencies.length} calls (the worker's fetch limit)
 fallbacks       ${report.fallbacks}/${results.length * reps}`);
 
 const out = path.join(dir, "reports", `${report.date.replace(/[:.]/g, "-")}.json`);
