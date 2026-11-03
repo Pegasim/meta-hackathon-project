@@ -26,6 +26,7 @@ maintain() (every 15 min): consolidate + prune activity older than 7 days + expo
 | `due.js` | Deadlines derived from entry text, and day arithmetic (see Entry format) |
 | `activity.js` | Tab events → time spans → per-site summary |
 | `distill.js` | Prompt and parser for turning activity into entries (the model call is passed in) |
+| `exports.js` | An assistant's account export (Claude `conversations.json`, Gemini Takeout `MyActivity.json`) into conversations, and the few that are sent: the last 30 days, a date or a to-do in the person's own words, newest first, at most 50. Each goes through the paste prompt with its own date as today, at low effort, three at a time; what each gave is cached by its last message, so the same file again sends only what changed. User and assistant text only: attachments, tool calls and Canvas documents stay out |
 | `paste.js` | Prompt and parser for turning a pasted assistant memory into entries: redacted and capped first, one call per paste (the model call is passed in). An entry is dated today, or earlier when its own text names an earlier date, so a deadline already missed still reads as one |
 | `markdown.js` | Any Markdown folder (Obsidian, plain notes) → `todo` entries for unchecked `- [ ]` items (with Obsidian's `📅` and `due::` deadlines) and a document per file. Pure; `sources.js` reads the folder with `readTextFiles` |
 | `sources.js` | Origins and the folder readers by kind (`READERS`: `brain`, `md`) |
@@ -98,6 +99,7 @@ Every entry and document carries an `origin`, where it came from (`sources.js`):
 | `brain` | The second-brain folder (`connectBrain`) | Yes: `exportPending()` writes the extension's own entries into its `inbox/` |
 | `md:<folder name>` | Any folder of `.md` files (`connectFolder(dir, { kind: "md" })`), read by `markdown.js` | Never |
 | `paste:<id>` | What an assistant said it knows, turned into entries once (`importEntries`) | Never |
+| `export:<claude\|gemini>:<file>` | The recent conversations of an account export that name something owed (`exports.js`), turned into entries through the paste prompt (`importEntries`) | Never |
 | none | The extension's own entries (`add()`, `distill()`) | Into the brain, once each |
 
 `source` is another field: who wrote the entry (claude-code, distill, extension).

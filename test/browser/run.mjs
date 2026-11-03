@@ -168,6 +168,24 @@ const twoInstances = await page.evaluate(async () => {
   return { empty, afterImport, optionsBefore, optionsSees, afterRefresh };
 });
 
+// Two reads side by side right after another instance wrote, as the settings page reads
+// the profile and the tasks together (#6): both see the write. The first read used to
+// take the new version stamp before its reload finished, so the second one took the old
+// copy as current and listed what was there before the import.
+const sideBySide = await page.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const entry = (title) =>
+    `---\nkind: todo\ntopic: demo\ntitle: "${title}"\ndate: 2026-11-01\nsource: manual\nhost: x\n---\nContext: c\nDecision/Result: r\nEvidence: none\nNext action: do it\n`;
+  const page = await Memory.open("browser-test-side");
+  const other = await Memory.open("browser-test-side");
+  const titles = (loops) => loops.map((e) => e.title).sort();
+  await other.importFiles([{ path: "inbox/20261101T000000Z-x-y-aaaaaa.md", text: entry("Old task") }]);
+  await page.openLoops(); // this copy is now current
+  await other.importFiles([{ path: "inbox/20261101T000000Z-x-y-bbbbbb.md", text: entry("New task") }]);
+  const [a, b] = await Promise.all([page.openLoops(), page.taskQueue({ today: "2026-11-02", limit: Infinity })]);
+  return { first: titles(a), second: titles(b) };
+});
+
 // Taking an entry back (issue #25), as Forget on a label does: the other instance's recall
 // misses it at once; one not exported yet never is; one exported and still in the brain's
 // inbox/ is deleted there; one whose id changed in redaction goes by the id add() returned;
@@ -452,6 +470,122 @@ const settingsCard = await settings.evaluate(() => ({
 }));
 await settings.close();
 
+// A notes folder added in settings lists its checkboxes at once, without waiting for the
+// model (issue #6: the list sat empty for the half minute the profile and task reads took).
+// The fake model answers only after MODEL_DELAY_MS; the folder picker hands back the vault.
+const MODEL_DELAY_MS = 4000;
+let modelDelay = MODEL_DELAY_MS;
+const modelCalls = [];
+const pasteCalls = [];
+await ctx.route("http://fake-model.test/**", async (route) => {
+  const body = JSON.parse(route.request().postData() ?? "{}");
+  const system = body.messages?.[0]?.content ?? "";
+  modelCalls.push(system);
+  await new Promise((r) => setTimeout(r, modelDelay));
+  // The paste node (also used for exports) gets one task; everything else an empty answer.
+  const paste = system.startsWith("You keep a person's work memory");
+  if (paste) pasteCalls.push(body.messages.at(-1).content);
+  const content = paste
+    ? JSON.stringify([
+        {
+          kind: "todo",
+          topic: "pantry",
+          title: "Ship the Pantry beta",
+          context: "Said in a chat.",
+          result: "Dated.",
+          next: "Ship it",
+        },
+      ])
+    : "[]";
+  await route.fulfill({ json: { choices: [{ message: { content }, finish_reason: "stop" }] } }).catch(() => {});
+});
+const slow = await ctx.newPage();
+slow.on("pageerror", (e) => errors.push(String(e)));
+await slow.goto(`chrome-extension://${id}/options/options.html`);
+await slow.evaluate(async () => {
+  const { saveModelSettings } = await import("/memory/model.js");
+  await saveModelSettings(
+    { provider: "meta", baseUrl: "http://fake-model.test/v1", model: "fake", apiKey: "test-key" },
+    { remember: true },
+  );
+  window.showDirectoryPicker = async () => (await navigator.storage.getDirectory()).getDirectoryHandle("Vault-6");
+});
+const clicked = Date.now();
+await slow.click("#add-folder");
+await slow.waitForFunction(
+  () => document.getElementById("task-list").innerText.includes("Write the failing test for cart item removal"),
+  null,
+  { timeout: MODEL_DELAY_MS * 4 },
+);
+const listedAfter = Date.now() - clicked;
+await slow.waitForFunction(
+  () =>
+    !/Reading/.test(
+      document.getElementById("profile-status").textContent + document.getElementById("task-status").textContent,
+    ),
+  null,
+  { timeout: MODEL_DELAY_MS * 8 },
+);
+const slowDone = await slow.evaluate(() => ({
+  profile: document.getElementById("profile-status").textContent,
+  tasks: document.getElementById("task-status").textContent,
+}));
+
+// An assistant's export (issue #6): an invented Claude export whose dates are relative to
+// now. Only the recent conversation that names something owed in the person's own words
+// is sent; a second import of the same file sends nothing; Remove drops it and its cache.
+modelDelay = 0;
+const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
+const chat = (uuid, name, at, human, assistant) => ({
+  uuid,
+  name,
+  updated_at: at,
+  chat_messages: [
+    { sender: "human", created_at: at, text: human, content: [] },
+    { sender: "assistant", created_at: at, text: assistant, content: [] },
+  ],
+});
+const claudeExport = Buffer.from(
+  JSON.stringify([
+    chat("e1", "Pantry launch", daysAgo(2), "I need to ship the Pantry beta by Friday.", "Here is a plan."),
+    chat("e2", "Closures", daysAgo(1), "What is a closure?", "You need to understand scope first."),
+    chat("e3", "Old trip", daysAgo(60), "I have to book the Lisbon flights.", "Book early."),
+  ]),
+);
+const pick = () =>
+  slow.setInputFiles("#export-file", {
+    name: "conversations.json",
+    mimeType: "application/json",
+    buffer: claudeExport,
+  });
+slow.on("dialog", (d) => d.accept());
+await pick();
+await slow.waitForFunction(() => /will be sent/.test(document.getElementById("export-status").textContent));
+const exportPreview = await slow.evaluate(() => ({
+  text: document.getElementById("export-status").textContent,
+  importHidden: document.getElementById("import-export").hidden,
+}));
+const pasteBefore = pasteCalls.length;
+await slow.click("#import-export");
+await slow.waitForFunction(() => /entries from/.test(document.getElementById("export-status").textContent));
+const exportSent = pasteCalls.slice(pasteBefore);
+const exportRow = await slow.locator("#source-list .row", { hasText: "conversations.json" }).innerText();
+await pick();
+await slow.waitForFunction(() => /will be sent/.test(document.getElementById("export-status").textContent));
+const exportAgain = await slow.evaluate(() => document.getElementById("export-status").textContent);
+await slow.click("#import-export");
+await slow.waitForFunction(() => /entries from/.test(document.getElementById("export-status").textContent));
+const pasteAfterAgain = pasteCalls.length;
+await slow
+  .locator("#source-list .row", { hasText: "conversations.json" })
+  .getByRole("button", { name: "Remove" })
+  .click();
+await slow.waitForFunction(() => !document.getElementById("source-list").innerText.includes("conversations.json"));
+const cacheLeft = await slow.evaluate(async () =>
+  Object.keys((await chrome.storage.local.get("exportCache")).exportCache ?? {}),
+);
+await slow.close();
+
 await ctx.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
@@ -565,4 +699,25 @@ assert.deepEqual(own.kinds, [
 assert.equal(own.exported, 0, "nothing from a folder or a paste is written anywhere");
 assert.match(settingsCard.ask, /deadlines with dates/);
 assert.equal(settingsCard.importDisabled, true, "nothing is sent before a preview");
+assert.ok(
+  listedAfter < MODEL_DELAY_MS,
+  `the folder's tasks are listed before the model answers (${listedAfter} ms, model ${MODEL_DELAY_MS} ms)`,
+);
+assert.ok(modelCalls.length >= 1, "the profile was still read");
+assert.match(slowDone.profile, /Could not read your memory/, "the profile's answer is drawn when it comes");
+assert.doesNotMatch(slowDone.tasks, /Reading/, "the task status settles");
+assert.match(exportPreview.text, /Claude export "conversations\.json": 3 conversations\./);
+assert.match(exportPreview.text, /1 will be sent/);
+assert.match(exportPreview.text, /Left out: 1 older, 1 with nothing owed/);
+assert.equal(exportPreview.importHidden, false, "Import shows once there is a preview");
+assert.equal(exportSent.length, 1, "one call for the one conversation chosen");
+assert.match(exportSent[0], /Pantry beta by Friday/);
+assert.ok(!/closure|Lisbon/i.test(exportSent[0]), "the other conversations are not sent");
+assert.match(exportRow, /Assistant export "conversations\.json": 1 entries, 1 open/);
+assert.match(exportAgain, /1 were read before/);
+assert.match(exportAgain, /0 will be sent/);
+assert.equal(pasteAfterAgain, pasteBefore + 1, "the same file again sends nothing");
+assert.deepEqual(cacheLeft, [], "Remove drops what was read from the export too");
+assert.deepEqual(sideBySide.first, ["New task"], "the first of two side-by-side reads sees the write");
+assert.deepEqual(sideBySide.second, ["New task"], "and so does the second: no read takes the old copy as current");
 console.log("browser test: ok");

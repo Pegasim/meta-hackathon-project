@@ -19,6 +19,10 @@ export { BRAIN, originOf, kindOf } from "./sources.js";
 // A pasted assistant memory, for the settings page: shown before it is sent, then turned
 // into entries (stored with importEntries under a "paste:<id>" origin).
 export { previewPaste, importPasted, ASK_YOUR_ASSISTANT, MAX_PASTE_CHARS } from "./paste.js";
+// An assistant's account export (Claude, Gemini), for the settings page: the recent
+// conversations that name something owed, previewed, then read one at a time through the
+// paste node and stored with importEntries under an "export:<kind>:<file>" origin.
+export { readExport, selectConversations, conversationText, importExport, exportEntries } from "./exports.js";
 
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
@@ -29,6 +33,7 @@ export class Memory {
   #index = null;
   #entries = [];
   #stamp;
+  #loading = null; // { stamp, done }: the reload in flight, so reads side by side share it
 
   static async open(name) {
     const m = new Memory();
@@ -43,13 +48,25 @@ export class Memory {
   // read, with no message between them. The stamp is random rather than a counter:
   // two writers that read the same counter would store the same next value, and a
   // reader that loaded between their writes would never see the second.
+  // The stamp is taken only once the copy is rebuilt. Taking it first let a second read,
+  // started while the first was still reloading, find the new stamp next to the old copy
+  // and use that copy as current (two reads side by side after an import, #6).
   async #load() {
     const stamp = await db.getMeta(this.#db, "version");
     if (this.#index && stamp === this.#stamp) return;
-    this.#stamp = stamp;
-    this.#entries = await db.getAll(this.#db, "entries");
-    const notes = await db.getAll(this.#db, "notes");
-    this.#index = buildIndex([...this.#entries.map(entryDoc), ...notes.map(noteDoc)]);
+    if (this.#loading && this.#loading.stamp === stamp) return this.#loading.done;
+    const loading = { stamp };
+    loading.done = (async () => {
+      const entries = await db.getAll(this.#db, "entries");
+      const notes = await db.getAll(this.#db, "notes");
+      if (this.#loading !== loading) return this.#loading?.done; // a newer reload took over
+      this.#entries = entries;
+      this.#index = buildIndex([...entries.map(entryDoc), ...notes.map(noteDoc)]);
+      this.#stamp = stamp;
+      this.#loading = null;
+    })();
+    this.#loading = loading;
+    return loading.done;
   }
 
   async #dirty() {
@@ -160,7 +177,7 @@ export class Memory {
           entries: mine.length,
           documents: notes.filter((d) => originOf(d) === origin).length,
           openLoops: openLoops(mine).length,
-          ...(kind !== "paste" && { connected: !!handle }),
+          ...(kind !== "paste" && kind !== "export" && { connected: !!handle }),
           lastImport: record.lastImport ?? null,
         };
       });

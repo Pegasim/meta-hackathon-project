@@ -1,13 +1,13 @@
 # Bring your own memory: Markdown folders and pasted assistant memory
 
-Status: open
+Status: done
 
 ## Intent
 Serves: docs/INTENT.md (Tuck knows what you owe, not only what you clicked) and issue #6.
 Change: today the memory layer reads one layout, a second-brain checkout, so anyone else starts with no commitments. Two new sources, each mapped into the existing entry format (`makeEntry`, see `src/memory/README.md` § Entry format), with no second form:
 1. Any Markdown folder (Obsidian, plain notes): unchecked `- [ ]` tasks become `todo` entries; files and headings become searchable documents.
 2. "What my assistant knows about me": the person asks Claude, ChatGPT or Gemini to list what it remembers and pastes the answer; one model call turns it into entries.
-Out of scope (later): model-assisted discovery of an unknown folder, the Claude, ChatGPT and Gemini export parsers, zip files, merging one commitment that arrives from two sources.
+Out of scope (later): model-assisted discovery of an unknown folder, the Claude, ChatGPT and Gemini export parsers, zip files, merging one commitment that arrives from two sources. *Since:* duplicates across sources are grouped by #47; Claude and Gemini exports are read (below); ChatGPT is #56; zip files and discovery are dropped (the person picks the JSON file, and the Markdown adapter reads any folder of notes).
 Open questions: none blocking. Stale loops are handled by the task node (#29) and Done.
 
 ## Design
@@ -35,3 +35,4 @@ Open questions: none blocking. Stale loops are handled by the task node (#29) an
 ## Order
 A first (everything depends on it). B and C are pure modules written alongside A, then wired in with D once A is in.
 - *Changed while building:* Settings keeps the Brain card as it is and adds an "Other memory" card for folders and pastes, rather than folding the brain into one list: the brain is the one source that is also written to. A pasted entry takes the earliest date its own text names, as a Markdown task does, so a deadline already missed still reads as one. The worker's `sync-brain` also re-reads every connected folder.
+- *Exports, added later in #6:* the person picks the export's JSON file; Settings reads it in the page, shows how many conversations would go (the last 30 days, a date or a to-do in the person's own words, at most 50) and sends them only after Import, one per call through the paste prompt. Gemini Canvas documents are not read. After a folder is added, its checkboxes are listed at once instead of after the profile and task reads.
