@@ -18,6 +18,7 @@ const KIN = 4; // and notes on the topic whose titles share its words
 const TASK_WORDS = 10;
 const MATCH_WORDS = 6;
 const FIELD_CHARS = 300;
+const RESULT_CHARS = 150; // a later note's result line (#76)
 // Hidden reasoning counts against max_tokens: 15 invented entries took 6,700 to 10,629
 // reasoning tokens at the default effort (#43). A cap, not a target. Low effort: on the
 // task eval it got the same answers as the default (21 of 22) in a third of the time,
@@ -29,7 +30,7 @@ const EFFORT = "low";
 const PAIRS_PER_CALL = 20;
 const PAIRS_MAX = 60;
 // In every verdict's hash: a change to the rules below asks about every entry again.
-const RULES = 2; // 2: commitments, not a coding agent's steps (#75)
+const RULES = 3; // 2: commitments, not a coding agent's steps (#75); 3: later notes' results, steps under way (#76)
 
 const SYSTEM = [
   "You read entries from someone's own notes. Each one names a next action. Say for each",
@@ -52,8 +53,17 @@ const SYSTEM = [
   "  weeks ago that no later note mentions is most likely done: still_open false.",
   "- still_open: false when the entry or another note on the same topic shows it was",
   "  done, submitted, merged, sent, cancelled or replaced. True when nothing shows that.",
+  "  The other notes come with their date and result. Notes from the same day carry no",
+  "  time, so one may have been written before or after the entry.",
+  '- A planning, coordination or "decide how to" step is closed (still_open false) when',
+  "  later notes or their browsing show the work being carried out or finished.",
+  "- Their browsing over the last day, when given, is evidence for still_open only:",
+  "  never make a task from it, and never keep a task open because of it.",
   "- task: the action in at most 10 words, as an instruction, in the note's language. No",
-  "  dates: the deadline is read separately.",
+  "  dates: the deadline is read separately. Name what the action is for (the",
+  "  programme, person, project or document), from the entry's title or context when",
+  '  the next action leaves it out: "Decide whether to submit the grant application',
+  '  late", not "Decide whether to upload video and submit late".',
   "- match: the same action in 2 to 6 plain English words, lowercase, whatever language",
   "  the note is in. It is never shown: it only finds the same task written in another",
   "  language. Steps of the same larger thing get the same match.",
@@ -77,24 +87,24 @@ const wordsOf = (s = "", min = 4) =>
 
 // sample: memory.profileSample({ limit: Infinity }), newest first. The other notes on the
 // same topic that can say whether this entry closed: the ones written after it, oldest
-// first, and the ones whose titles share two of its words. The sample has no dates and
-// keeps no order within a day, so a note from the same day ("application submitted") is
-// found by its words. Titles only.
+// first, and the ones whose titles share two of its words. Entries carry a date and no
+// time, and a day's notes sort by title, so every note from the entry's own day may be a
+// later one, and all of them go (#76); `later` and `kin` stay the caps. A sample with no
+// dates falls back to its own order. Returns [{ title, date?, result? }].
 export function laterOnTopic(entry, sample, { later = LATER, kin = KIN } = {}) {
   const at = sample.findIndex((s) => s.topic === entry.topic && s.title === entry.title);
   const same = (s, i) => i !== at && s.topic === entry.topic;
-  const after =
-    at > 0
-      ? sample
-          .slice(0, at)
-          .filter((s) => s.topic === entry.topic)
-          .reverse()
-          .slice(0, later)
-      : [];
+  const day = entry.date?.slice(0, 10);
+  const isLater = (s, i) => same(s, i) && (day && s.date ? s.date.slice(0, 10) >= day : i < at);
+  const after = sample.filter(isLater).reverse().slice(0, later);
   const own = wordsOf(entry.title);
   const shared = (s) => [...wordsOf(s.title)].filter((w) => own.has(w)).length >= 2;
   const near = sample.filter((s, i) => same(s, i) && !after.includes(s) && shared(s)).slice(0, kin);
-  return [...after, ...near].map((s) => s.title);
+  return [...after, ...near].map(({ title, date, result }) => ({
+    title,
+    ...(date && { date: date.slice(0, 10) }),
+    ...(result && result !== "none" && { result }),
+  }));
 }
 
 // FNV-1a: a verdict holds while the entry and its later notes are unchanged, the rules are
@@ -139,9 +149,17 @@ const cut = (s, n = FIELD_CHARS) =>
     .trim()
     .slice(0, n);
 
+// One later note: `- 2026-11-04 "Title": result`. A plain string is a title alone.
+function laterLine(note, clean) {
+  const { title, date, result } = typeof note === "string" ? { title: note } : note;
+  const said = result ? `: ${clean(cut(result, RESULT_CHARS))}` : "";
+  return `   - ${date ? `${date} ` : ""}"${clean(cut(title, 120))}"${said}`;
+}
+
 // items: [{ entry, later }]. clean: what each text goes through first (redact). today: the
-// date each entry's age is counted from.
-export function taskMessages(items, { clean = (s) => s, today = localDate() } = {}) {
+// date each entry's age is counted from. activity: the last day's browsing as
+// renderSummary writes it (sites, minutes, top titles), once for the whole batch, or null.
+export function taskMessages(items, { clean = (s) => s, today = localDate(), activity = null } = {}) {
   const blocks = items.map(({ entry: e, later }, i) =>
     [
       `${i + 1}. [${e.topic}] ${e.kind}, ${e.date}: ${clean(cut(e.title, 120))}`,
@@ -149,14 +167,13 @@ export function taskMessages(items, { clean = (s) => s, today = localDate() } = 
       `   Context: ${clean(cut(e.context))}`,
       `   Result: ${clean(cut(e.result))}`,
       `   Next action: ${clean(cut(e.next))}`,
-      later.length ? `   Other notes on this topic: ${later.map((t) => `"${clean(cut(t, 120))}"`).join("; ")}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n"),
+      ...(later.length ? ["   Other notes on this topic:", ...later.map((n) => laterLine(n, clean))] : []),
+    ].join("\n"),
   );
+  const browsing = activity ? [`Their browsing over the last day, for still_open only:\n${clean(activity)}`] : [];
   return [
     { role: "system", content: SYSTEM },
-    { role: "user", content: ["Their entries:", ...blocks].join("\n\n") },
+    { role: "user", content: [...browsing, "Their entries:", ...blocks].join("\n\n") },
   ];
 }
 
@@ -193,9 +210,9 @@ export function parseTasks(text, count) {
 
 // One call for one batch. Returns {verdicts: Map | null, source, latencyMs, error?, cut?}.
 // cut: the reply hit the token limit, so a smaller batch may fit.
-export async function judgeBatch(complete, items, { clean, today, now = Date.now, effort = EFFORT } = {}) {
+export async function judgeBatch(complete, items, { clean, today, activity, now = Date.now, effort = EFFORT } = {}) {
   const started = now();
-  const messages = taskMessages(items, { clean, today });
+  const messages = taskMessages(items, { clean, today, activity });
   const opts = { maxTokens: MAX_TOKENS, temperature: 0, reasoningEffort: effort, whole: true };
   try {
     const first = await complete(messages, opts);
@@ -238,6 +255,7 @@ export async function extractTasks(
     cache = {},
     clean,
     today = localDate(),
+    activity = null,
     now = Date.now,
     batch = BATCH,
     concurrency = CONCURRENCY,
@@ -263,7 +281,7 @@ export async function extractTasks(
   const run = async () => {
     while (batches.length) {
       const items = batches.shift();
-      const r = await judgeBatch(complete, items, { clean, today, now });
+      const r = await judgeBatch(complete, items, { clean, today, activity, now });
       calls += 1;
       // Cut at the limit: ask again in two halves, down to one entry, so that one long
       // batch does not leave all of its entries unread.
@@ -441,6 +459,14 @@ export async function judgePairs(
   return { cache: next, asked: todo.length, failed, calls, errors: [...errors] };
 }
 
+// The last 24 hours of browsing, as memory summarises it (at most 6 sites, 2 titles each),
+// or null when there is none. One block per run, never per entry, and not in a verdict's
+// hash: a verdict is not asked again because the day went on, only when its notes change.
+async function dayOfBrowsing(memory) {
+  const act = await memory.activity?.({ minutes: 24 * 60 }).catch(() => null);
+  return act?.summary?.sites?.length ? act.text : null;
+}
+
 // The whole step, for the settings page and the worker alike. storage: chrome.storage.local
 // (or a fake), where the verdicts live under "taskVerdicts", next to "loops"
 // (attention/reminders.js). Goals set in the extension and loops already answered are not
@@ -451,7 +477,16 @@ export async function refreshTasks(complete, { memory, storage, today, clean, on
     (e) => e.source !== "extension" && !loops[e.id]?.doneAt && !loops[e.id]?.notTaskAt,
   );
   const sample = await memory.profileSample({ limit: Infinity });
-  const r = await extractTasks(complete, { candidates, sample, cache: taskVerdicts, clean, today, onProgress });
+  const activity = await dayOfBrowsing(memory);
+  const r = await extractTasks(complete, {
+    candidates,
+    sample,
+    cache: taskVerdicts,
+    clean,
+    today,
+    activity,
+    onProgress,
+  });
   // Then which of the tasks it kept are one commitment (#47). A pair that fails is not
   // grouped, and the list still works, so it is not a problem to report.
   const kept = candidates.flatMap((entry) => {

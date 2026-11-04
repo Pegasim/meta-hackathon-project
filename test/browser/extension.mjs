@@ -1416,7 +1416,13 @@ assert.equal(Object.values(tripLoops).filter((l) => l.doneAt === lyonDone).lengt
 assert.equal(pairsAgain, 0, "a re-import with nothing new asks about no pair");
 assert.ok(
   taskCalls.every((m) => !m.at(-1).content.includes(DRAFT)),
-  "the task node sees only notes",
+  "the task node sees notes and page titles, never what was typed",
+);
+assert.ok(
+  taskCalls.some((m) =>
+    /^Their browsing over the last day, for still_open only:\nLast \d+ min/m.test(m.at(-1).content),
+  ),
+  "the task node gets the day's browsing (#76)",
 );
 const no = learned.find((l) => l.label === "unrelated");
 assert.equal(no?.host, "localhost", "the no is remembered");
