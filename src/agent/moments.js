@@ -112,10 +112,14 @@ export const planFor = (chat, deps, { title, due } = {}, opts = {}) =>
     ),
   );
 
-export const stuckStep = (chat, deps, { title, step } = {}, opts = {}) =>
+export const stuckStep = (chat, deps, { title, step, said } = {}, opts = {}) =>
   runAgent(chat, {
     system: STUCK,
-    user: [`Their goal: ${title}`, step ? `Current step: ${step}` : null, "They pressed: I'm stuck"]
+    user: [
+      `Their goal: ${title}`,
+      step ? `Current step: ${step}` : null,
+      said ? `They said: ${said}` : "They pressed: I'm stuck",
+    ]
       .filter(Boolean)
       .join("\n"),
     tools: tools(deps, stuckTools),

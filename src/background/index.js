@@ -34,7 +34,7 @@ import {
   unpark,
 } from "../attention/reminders.js";
 import { ENDS_DETOUR, initialState, step, nextWakeAt } from "../attention/engine.js";
-import { makeIntent, isExpired, dayKey } from "../attention/intents.js";
+import { makeIntent, isExpired, dayKey, syncFocus, stepDone } from "../attention/intents.js";
 import { daySummary, summaryEntry } from "../attention/summary.js";
 import { createSerialQueue } from "../attention/queue.js";
 import { openStore } from "../attention/store.js";
@@ -42,7 +42,7 @@ import { classifyRelevance, privateSettings } from "../agent/relevance.js";
 import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks } from "../agent/tasks.js";
-import { planFor, stuckStep, nextAfter } from "../agent/moments.js";
+import { planFor, stuckStep, nextAfter, goalFrom } from "../agent/moments.js";
 import { recentRuns } from "../agent/loop.js";
 import { noteOf } from "../agent/notes.js";
 import { githubLookup, closedRefs } from "../agent/github.js";
@@ -50,7 +50,23 @@ import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine, templateGreeting, toolKind, whenSaid, PARKED_LINE } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
 import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
-import { present, comesWhileAway, stuckView, stuckWanted } from "../tuck/present.js";
+import { present, comesWhileAway, stuckView, stuckWanted, STUCK_WAIT, minutesLine } from "../tuck/present.js";
+import {
+  menuView,
+  trailLine,
+  newThread,
+  say,
+  tuckSays,
+  pending,
+  addTrail,
+  resolve,
+  toStep,
+  chatView,
+  OPENER,
+  LOOKING,
+  PLANNING,
+  STEP_OPENER,
+} from "../tuck/chat.js";
 import "../tuck/skins.js";
 
 const memory = Memory.open();
@@ -172,7 +188,25 @@ async function process(input) {
       await summarizeEnded();
     }
   }
-  return (await apply(s, input, cfg)).state;
+  const next = (await apply(s, input, cfg)).state;
+  await trackFocus(next, input.ts ?? Date.now());
+  return next;
+}
+
+// The goal card's focus minutes: they run in Focus mode, not on a break (intents.js
+// syncFocus). The intent is read only when that changes, or when the goal does.
+let focusSeen = null; // "intentId:active"
+async function trackFocus(s, ts) {
+  if (!s.intent) return void (focusSeen = null);
+  const active = ["focus", "gentle"].includes(s.mode) && s.state !== "break";
+  const key = `${s.intent.id ?? ""}:${active}`;
+  if (key === focusSeen) return;
+  const st = await store;
+  const intent = await st.activeIntent();
+  if (!intent) return;
+  focusSeen = `${intent.id}:${active}`;
+  const synced = syncFocus(intent, active, ts);
+  if (synced !== intent) await st.putIntent(synced);
 }
 
 async function apply(s, input, cfg) {
@@ -669,6 +703,11 @@ async function showTrigger(t, s) {
     await log({ type: "feedback", ts: Date.now(), kind: "stuck_held", payload: { trigger: t.kind } });
     return;
   }
+  // The person is talking to Tuck on the page in front: that is not drift (dock-chat design).
+  if (["drift", "fragmentation"].includes(t.kind) && chatOpenOn(s.current?.tabId)) {
+    await log({ type: "feedback", ts: Date.now(), kind: "chat_held", payload: { trigger: t.kind } });
+    return;
+  }
   const intent = await (await store).activeIntent();
   const shown = {
     ...t,
@@ -951,10 +990,17 @@ chrome.runtime.onInstalled.addListener(lookChanged);
 // (chrome:// pages, the Web Store, this extension's own pages).
 async function showTuck(tabId, view) {
   if (tabId == null || !view) return false;
+  // The goal form is the chat now (dock-chat design): its words open the thread, its
+  // Pick up chips under them, and a reminder riding on it as a message of its own.
+  if (view.bubble?.kind === "goal") {
+    const t = chatFromGoal(view.bubble);
+    threads.set(tabId, { ...t, at: Date.now() });
+    view = { ...view, ...chatView(t), pose: view.pose };
+  }
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ["tuck/layout.js", "tuck/skins.js", "tuck/overlay.js"],
+      files: ["tuck/layout.js", "tuck/skins.js", "tuck/icons.js", "tuck/overlay.js"],
     });
     await chrome.tabs.sendMessage(tabId, { type: "tuck-show", view, assets: await assets() });
     await chrome.storage.session.set({ tuckTab: tabId });
@@ -1456,12 +1502,12 @@ function planAhead(intent) {
   );
 }
 
-async function writePlan(intent) {
+async function writePlan(intent, opts = {}) {
   const agent = await agentChat();
-  if (!agent) return;
-  const r = await planFor(agent.chat, await agentDeps(intent), { title: intent.title });
+  if (!agent) return null;
+  const r = await planFor(agent.chat, await agentDeps(intent), { title: intent.title }, opts);
   await logRun("plan", r, agent.model, r.value && r.value.steps.map((s) => s.step));
-  if (!r.value) return;
+  if (!r.value) return null;
   // The goal may have ended or changed while the model worked.
   await enqueue(async () => {
     const st = await store;
@@ -1469,6 +1515,7 @@ async function writePlan(intent) {
     if (now?.id !== intent.id) return;
     await st.putIntent({ ...now, plan: r.value, steps: now.steps?.length ? now.steps : [r.value.steps[0].step] });
   });
+  return r.value;
 }
 
 // #61: one small next step, asked for by the person ("I'm stuck"). It may take the model
@@ -1477,7 +1524,7 @@ async function writePlan(intent) {
 // turned away. onWait(ask) draws the wait, if the ask came from a page.
 let stuckRunning = false;
 let stuckAsk = null; // the live ask, {id, intentId, tabId}: running or on screen; null once closed or started
-async function stuck(_msg, _sender, { tabId = null, onWait } = {}) {
+async function stuck(_msg, _sender, { tabId = null, onWait, said, onStep } = {}) {
   if (stuckRunning) return { ok: false, reason: "busy" };
   stuckRunning = true;
   try {
@@ -1486,7 +1533,7 @@ async function stuck(_msg, _sender, { tabId = null, onWait } = {}) {
     if (!intent) return { ok: false, reason: "no goal" };
     const ask = (stuckAsk = { id: crypto.randomUUID(), intentId: intent.id, tabId });
     await onWait?.(ask);
-    const r = await stepFor(intent);
+    const r = await stepFor(intent, { said, onStep });
     if (!(await stuckStillWanted(ask))) return { ok: false, reason: "not wanted", ask: ask.id };
     return { ok: true, ...r, intentId: intent.id, ask: ask.id };
   } finally {
@@ -1494,7 +1541,7 @@ async function stuck(_msg, _sender, { tabId = null, onWait } = {}) {
   }
 }
 
-async function stepFor(intent) {
+async function stepFor(intent, { said, onStep } = {}) {
   const last = (await loadEngine()).lastRelevant;
   // #91: a last page naming a merged or closed PR is not offered either.
   const lastTitle = (await closedRefs(await githubFor(), [last?.title ?? ""]).catch(() => new Map())).size
@@ -1503,7 +1550,12 @@ async function stepFor(intent) {
   const template = { step: stuckTemplate(lastTitle, intent.title), minutes: 10, source: "template" };
   const agent = await agentChat();
   if (!agent) return template;
-  const r = await stuckStep(agent.chat, await agentDeps(intent), { title: intent.title, step: intent.steps?.[0] });
+  const r = await stuckStep(
+    agent.chat,
+    await agentDeps(intent),
+    { title: intent.title, step: intent.steps?.[0], said },
+    { onStep },
+  );
   await logRun("stuck", r, agent.model, r.value?.step);
   return r.value ? { ...r.value, source: "agent" } : template;
 }
@@ -1560,6 +1612,7 @@ async function startStep({ step, intentId }) {
   });
   if (!s) return { ok: false, reason: "goal changed" };
   stuckAsk = null;
+  threads.clear();
   // Tucked away, Tuck came for the step alone: it leaves with it.
   if (await isAway()) await hideTuck();
   else await restTuck();
@@ -1623,14 +1676,18 @@ async function setIntent({ title, next, from, fromLoopId }, sender) {
       payload: { id: intent.id, title, topic: intent.topic },
     });
     await chrome.storage.session.set({ pendingGreeting: false });
+    for (const tab of threads.keys()) if (from !== "chat" || tab !== sender?.tab?.id) threads.delete(tab);
+    // Set from the chat: the chat stays and the plan is written in it, below.
+    if (from === "chat") await chatGoalSet(sender?.tab?.id, intent);
     // The greeting's goal form can come while Tuck is away; the "Got it" note does not.
-    if (from === "tuck" && (await isAway())) await hideTuck();
+    else if (from === "tuck" && (await isAway())) await hideTuck();
     else if (from === "tuck")
       await showTuck(sender?.tab?.id, present({ event: "goal_set", agent: (await loadEngine()).agent?.status }));
     return intent;
   });
   // After the queue: the goal is set; the plan and the word for its end come when they come.
-  planAhead(intent);
+  if (from === "chat") chatPlan(sender?.tab?.id, intent).catch(() => {});
+  else planAhead(intent);
   nextAhead(intent);
   return intent;
 }
@@ -1642,6 +1699,7 @@ async function completeIntent() {
     if (!intent) return null;
     if (intent.memoryEntryId) await (await memory).completeIntent(intent.memoryEntryId).catch(() => {});
     await st.putIntent({ ...intent, doneAt: Date.now() });
+    threads.clear();
     if (intent.fromLoopId)
       await saveLoops(markAll(markDone, await loadLoops(), await rowOf(intent.fromLoopId), Date.now()));
     await process({ type: "session", ts: Date.now(), kind: "intent_done", payload: { id: intent.id } });
@@ -1696,6 +1754,180 @@ async function maintain() {
   await (await store).pruneBefore(Date.now() - cfg.retentionDays * 24 * 3600 * 1000);
 }
 
+// ---- The chat (dock-chat design) -------------------------------------------
+// One thread per tab while its chat is open, in memory only: the person's words are never
+// stored or logged. Every change redraws the chat in place (overlay keeps the draft).
+const threads = new Map(); // tabId → thread (tuck/chat.js), with `at`: when it last changed
+const CHAT_HOLD_MS = 3 * 60 * 1000; // an open chat holds drift words, if it is still in use
+
+const chatOpenOn = (tabId) => {
+  const t = threads.get(tabId);
+  return !!t && Date.now() - t.at < CHAT_HOLD_MS;
+};
+
+async function drawThread(tabId, t) {
+  threads.set(tabId, { ...t, at: Date.now() });
+  return showTuck(tabId, chatView(t));
+}
+
+// A goal form's words and chips as the chat's first message; a reminder riding on it, its own.
+function chatFromGoal(bubble) {
+  let t = newThread({ intent: null, opener: bubble.text || OPENER, chips: bubble.pickUp ?? [] });
+  const r = bubble.reminder;
+  if (r)
+    t = tuckSays(t, {
+      text: r.title,
+      next: r.line,
+      buttons: [
+        ["on_it", "On it"],
+        ["switch", "Switch to this"],
+        ["done", "Done"],
+      ].map(([choice, label]) => ({
+        choice,
+        label,
+        msg: { type: "reminder-answer", id: r.id, title: r.title, choice },
+      })),
+    });
+  return t;
+}
+
+const openLoopTitles = async () => stillOpen(await toDo(), await loadLoops()).map((e) => e.title);
+
+// The row's chat icon: the thread on this tab, or a new one.
+async function chatOpen(_msg, sender) {
+  const tabId = sender?.tab?.id;
+  const intent = await (await store).activeIntent();
+  let t = threads.get(tabId);
+  if (!t || (t.mode === "step") !== !!intent)
+    t = intent
+      ? newThread({ intent, opener: STEP_OPENER, chips: [{ label: "Park a thought", msg: { type: "chat-park" } }] })
+      : newThread({ intent: null, opener: OPENER, chips: (await openLoopTitles()).slice(0, 2) });
+  return drawThread(tabId, t);
+}
+
+// The person wrote in the chat (or pressed the row's I'm stuck): with no goal, their words
+// become the goal, sharpened from their notes; with one, one small step for it.
+async function chatSay({ text, stuck: fromRow }, sender) {
+  const tabId = sender?.tab?.id;
+  const said = String(text ?? "")
+    .trim()
+    .slice(0, 200);
+  if (tabId == null || !said) return { ok: false };
+  const intent = await (await store).activeIntent();
+  let t = threads.get(tabId);
+  if (!t || (t.mode === "step") !== !!intent) t = newThread({ intent, opener: intent ? STEP_OPENER : OPENER });
+  t = say(t, said);
+  // A lookup line as it happens, while the chat is still open.
+  const live = (line) => {
+    if (!line || !threads.has(tabId)) return;
+    t = addTrail(t, line);
+    drawThread(tabId, t);
+  };
+  if (!intent) return goalChat(tabId, t, said, sender, live);
+  t = pending(t, STUCK_WAIT);
+  await drawThread(tabId, t);
+  const r = await stuck(null, sender, { tabId, said: fromRow ? null : said, onStep: (e) => live(trailLine(e)) });
+  if (!threads.has(tabId)) return r;
+  t = resolve(
+    t,
+    r.ok
+      ? {
+          text: r.step,
+          next: minutesLine(r.minutes),
+          buttons: [
+            {
+              choice: "start",
+              label: "Start this",
+              primary: true,
+              msg: { type: "start-step", step: r.step, intentId: r.intentId },
+            },
+            { choice: "another", label: "Another one", msg: { type: "chat-say", text: "Another one", stuck: true } },
+          ],
+        }
+      : { text: r.reason === "busy" ? "Still looking. One moment." : "Let's try that again in a bit." },
+  );
+  await drawThread(tabId, t);
+  return r;
+}
+
+async function goalChat(tabId, t, said, sender, live) {
+  const agent = await agentChat();
+  threads.set(tabId, { ...t, at: Date.now() });
+  if (!agent) return setIntent({ title: said, from: "chat" }, sender);
+  t = pending(t, LOOKING);
+  await drawThread(tabId, t);
+  const r = await goalFrom(
+    agent.chat,
+    await agentDeps({ title: said, steps: [] }),
+    { said },
+    {
+      onStep: (e) => live(trailLine(e)),
+    },
+  );
+  await logRun("goal", r, agent.model, r.value?.title);
+  if (!threads.has(tabId)) return r;
+  // Their words stand: kept, or no answer.
+  if (!r.value || r.value.kept) {
+    threads.set(tabId, { ...resolve(t, { text: "Okay." }), at: Date.now() });
+    return setIntent({ title: r.value?.title || said, from: "chat" }, sender);
+  }
+  t = resolve(t, {
+    text: `${r.value.title}?`,
+    ...(r.value.step && { next: `First: ${r.value.step}` }),
+    buttons: [
+      {
+        choice: "set",
+        label: "Set as goal",
+        primary: true,
+        msg: { type: "set-intent", title: r.value.title, next: r.value.step ?? "", from: "chat" },
+      },
+      { choice: "keep", label: "Keep mine", msg: { type: "set-intent", title: said, from: "chat" } },
+    ],
+  });
+  return drawThread(tabId, t);
+}
+
+// Set from the chat: the thread becomes the goal's, and its plan is written there.
+async function chatGoalSet(tabId, intent) {
+  if (tabId == null) return;
+  let t = threads.get(tabId) ?? newThread({ intent: null, opener: OPENER });
+  t = pending(tuckSays(toStep(t, intent), { text: "Got it." }), PLANNING);
+  await drawThread(tabId, t);
+}
+
+async function chatPlan(tabId, intent) {
+  const live = (line) => {
+    const t = threads.get(tabId);
+    if (line && t) drawThread(tabId, addTrail(t, line));
+  };
+  const plan = await writePlan(intent, { onStep: (e) => live(trailLine(e)) }).catch(() => null);
+  nextAhead(intent);
+  const t = threads.get(tabId);
+  if (!t) return;
+  await drawThread(
+    tabId,
+    resolve(
+      t,
+      plan
+        ? { text: "Here's the plan.", next: plan.steps.map((p, i) => `${i + 1}. ${p.step}`).join("\n") }
+        : { text: "Let's go." },
+    ),
+  );
+}
+
+// "Step done" on the goal card: the next plan step is the one on now.
+async function stepDoneOnCard(_msg, sender) {
+  const intent = await enqueue(async () => {
+    const st = await store;
+    const now = await st.activeIntent();
+    if (!now) return null;
+    const next = stepDone(now);
+    if (next !== now) await st.putIntent(next);
+    return next;
+  });
+  return showTuck(sender?.tab?.id, menuView({ intent, now: Date.now() }));
+}
+
 // ---- Messages from the popup and settings pages --------------------------
 
 const HANDLERS = {
@@ -1712,7 +1944,16 @@ const HANDLERS = {
   "tuck-click": async (_msg, sender) =>
     (await isAway())
       ? chrome.tabs.sendMessage(sender?.tab?.id, { type: "tuck-hide" }).catch(() => {})
-      : showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
+      : showTuck(sender?.tab?.id, menuView({ intent: await (await store).activeIntent(), now: Date.now() })),
+  "chat-open": chatOpen,
+  "chat-say": chatSay,
+  "chat-chip": ({ title }, sender) => setIntent({ title, from: "chat" }, sender),
+  "chat-park": async (_msg, sender) => {
+    threads.delete(sender?.tab?.id);
+    return showTuck(sender?.tab?.id, present({ event: "summon", intent: await (await store).activeIntent() }));
+  },
+  "chat-closed": (_msg, sender) => void threads.delete(sender?.tab?.id),
+  "step-done": stepDoneOnCard,
   // Every tab lets Tuck go, not just the one in front. From the card, Tuck says how to
   // bring it back and then leaves that page too (the popup's button has its own way back).
   // The flag is set at once, so a word on its way still checks it; the hide takes its turn
