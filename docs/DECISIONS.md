@@ -87,6 +87,12 @@ One click meant "this visit is work", but it made the whole site work forever, w
 **One commitment written in several notes is one row in the to-do list, and the entries stay as they are (2026-11-03, issue #47).**
 A note restated on a later day, or the same task in the brain, a notes folder and a pasted memory, listed the task several times, and Done on one row left the others open. Code picks the pairs that share most of their words (about 100 of 26,000 on one real brain), and the model says of each whether it is one piece of work. The grouping is a view over the entries, so nothing in anyone's notes is rewritten or deleted. A pair the model called different, or the person split with Not the same, is never merged, not even through a third entry, because a wrong merge hides a task, which is worse than a task listed twice.
 
+**"Take me back" returns to the field you left, with a short ring around it (2026-11-04, issue #60).**
+Finding the place again is the hard part of getting back to work. Tuck keeps the last field typed in (an element, the caret as a number) and the scroll position, never text, and not on never-read sites or in a password field. The ring answers the click and is gone after about 2 s; under reduced motion there is none. Focus alone was rejected: on a long page the eye still has to find the caret.
+
+**Tuck says nothing extra when it brings you back (2026-11-04, issue #60).**
+The ring already shows where you were, and one more line is one more thing to read at the moment of starting again.
+
 **{{The decision, in one sentence.}}**
 {{Why, and what it rules out.}}
 

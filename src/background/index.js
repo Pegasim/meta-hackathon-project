@@ -49,7 +49,7 @@ import { githubLookup, closedRefs } from "../agent/github.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine, templateGreeting, toolKind, whenSaid, PARKED_LINE } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
-import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
+import { watchTyping, returnToSpot, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
 import { present, comesWhileAway, stuckView, stuckWanted } from "../tuck/present.js";
 import "../tuck/skins.js";
 
@@ -531,8 +531,8 @@ async function inPage(tabId, func, args = []) {
 // Is the person typing on the page in front (a key within cfg.typingRecentSec, focus
 // in a text field)? The excerpt then starts at that field; otherwise at the middle of
 // the window, so a chat box left focused does not speak for a scrolled feed.
-async function typingOn(tabId) {
-  await inPage(tabId, watchTyping);
+async function typingOn(tabId, url) {
+  await inPage(tabId, watchTyping, [mayRead(url, await readingNow())]);
   return (await inPage(tabId, isComposing, [(await config()).typingRecentSec * 1000])) === true;
 }
 
@@ -540,7 +540,7 @@ async function typingOn(tabId) {
 // Work found tells the engine at once (the detour ends); anything else waits in the
 // cache for the look. Outside the queue.
 function readAhead(need) {
-  typingOn(need.tabId)
+  typingOn(need.tabId, need.url)
     .then((typing) => excerptVerdict(need, typing ? "focus" : "view"))
     .then((v) => ENDS_DETOUR.includes(v.label) && feed({ type: "second_look", ts: Date.now(), key: need.key, ...v }))
     .catch((err) => log({ type: "llm", ts: Date.now(), node: "secondLook", ok: false, error: String(err) }));
@@ -558,7 +558,7 @@ function secondLook(need) {
 }
 
 async function look(need) {
-  const composing = await typingOn(need.tabId);
+  const composing = await typingOn(need.tabId, need.url);
   const verdict = await Promise.race([
     excerptVerdict(need, composing ? "focus" : "view"),
     sleep(LOOK_WAIT_MS).then(() => ({ skipped: "slow" })),
@@ -1042,7 +1042,8 @@ async function presence(prev, s, input) {
   const reloaded = !changed && view && (await inPage(input.tabId, tuckThere)) === false;
   if (!changed && !reloaded) return;
   // Typing is noted from the start of the page (its time only), for the second look.
-  if (view && s.state !== "break") await inPage(input.tabId, watchTyping);
+  // With it, on pages Tuck may read, the spot "Take me back" returns to (#60).
+  if (view && s.state !== "break") await inPage(input.tabId, watchTyping, [mayRead(s.current.url, await readingNow())]);
   if (view?.greet) await greet(input.tabId);
   else if (view) await showTuck(input.tabId, { ...view, ...(reloaded && { instant: true }) });
   else if (s.state === "paused") await chrome.tabs.sendMessage(input.tabId, { type: "tuck-hide" }).catch(() => {});
@@ -1159,7 +1160,7 @@ async function agentResumed(ts) {
   });
 }
 
-// Focus the last related tab, or reopen its page.
+// Focus the last related tab, at the spot the person left (#60), or reopen its page.
 async function takeMeBack(last) {
   if (!last) return;
   const tab = await chrome.tabs.get(last.tabId).catch(() => null);
@@ -1167,6 +1168,7 @@ async function takeMeBack(last) {
   if (tab && sameDocument(tab.url, last.url)) {
     await chrome.tabs.update(tab.id, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
+    if (mayRead(tab.url, await readingNow())) await inPage(tab.id, returnToSpot, [2000]);
   } else {
     await chrome.tabs.create({ url: last.url, active: true });
   }
