@@ -255,3 +255,40 @@ export const nextTools = {
     },
   },
 };
+
+// The goal chat: the person said what today is about. Their words come first: a note may
+// make the goal concrete, never swap it for another task. A proposed title must keep a word
+// of what they said (by its first 5 letters, as a step's grounding).
+export const goalTools = {
+  propose_goal: {
+    description:
+      "Finish with the person's goal made concrete by a note about the same thing (keep their subject), and one first step.",
+    parameters: {
+      type: "object",
+      properties: { title: { type: "string" }, step: { type: "string" } },
+      required: ["title"],
+    },
+    finish: (args, ctx) => {
+      const said = String(ctx.said ?? "").trim();
+      const title = String(args?.title ?? "")
+        .trim()
+        .slice(0, 120);
+      if (!title) throw new Error("the goal is empty");
+      if (!grounded(title, new Set(words(said).map((w) => w.slice(0, 5)))))
+        throw new Error(`the goal must keep what the person wrote: "${said}"`);
+      const step = String(args?.step ?? "").trim() ? checkStep(args.step, grounds(ctx, [said, title])) : null;
+      return { title, step, kept: false };
+    },
+  },
+  keep_goal: {
+    description: "Finish with the person's own words as the goal: no note is about the same thing.",
+    parameters: noArgs,
+    finish: (_args, ctx) => ({
+      title: String(ctx.said ?? "")
+        .trim()
+        .slice(0, 120),
+      step: null,
+      kept: true,
+    }),
+  },
+};

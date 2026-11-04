@@ -4,7 +4,7 @@
 // what to propose. Each returns runAgent's result (agent/loop.js); value null: no proposal,
 // and the caller keeps its template.
 import { runAgent } from "./loop.js";
-import { readTools, planTools, stuckTools, nextTools } from "./tools.js";
+import { readTools, planTools, stuckTools, nextTools, goalTools } from "./tools.js";
 import { closedRefs } from "./github.js";
 import { MAX_WORDS } from "../tuck/voice.js";
 
@@ -41,6 +41,18 @@ const STUCK = [
   "once, in one or two rounds), then finish with",
   "propose_step: one small, concrete action they can start now and do in 5 to 15",
   "minutes, naming the actual thing (a file, a section, a person, a page).",
+  HISTORY,
+  VOICE,
+].join("\n");
+
+// The goal chat: what the person typed is the goal; the notes only make it concrete.
+const GOAL = [
+  "You are Tuck, a small focus companion. The person just told you what they want to do",
+  "today, in their own words. Their words come first. Look up their notes once about the",
+  "same thing. If a note is about the same thing, finish with propose_goal: their goal made",
+  "concrete with that note (keep their subject), and one first step. If no note is about",
+  "the same thing, or there are no notes, finish with keep_goal. Never swap their goal for",
+  "another task, however urgent it looks.",
   HISTORY,
   VOICE,
 ].join("\n");
@@ -134,3 +146,13 @@ export const nextAfter = (chat, deps, { title } = {}, opts = {}) =>
       (v, closed) => (closed.has(0) ? null : { ...v, task: null }),
     ),
   );
+
+export const goalFrom = (chat, deps, { said } = {}, opts = {}) =>
+  runAgent(chat, {
+    system: GOAL,
+    user: `They said: ${said}`,
+    tools: tools(deps, goalTools, ["look_at_page", "recent_activity"]),
+    ctx: { said, goal: { title: said } },
+    readRounds: 1,
+    ...opts,
+  });

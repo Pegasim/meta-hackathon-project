@@ -320,3 +320,34 @@ test("recentRuns keeps only the loop's runs, newest first, at most 5 (#93)", () 
   );
   assert.deepEqual(recentRuns([status(1), status(2)]), []);
 });
+
+test("onStep sees every trail entry as it happens", async () => {
+  const { chat } = scripted(
+    [["list_tasks"]],
+    [["recall_notes", { query: "visa" }]],
+    [["suggest_next", { message: "Nice work. The visa papers are due today." }]],
+  );
+  const seen = [];
+  const r = await nextAfter(chat, deps, { title: "Fix the checkout bug" }, { onStep: (e) => seen.push(e.tool) });
+  assert.equal(r.source, "agent");
+  assert.deepEqual(seen, ["list_tasks", "recall_notes", "suggest_next"]);
+  assert.deepEqual(
+    r.trail.map((e) => e.tool),
+    seen,
+  );
+});
+
+test("a throwing onStep does not stop the loop", async () => {
+  const { chat } = scripted([["list_tasks"]], [["suggest_next", { message: "Nice work. On to the next thing." }]]);
+  const r = await nextAfter(
+    chat,
+    deps,
+    { title: "Fix the checkout bug" },
+    {
+      onStep: () => {
+        throw new Error("the page is gone");
+      },
+    },
+  );
+  assert.equal(r.source, "agent");
+});
