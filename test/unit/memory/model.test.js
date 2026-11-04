@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { modelClient, resolveConfig, PROVIDERS } from "../../../src/memory/model.js";
+import { modelClient, toolClient, resolveConfig, PROVIDERS } from "../../../src/memory/model.js";
 
 const fakeFetch =
   (status, body, seen = []) =>
@@ -111,4 +111,33 @@ test("reasoning_effort is sent only when set", async () => {
   await complete([], { reasoningEffort: "low" });
   assert.equal("reasoning_effort" in JSON.parse(seen[0].init.body), false);
   assert.equal(JSON.parse(seen[1].init.body).reasoning_effort, "low");
+});
+
+test("toolClient sends the tools and returns the assistant message with its tool calls (#81)", async () => {
+  const seen = [];
+  const calls = [{ id: "c1", type: "function", function: { name: "list_tasks", arguments: "{}" } }];
+  const chat = toolClient(
+    { provider: "meta", apiKey: "k" },
+    fakeFetch(200, { choices: [{ message: { content: null, tool_calls: calls }, finish_reason: "tool_calls" }] }, seen),
+  );
+  const tools = [
+    { type: "function", function: { name: "list_tasks", parameters: { type: "object", properties: {} } } },
+  ];
+  const msg = await chat([{ role: "user", content: "what next" }], { tools, reasoningEffort: "low" });
+  assert.deepEqual(msg, { role: "assistant", content: null, tool_calls: calls });
+  const body = JSON.parse(seen[0].init.body);
+  assert.deepEqual(body.tools, tools);
+  assert.equal(body.tool_choice, "auto");
+  assert.equal(body.reasoning_effort, "low");
+  assert.equal(body.model, "muse-spark-1.3");
+});
+
+test("toolClient: a reply with neither text nor a tool call is an error; plain text is a message", async () => {
+  const cut = { choices: [{ message: { content: null }, finish_reason: "length" }] };
+  await assert.rejects(toolClient({ provider: "meta", apiKey: "k" }, fakeFetch(200, cut))([], {}), { cut: true });
+  const text = { choices: [{ message: { content: "Sure." } }] };
+  assert.deepEqual(await toolClient({ provider: "meta", apiKey: "k" }, fakeFetch(200, text))([]), {
+    role: "assistant",
+    content: "Sure.",
+  });
 });

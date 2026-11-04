@@ -584,6 +584,43 @@ $("reread").onclick = async () => {
 await showProfile();
 await showSources();
 
+// ---- What Tuck looked at (#81) --------------------------------------------
+
+// The agent's last runs: each tool it called, with its short arguments and how much it found.
+const MOMENTS = { plan: "Planned the goal", next: "Goal done: what's next", stuck: "You were stuck" };
+const toolLine = ({ tool, args = {}, result }) => {
+  const shown = Object.values(args).filter((v) => typeof v === "string" || typeof v === "number");
+  return `${tool}${shown.length ? ` "${shown.join(", ")}"` : ""}${result ? ` → ${result}` : ""}`;
+};
+
+async function showAgentRuns() {
+  const runs = await chrome.runtime.sendMessage({ type: "agent-runs" });
+  const p = (text, className = "small") => Object.assign(document.createElement("p"), { className, textContent: text });
+  $("agent-runs").replaceChildren(
+    ...(runs?.length
+      ? runs.map((r) => {
+          const box = document.createElement("div");
+          box.className = "stack agent-run";
+          const when = new Date(r.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          const outcome =
+            r.source === "agent"
+              ? `${r.steps} step${r.steps === 1 ? "" : "s"}`
+              : `fell back: ${r.error ?? "no answer"}`;
+          box.append(
+            p(`${when} · ${MOMENTS[r.moment] ?? r.moment} · ${outcome}`),
+            ...(r.trail ?? []).map((t) => p(toolLine(t), "small muted")),
+          );
+          const said = Array.isArray(r.said) ? r.said.join(" / ") : r.said;
+          if (said) box.append(p(`Said: ${said}`, "small"));
+          return box;
+        })
+      : [p("Nothing yet.", "small muted")]),
+  );
+}
+
+$("refresh-runs").onclick = showAgentRuns;
+await showAgentRuns();
+
 // ---- Page reading --------------------------------------------------------
 
 const reading = readingSettings((await chrome.storage.local.get("pageReading")).pageReading);
