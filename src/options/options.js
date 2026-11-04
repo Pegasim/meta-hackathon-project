@@ -91,6 +91,8 @@ $("tuck-skin").onchange = async () => {
   await chrome.storage.local.set({ tuckSkin: $("tuck-skin").value });
   await showLook(await savedLook());
 };
+$("tuck-motion").value = (await chrome.storage.local.get({ tuckMotion: "system" })).tuckMotion;
+$("tuck-motion").onchange = () => chrome.storage.local.set({ tuckMotion: $("tuck-motion").value });
 $("tuck-item").onchange = async () => {
   await chrome.storage.local.set({ tuckItem: $("tuck-item").value });
   await showLook(await savedLook());

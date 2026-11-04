@@ -731,7 +731,11 @@ async function draftFor(t, s) {
 const tuckAssets = new Map();
 async function assets() {
   const { DEFAULT_SKIN, loadSkin } = globalThis.tuckSkins;
-  const { tuckSkin, tuckItem } = await chrome.storage.local.get({ tuckSkin: DEFAULT_SKIN, tuckItem: "bandana" });
+  const { tuckSkin, tuckItem, tuckMotion } = await chrome.storage.local.get({
+    tuckSkin: DEFAULT_SKIN,
+    tuckItem: "bandana",
+    tuckMotion: "system",
+  });
   const load = async (id) => {
     if (!tuckAssets.has(id)) {
       const url = (file) => chrome.runtime.getURL(`tuck/skins/${id}/${file}`);
@@ -741,20 +745,22 @@ async function assets() {
   };
   // A skin that is no longer there must not keep Tuck off every page.
   const skin = await load(tuckSkin).catch(() => load(DEFAULT_SKIN));
-  return { ...skin, item: tuckItem };
+  return { ...skin, item: tuckItem, motion: tuckMotion };
 }
 
 // The person picked another look in settings: Tuck on the page changes in place (a word on
 // screen stays; a Tuck tucked away stays away), and the toolbar icon is the skin's.
 async function lookChanged() {
   const a = await assets();
-  const { tuckTab } = await chrome.storage.session.get("tuckTab");
-  if (tuckTab != null) await chrome.tabs.sendMessage(tuckTab, { type: "tuck-look", assets: a }).catch(() => {});
+  // Every tab that holds Tuck changes, not only the last one drawn on; a tab without the
+  // overlay has nobody listening and the message is dropped.
+  const tabs = await chrome.tabs.query({}).catch(() => []);
+  await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, { type: "tuck-look", assets: a }).catch(() => {})));
   const path = Object.fromEntries([16, 32, 48, 128].map((n) => [n, `tuck/skins/${a.manifest.id}/icons/${n}.png`]));
   await chrome.action.setIcon({ path }).catch(() => {});
 }
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && (changes.tuckSkin || changes.tuckItem)) lookChanged();
+  if (area === "local" && (changes.tuckSkin || changes.tuckItem || changes.tuckMotion)) lookChanged();
 });
 chrome.runtime.onStartup.addListener(lookChanged);
 chrome.runtime.onInstalled.addListener(lookChanged);
@@ -794,6 +800,19 @@ function restingView(s) {
   return present({ event: "presence", agent: s.agent?.status });
 }
 
+// With no goal, Tuck greets on each new page with the goal form, as on the day's first
+// page; closed without a goal, it rests there quietly for a while and a click opens the form.
+const GOAL_FORM_SNOOZE_MS = 10 * 60 * 1000;
+async function noGoalView(s) {
+  if (s.intent || s.state === "paused") return null;
+  const { goalFormClosedAt, greeted } = await chrome.storage.session.get(["goalFormClosedAt", "greeted"]);
+  // The day's greeting was just drawn on this page: it is the goal form already.
+  if (greeted?.tabId === s.current?.tabId && Date.now() - greeted.at < 5000) return null;
+  if (goalFormClosedAt && Date.now() - goalFormClosedAt < GOAL_FORM_SNOOZE_MS)
+    return present({ event: "presence", agent: s.agent?.status });
+  return present({ event: "card", intent: null });
+}
+
 const pageChanged = (prev, s) => prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
 
 // Back from tucked away (Bring Tuck back in the popup): Tuck is on the page in front at
@@ -811,7 +830,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 async function presence(prev, s, input) {
   if (!s.current?.url || (await isAway())) return;
   const changed = pageChanged(prev, s);
-  const view = restingView(s);
+  const view = restingView(s) ?? (await noGoalView(s));
   // A reload keeps the tab and URL but wipes Tuck from the page: it comes back at once,
   // where it was. A page that cannot be scripted answers null, not false.
   const reloaded = !changed && view && (await inPage(input.tabId, tuckThere)) === false;
@@ -848,7 +867,7 @@ async function greet(tabId) {
   ];
   const view = present({ trigger: { kind: "session_start", level: 2, id: "greeting" }, loops });
   const shown = await showWithReminder(tabId, view, expired?.expiredAt && !expired.doneAt ? expired.title : null);
-  await chrome.storage.session.set({ pendingGreeting: !shown });
+  await chrome.storage.session.set({ pendingGreeting: !shown, ...(shown && { greeted: { tabId, at: Date.now() } }) });
 }
 
 async function respond({ choice }) {
@@ -1158,6 +1177,7 @@ const HANDLERS = {
     await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, { type: "tuck-hide" }).catch(() => {})));
     if (from != null) await showTuck(from, present({ event: "away" }));
   },
+  "goal-form-closed": () => chrome.storage.session.set({ goalFormClosedAt: Date.now() }),
   "tuck-change": async (_msg, sender) => showTuck(sender?.tab?.id, present({ event: "card", intent: null })),
   maintain,
   // The brain, then every other connected folder (read only); none of them asks for

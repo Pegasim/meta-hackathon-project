@@ -110,7 +110,11 @@
   // hold; only work loops; rest replays its breath now and then; a pose with gaze turns to
   // the bubble once it has played. Reduced motion holds the frame and plays nothing.
   let spriteTimer = null;
-  const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Settings → Tuck's motion: "system" follows the computer's reduce-motion setting, "on"
+  // always animates, "off" keeps every pose still.
+  let motion = "system";
+  const reducedMotion = () =>
+    motion === "off" || (motion !== "on" && matchMedia("(prefers-reduced-motion: reduce)").matches);
   const isSprite = () => skin?.kind === "sprites";
   function spriteFrame(strip, i) {
     // Removed or reloaded, the extension leaves this script with no runtime behind it.
@@ -132,6 +136,8 @@
   function holdSprite(strip) {
     const f = skin.frames[strip];
     if (f.gaze && current?.bubble && skin.frames.look) spriteFrame("look", gazeFrame());
+    // An entrance settles on the resting frame, so the face does not jump between poses.
+    else if (f.count > 1 && strip !== "work" && skin.frames.rest) spriteFrame("rest", 0);
     else spriteFrame(strip, 0);
     if (f.every && !reducedMotion()) spriteTimer = setTimeout(() => playSprite(strip), f.every);
   }
@@ -227,8 +233,9 @@
   // is still installed stays, and this copy does not draw, so two copies never fight;
   // once that copy is gone its host leaves within ORPHAN_CHECK_MS. Returns whether Tuck
   // is ours to draw.
-  function ensureRoot({ manifest, svg, css, item: worn }) {
+  function ensureRoot({ manifest, svg, css, item: worn, motion: moves }) {
     item = manifest.items?.includes(worn) ? worn : "none";
+    motion = moves ?? "system";
     if (root?.isConnected) {
       if (manifest.id !== skin.id) drawSkin({ manifest, svg, css }); // a new skin, in place: the bubble stays
       return true;
@@ -387,7 +394,12 @@
           className: "close",
           ariaLabel: "Close",
           textContent: "×",
-          onclick: () => (b.kind === "nudge" ? send({ type: "respond", choice: "dismiss" }) : closeBubble()),
+          onclick: () => {
+            if (b.kind === "nudge") return send({ type: "respond", choice: "dismiss" });
+            // Closing the goal form without a goal: Tuck stops offering it on new pages for a while.
+            if (b.kind === "goal") send({ type: "goal-form-closed" });
+            closeBubble();
+          },
         }),
       );
   }

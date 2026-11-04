@@ -35,6 +35,8 @@ const server = http.createServer((req, res) => {
   if (req.url === "/repo") return page("cart.js · acme/shop");
   if (req.url === "/video") return page("Top 10 F1 crashes - Video");
   if (req.url === "/tax") return page("Tax form");
+  if (req.url === "/notes") return page("Reading notes");
+  if (req.url === "/recipes") return page("Recipes");
   // Issue #5: one social site, three pages. The title says "Social" on all of them.
   const reply = `<textarea id="reply" placeholder="Write a message"></textarea>`;
   if (req.url === "/chat")
@@ -346,6 +348,17 @@ const ringLook = await tuck.evaluate((host) => {
 });
 await repoTab.emulateMedia({ reducedMotion: "reduce" });
 ringLook.reducedSlide = await tuck.locator(".dock").evaluate((d) => getComputedStyle(d).transitionDuration);
+// Motion (Settings → Tuck's look): with the computer's reduce motion on, "Always animate"
+// still plays the strips; following the computer holds one frame.
+const stripX = () => tuck.locator("svg.tuck image.tuck__strip").getAttribute("x");
+const framesSeen = async (setting) => {
+  await settingsPage.evaluate((m) => chrome.storage.local.set({ tuckMotion: m }), setting);
+  await repoTab.waitForTimeout(200);
+  const xs = new Set();
+  for (let i = 0; i < 8; i++) xs.add(await stripX(), await repoTab.waitForTimeout(110));
+  return xs.size;
+};
+const motion = { always: await framesSeen("on"), follow: await framesSeen("system") };
 await repoTab.emulateMedia({ reducedMotion: "no-preference" });
 if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-greeting.png") });
 // Drag Tuck to the left: the bubble then opens rightwards.
@@ -359,6 +372,26 @@ const dragged = await tuck.locator(".avatar").boundingBox();
 const bubbleAfterDrag = await tuck.locator(".bubble").boundingBox();
 const formStillOpen = await tuck.locator("input[name=goal]").isVisible();
 if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-dragged-left.png") });
+// No goal yet: Tuck greets on every new page with the goal form. Closed without a goal,
+// it stays on the next page quietly, without the form.
+const noGoal = {};
+const notesTab = await ctx.newPage();
+await notesTab.goto(`http://localhost:${port}/notes`);
+const notesForm = notesTab.locator("#tuck-companion .bubble input[name=goal]");
+noGoal.formOnNewTab = await notesForm.waitFor({ timeout: 8000 }).then(
+  () => 1,
+  () => 0,
+);
+await notesTab.locator("#tuck-companion .bubble .close").click();
+const recipesTab = await ctx.newPage();
+await recipesTab.goto(`http://localhost:${port}/recipes`);
+await recipesTab.locator("#tuck-companion .dock.in").waitFor({ timeout: 8000 });
+await recipesTab.waitForTimeout(500);
+noGoal.formAfterClosing = await recipesTab.locator("#tuck-companion .bubble input[name=goal]").count();
+await notesTab.close();
+await recipesTab.close();
+await repoTab.bringToFront();
+await tuck.locator("input[name=goal]").waitFor({ timeout: 8000 });
 await tuck.locator("input[name=goal]").fill("Fix the checkout bug");
 await tuck.locator("input[name=step]").fill("Write the failing test");
 await tuck.locator("button.start").click();
@@ -1388,6 +1421,9 @@ assert.match(
   "the greeting plays the kitten's waving strip",
 );
 assert.equal(bubbleLook.bg, "rgb(255, 248, 252)", "the bubble is the skin's surface");
+assert.ok(motion.always > 1, `"Always animate" plays the strip under reduce motion: ${motion.always} frames`);
+assert.equal(motion.follow, 1, "following the computer's reduce motion holds one frame");
+assert.deepEqual(noGoal, { formOnNewTab: 1, formAfterClosing: 0 }, "no goal: the form on a new page, then quiet");
 assert.equal(bubbleLook.primaryBg, "rgb(201, 179, 242)", "the primary button is the skin's accent");
 assert.match(ringLook.filter, /drop-shadow\(rgb\(255, 255, 255\) 0px 0px 0\.6px\)/, "the rim shows on the page");
 assert.match(ringLook.filter, /drop-shadow\(rgba\(0, 0, 0, 0\.18\) 0px 2px 6px\)/, "with the soft shadow");
