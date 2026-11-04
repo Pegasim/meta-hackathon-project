@@ -162,7 +162,7 @@ test("the model's line is used when it is ready", () => {
 
 test("minutes away come from awaySec, never seconds", () => {
   const long = { ...trigger("drift", 2), evidence: { ...evidence, awaySec: 330 } };
-  assert.equal(nudgeText(long), "That's 6 minutes on YouTube. Next up: write the failing test.");
+  assert.equal(nudgeText(long), "That's 6 minutes away from work. Next up: write the failing test.");
 });
 
 test("the agent stopping is one short line, with answers that fit it", () => {

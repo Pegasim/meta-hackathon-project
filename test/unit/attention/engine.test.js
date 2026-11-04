@@ -357,6 +357,25 @@ test("evidence counts time away from work, not time on this page", () => {
   assert.equal(drift.evidence.host, "x.com");
 });
 
+test("time outside the browser is not time away from work (İrem's log, 2026-11-04)", () => {
+  // Off to a video, then three minutes in the terminal answering the coding agent, then
+  // back on another unrelated page: only the browser time counts.
+  const X = ["https://x.com/home", "Home / X"];
+  const { triggers } = run(
+    [
+      setIntent(t0),
+      ctx(t0, REPO, "related"),
+      ctx(t0 + 10 * S, VIDEO, "unrelated"),
+      ctx(t0 + 20 * S, VIDEO, "unrelated", { browserFocused: false }),
+      ctx(t0 + 200 * S, X, "unrelated"),
+    ],
+    { until: t0 + 240 * S },
+  );
+  const drift = triggers.find((t) => t.kind === "drift" && t.ts > t0 + 200 * S);
+  assert.ok(drift, "a drift word on the page after coming back");
+  assert.equal(drift.evidence.awaySec, Math.round((drift.ts - t0 - 190 * S) / S));
+});
+
 // ---- The second look (issue #5) ----------------------------------------------
 // With the real policy and the second look on. The video becomes unrelated at +10 s,
 // so the budget reaches 30 s (tolerance 45 − lead 15) at +40 s: the excerpt is read

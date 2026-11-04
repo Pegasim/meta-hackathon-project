@@ -47,7 +47,8 @@ export function templateNudge({ kind, level, site, awayMin = 0, unsure = false, 
     case "drift":
       // "Next up: …" reads well whatever the step's wording ("testing …", "write …").
       if (unsure) return "Is this page part of your task?";
-      if (level >= 2 && awayMin >= 3) return `That's ${awayMin} minutes on ${site}. Next up: ${what}.`;
+      // The minutes are time away from work across pages, not time on this site.
+      if (level >= 2 && awayMin >= 3) return `That's ${awayMin} minutes away from work. Next up: ${what}.`;
       if (level >= 2) return `Still on ${site}. Want to get back to it?`;
       return `Still on ${site}? Next up: ${what}.`;
     case "fragmentation":

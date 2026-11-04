@@ -141,6 +141,10 @@ function applyContext(s, input, candidates, cfg) {
   }
   if (s.away && s.awaySince != null && s.intent && input.ts - s.awaySince >= cfg.returnAwaySec * S)
     candidates.push("return");
+  // Time outside the browser (the terminal, another app, sleep) is not time away from work:
+  // the count of minutes away picks up where it stopped.
+  if (s.away && s.awaySince != null && s.offTaskSince != null)
+    s.offTaskSince += input.ts - Math.max(s.awaySince, s.offTaskSince);
   s.away = false;
   s.awaySince = null;
   s.lastActiveTs = input.ts;

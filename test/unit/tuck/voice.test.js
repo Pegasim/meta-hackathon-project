@@ -29,7 +29,7 @@ test("template lines in Tuck's voice", () => {
     [{ kind: "drift", level: 1, site: "YouTube", awayMin: 0 }, "Still on YouTube? Next up: testing the extension."],
     [
       { kind: "drift", level: 2, site: "LinkedIn", awayMin: 5 },
-      "That's 5 minutes on LinkedIn. Next up: testing the extension.",
+      "That's 5 minutes away from work. Next up: testing the extension.",
     ],
     [{ kind: "drift", level: 2, site: "LinkedIn", awayMin: 1 }, "Still on LinkedIn. Want to get back to it?"],
     [{ kind: "drift", level: 1, site: "YouTube", unsure: true }, "Is this page part of your task?"],
