@@ -22,22 +22,24 @@
   "source": "tuck-run final/spritesheet-extended.png (192x208 cells), cropped to the union box and halved: rest=idle, work=running (active work), wait=waiting, drift=review, happy=jumping, sleep=idle frame 4 (eyes closed), hello=waving, drag-*=running-left/right, look=look rows 9-10",
   "theme": {
     "light": {
-      "accent": "#C9B3F2",
-      "onAccent": "#35203F",
-      "surface": "#FFF8FC",
-      "ink": "#35203F",
-      "muted": "#6B5872",
-      "outline": "#EADCEB",
-      "pink": "#F2A7C3"
+      "accent": "#80668E",
+      "onAccent": "#FFFFFF",
+      "surface": "#F1EDE6",
+      "page": "#E5E0DB",
+      "ink": "#393238",
+      "muted": "#70666B",
+      "outline": "#CEC6BD",
+      "pink": "#B48AA0"
     },
     "dark": {
-      "accent": "#C9B3F2",
-      "onAccent": "#35203F",
-      "surface": "#2A2131",
-      "ink": "#F7EFF8",
-      "muted": "#C4B5C9",
-      "outline": "#463A4E",
-      "pink": "#F2A7C3"
+      "accent": "#B9A6D4",
+      "onAccent": "#191A1C",
+      "surface": "#252629",
+      "page": "#191A1C",
+      "ink": "#E7E3DE",
+      "muted": "#B6B0AA",
+      "outline": "#3B3C40",
+      "pink": "#C9A3B6"
     },
     "rim": "#FFFFFF"
   }

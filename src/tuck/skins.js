@@ -18,10 +18,29 @@ globalThis.tuckSkins = (() => {
   }
 
   const cssVar = (token) => "--tk-" + token.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
-  function themeCss(theme) {
+  // scheme: Settings → Theme. "light" or "dark" holds that one; anything else follows the computer.
+  function themeCss(theme, scheme = "system") {
     const block = (mode) =>
-      ":host{" + [...THEME_TOKENS.map((t) => `${cssVar(t)}:${mode[t]}`), `--tk-rim:${theme.rim}`].join(";") + "}";
+      ":host{" +
+      [
+        ...THEME_TOKENS.map((t) => `${cssVar(t)}:${mode[t]}`),
+        `--tk-rim:${theme.rim}`,
+        // Optional: the ground the popup and Settings sit on, under their cards.
+        ...(mode.page ? [`--tk-page:${mode.page}`] : []),
+      ].join(";") +
+      "}";
+    if (scheme === "light" || scheme === "dark") return block(theme[scheme]);
     return block(theme.light) + `@media (prefers-color-scheme: dark){${block(theme.dark)}}`;
+  }
+
+  // The popup and Settings wear the skin's colours: their own colour variables (shared/ui.css)
+  // follow the theme ones.
+  function pageThemeCss(theme, scheme = "system") {
+    return (
+      themeCss(theme, scheme).replaceAll(":host", ":root") +
+      ":root{--bg:var(--tk-surface);--surface:var(--tk-surface);--border:var(--tk-outline);--text:var(--tk-ink);" +
+      "--muted:var(--tk-muted);--accent:var(--tk-accent);--accent-text:var(--tk-on-accent);--pink:var(--tk-pink)}"
+    );
   }
 
   function luminance(hex) {
@@ -162,5 +181,16 @@ globalThis.tuckSkins = (() => {
     return problems;
   }
 
-  return { POSES, THEME_TOKENS, DEFAULT_SKIN, poseAttrs, themeCss, contrast, checkSkin, spriteSvg, loadSkin };
+  return {
+    POSES,
+    THEME_TOKENS,
+    DEFAULT_SKIN,
+    poseAttrs,
+    themeCss,
+    pageThemeCss,
+    contrast,
+    checkSkin,
+    spriteSvg,
+    loadSkin,
+  };
 })();

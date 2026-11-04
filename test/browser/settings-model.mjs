@@ -128,6 +128,8 @@ const recordStatus = (page) =>
       subtree: true,
     });
   });
+// Settings shows one tab at a time: the one an element is on is opened before it is used.
+const tab = (page, name) => page.click(`.tabs a[data-tab="${name}"]`);
 const settled = (page) =>
   page.waitForFunction(
     () =>
@@ -138,12 +140,14 @@ const settled = (page) =>
 // 1. The brain is connected before any model is saved, so Connect's re-read reads nothing.
 let page = await openSettings();
 await connectBrain(page, errands);
+await tab(page, "check");
 await page.click("#reread");
 await settled(page);
 const noModel = { status: await page.locator("#task-status").innerText(), ...(await stored(page)) };
 
 // 2. The model is saved with Save, and nothing else is pressed.
 await recordStatus(page);
+await tab(page, "connections");
 await page.fill("#key", "test-key");
 await page.click("#save");
 const saveDeadline = Date.now() + 15000;
@@ -164,6 +168,7 @@ const afterSave = {
 await connectBrain(page, [...errands, ...garden]);
 delayMs = 1000;
 const callsBefore = taskCalls.length;
+await tab(page, "check");
 await page.click("#reread");
 await page.waitForFunction(() => /\d+ of \d+/.test(document.getElementById("task-status").textContent));
 const midRun = await page.locator("#task-status").innerText();
@@ -185,7 +190,7 @@ assert.deepEqual(errors, []);
 
 assert.equal(noModel.model, false);
 assert.equal(noModel.verdicts, null, "with no model, Connect's re-read runs no task node");
-assert.match(noModel.status, /needs a model above/);
+assert.match(noModel.status, /needs a model in Connections/);
 assert.match(noModel.status, /20 notes with a next action are not listed/);
 
 assert.ok(afterSave.taskCalls > 0, "saving the model runs the task node, with no press on Re-read");

@@ -183,7 +183,7 @@ setInterval(renderActivity, 15000);
 async function renderMark() {
   // The skin the background draws on pages (background assets()).
   const { DEFAULT_SKIN, loadSkin } = globalThis.tuckSkins;
-  const stored = await chrome.storage.local.get({ tuckSkin: DEFAULT_SKIN, tuckItem: "bandana" });
+  const stored = await chrome.storage.local.get({ tuckSkin: DEFAULT_SKIN, tuckItem: "bandana", tuckTheme: "system" });
   const { tuckItem } = stored;
   // An unknown skin falls back to the default, as the background does.
   const ids = await (await fetch(chrome.runtime.getURL("tuck/skins/index.json"))).json();
@@ -192,11 +192,10 @@ async function renderMark() {
   const { manifest, svg, css } = await loadSkin(async (file) => (await fetch(url(file))).text(), url);
   $("skin-theme").before(Object.assign(document.createElement("style"), { textContent: css }));
   $("tuck-mark").innerHTML = svg;
-  // The popup wears the skin's colours: its own colour variables follow the theme ones.
-  $("skin-theme").textContent =
-    globalThis.tuckSkins.themeCss(manifest.theme).replaceAll(":host", ":root") +
-    ":root{--bg:var(--tk-surface);--surface:var(--tk-surface);--border:var(--tk-outline);--text:var(--tk-ink);" +
-    "--muted:var(--tk-muted);--accent:var(--tk-accent);--accent-text:var(--tk-on-accent)}";
+  // The popup wears the skin's colours.
+  $("skin-theme").textContent = globalThis.tuckSkins.pageThemeCss(manifest.theme, stored.tuckTheme);
+  if (stored.tuckTheme === "light" || stored.tuckTheme === "dark")
+    document.documentElement.dataset.theme = stored.tuckTheme;
   const { engine } = await send("get-status");
   const pose = ["break", "paused"].includes(engine.state) ? "sleep" : "rest";
   const root = $("tuck-mark").querySelector("svg");

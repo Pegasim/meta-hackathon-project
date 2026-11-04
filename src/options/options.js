@@ -24,6 +24,25 @@ import { wrongBrainFolder } from "./brain-folder.js";
 import "../tuck/skins.js";
 
 const $ = (id) => document.getElementById(id);
+
+// Tabs: the hash names a tab (#look), or an element inside one (#brain-section, from Tuck's
+// notes question), which opens its tab and scrolls to it. Set before anything is read, so
+// the page shows its tab at once.
+function route() {
+  const hash = decodeURIComponent(location.hash.slice(1));
+  const panels = [...document.querySelectorAll(".panel")];
+  const isTab = panels.some((p) => p.dataset.panel === hash);
+  const target = !isTab && hash ? document.getElementById(hash) : null;
+  const name = target?.closest(".panel")?.dataset.panel ?? (isTab ? hash : "home");
+  for (const p of panels) p.hidden = p.dataset.panel !== name;
+  for (const a of document.querySelectorAll(".tabs a"))
+    if (a.dataset.tab === name) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  if (target) target.scrollIntoView({ block: "start" });
+  else window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", route);
+route();
 const memory = await Memory.open();
 const attention = openStore(); // the goal, for the row it came from (#77)
 
@@ -69,6 +88,63 @@ $("provider").onchange = () => {
   showProvider();
 };
 
+// ---- Home ----------------------------------------------------------------
+
+// What to do next, in Tuck's words, and one line per area. Drawn again whenever one changes;
+// only the newest draw writes.
+const MOTION = { system: "Motion follows your computer", on: "Always animates", off: "Keeps still" };
+let homeTasks = null; // the tasks Check lists, once showTasks has counted them
+let homeDraws = 0;
+async function drawHome() {
+  const draw = ++homeDraws;
+  const [model, sources, brain, stored] = await Promise.all([
+    loadModelSettings().catch(() => null),
+    memory.sources().catch(() => []),
+    memory.brainState().catch(() => ({ connected: false })),
+    chrome.storage.local.get({ tuckSkin: "", tuckMotion: "system", pageReading: undefined }),
+  ]);
+  if (draw !== homeDraws) return;
+  const skin = skinNames[skinIds?.includes(stored.tuckSkin) ? stored.tuckSkin : globalThis.tuckSkins.DEFAULT_SKIN];
+  $("home-look").textContent = skin?.name ?? "…";
+  $("home-look-sub").textContent = MOTION[stored.tuckMotion] ?? "";
+  const others = sources.filter((s) => s.kind !== "brain");
+  const any = brain.connected || others.length > 0;
+  $("home-notes").textContent = brain.connected
+    ? `Brain folder${brain.name ? ` "${brain.name}"` : ""}`
+    : others.length
+      ? `${others.length} ${others.length === 1 ? "source" : "sources"}`
+      : "Nothing connected";
+  $("home-notes-sub").textContent =
+    brain.connected && others.length
+      ? `and ${others.length} more ${others.length === 1 ? "source" : "sources"}`
+      : any
+        ? `${sources.reduce((n, s) => n + (s.entries ?? 0), 0)} entries`
+        : "Tuck works without notes, but knows less";
+  $("home-model").textContent = model ? (NAMES[model.provider] ?? model.provider) : "Not set up";
+  $("home-model-sub").textContent = model ? "Saved" : "Tuck needs one to read your notes";
+  const reading = readingSettings(stored.pageReading);
+  $("home-privacy").textContent = reading.enabled ? "Page reading on" : "Page reading off";
+  $("home-privacy-sub").textContent = `${reading.neverRead.length} sites never read`;
+  const [say, go, href] = !model
+    ? [
+        "Hi, I'm Tuck. Add a model key so I can read your notes and help you stay on track.",
+        "Set up the model",
+        "#model-section",
+      ]
+    : !any
+      ? ["Connect your notes, so I know what you're working on.", "Add notes", "#notes"]
+      : homeTasks
+        ? [
+            `I found ${homeTasks} ${homeTasks === 1 ? "task" : "tasks"} in your notes. Can you check I got them right?`,
+            `Check ${homeTasks} ${homeTasks === 1 ? "task" : "tasks"}`,
+            "#check",
+          ]
+        : ["Your notes are connected. Check what I know about you.", "Check what I know", "#check"];
+  $("home-say").textContent = say;
+  $("home-go").textContent = go;
+  $("home-go").href = href;
+}
+
 // Tuck's look: the skin and what it wears. The background redraws Tuck on the page and the
 // toolbar icon when these change. The preview is the skin's resting pose in a shadow root,
 // so its CSS stays out of this page.
@@ -99,15 +175,71 @@ async function showLook(saved) {
     root.setAttribute(name, value);
   root.dataset.item = $("tuck-item").value;
   shadow.replaceChildren(style, art);
+  // The page wears the skin: its colours, and its icon as Tuck's face in the header.
+  $("skin-theme").textContent = globalThis.tuckSkins.pageThemeCss(manifest.theme, saved.tuckTheme);
+  setScheme(saved.tuckTheme);
+  const face = await avatarUrl(manifest, url).catch(() => url("icons/128.png"));
+  for (const img of [$("avatar"), $("hero-avatar")]) img.src = face;
+  drawHome();
 }
-const savedLook = () => chrome.storage.local.get({ tuckSkin: globalThis.tuckSkins.DEFAULT_SKIN, tuckItem: "bandana" });
+// Tuck's face in the header and on Home. A sprite skin's icon is drawn to its edges, so the
+// tail and feet are cut off at small sizes: the first rest frame is used instead, cut to what
+// is drawn in it with a little room around it. Other skins use their icon.
+async function avatarUrl(manifest, url) {
+  const rest = manifest.kind === "sprites" && manifest.frames?.rest;
+  if (!rest) return url("icons/128.png");
+  const strip = new Image();
+  strip.src = url("frames/rest.png");
+  await strip.decode();
+  const { width: w, height: h } = manifest.frame ?? manifest.size;
+  const frame = new OffscreenCanvas(w, h).getContext("2d");
+  frame.drawImage(strip, 0, 0, w, h, 0, 0, w, h);
+  const { data } = frame.getImageData(0, 0, w, h);
+  let [x0, y0, x1, y1] = [w, h, -1, -1];
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      if (data[(y * w + x) * 4 + 3])
+        [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)];
+  if (x1 < 0) return url("icons/128.png");
+  const pad = 3;
+  const side = Math.max(x1 - x0, y1 - y0) + 1 + pad * 2; // square, the art centred
+  const out = document.createElement("canvas");
+  out.width = out.height = side;
+  out
+    .getContext("2d")
+    .drawImage(
+      frame.canvas,
+      x0,
+      y0,
+      x1 - x0 + 1,
+      y1 - y0 + 1,
+      Math.round((side - (x1 - x0 + 1)) / 2),
+      Math.round((side - (y1 - y0 + 1)) / 2),
+      x1 - x0 + 1,
+      y1 - y0 + 1,
+    );
+  return out.toDataURL();
+}
+
+const savedLook = () =>
+  chrome.storage.local.get({ tuckSkin: globalThis.tuckSkins.DEFAULT_SKIN, tuckItem: "bandana", tuckTheme: "system" });
+// Settings → Theme: "light" or "dark" holds that one here, in the popup and on the page.
+function setScheme(scheme) {
+  if (scheme === "light" || scheme === "dark") document.documentElement.dataset.theme = scheme;
+  else delete document.documentElement.dataset.theme;
+}
 await showLook(await savedLook());
 $("tuck-skin").onchange = async () => {
   await chrome.storage.local.set({ tuckSkin: $("tuck-skin").value });
   await showLook(await savedLook());
 };
 $("tuck-motion").value = (await chrome.storage.local.get({ tuckMotion: "system" })).tuckMotion;
-$("tuck-motion").onchange = () => chrome.storage.local.set({ tuckMotion: $("tuck-motion").value });
+$("tuck-motion").onchange = () => chrome.storage.local.set({ tuckMotion: $("tuck-motion").value }).then(drawHome);
+$("tuck-theme").value = (await savedLook()).tuckTheme;
+$("tuck-theme").onchange = async () => {
+  await chrome.storage.local.set({ tuckTheme: $("tuck-theme").value });
+  await showLook(await savedLook());
+};
 $("tuck-item").onchange = async () => {
   await chrome.storage.local.set({ tuckItem: $("tuck-item").value });
   await showLook(await savedLook());
@@ -116,6 +248,7 @@ $("tuck-item").onchange = async () => {
 $("save").onclick = async () => {
   await saveModelSettings(current(), { remember: $("remember").checked });
   $("model-status").textContent = $("remember").checked ? "Saved on this device." : "Saved until Chrome closes.";
+  drawHome();
   // A brain connected before the model was saved has not been read: read it now (#68).
   if (await unread()) await rereadMemory().catch((err) => ($("profile-status").textContent = `Failed: ${err.message}`));
 };
@@ -157,6 +290,7 @@ $("connect").onclick = async () => {
     const r = await memory.connectBrain(dir);
     await chrome.runtime.sendMessage({ type: "memory-changed" });
     $("brain-status").textContent = await brainStatus({ connected: true, name: dir.name, ...r });
+    drawHome();
     await rereadMemory();
   } catch (err) {
     if (err.name !== "AbortError") $("brain-status").textContent = `Failed: ${err.message}`;
@@ -188,6 +322,7 @@ const KINDS = { md: "Notes folder", paste: "Pasted memory", export: "Assistant e
 async function sourcesChanged() {
   await chrome.runtime.sendMessage({ type: "memory-changed" });
   await showSources();
+  drawHome();
   await rereadMemory();
 }
 
@@ -299,7 +434,7 @@ $("import-export").onclick = async () => {
     const settings = await loadModelSettings();
     if (!settings) {
       $("import-export").hidden = false;
-      return ($("export-status").textContent = "Set up a model above first.");
+      return ($("export-status").textContent = "Set up a model in Connections first.");
     }
     $("export-status").textContent = "Reading…";
     const r = await importExport(modelClient(privateSettings(settings)), f.chosen, {
@@ -358,7 +493,7 @@ $("import-paste").onclick = async () => {
   $("import-paste").disabled = true;
   try {
     const settings = await loadModelSettings();
-    if (!settings) return ($("paste-status").textContent = "Set up a model above first.");
+    if (!settings) return ($("paste-status").textContent = "Set up a model in Connections first.");
     $("paste-status").textContent = "Reading…";
     const r = await importPasted(modelClient(privateSettings(settings)), $("paste-text").value, {
       today: localDate(),
@@ -395,7 +530,7 @@ $("import-paste").onclick = async () => {
 async function readProfile() {
   try {
     const settings = await loadModelSettings();
-    if (!settings) return "Set up a model above, then press Re-read my memory.";
+    if (!settings) return "Set up a model in Connections, then press Re-read my memory.";
     const r = await buildProfile(modelClient(privateSettings(settings)), await memory.profileSample());
     if (r.source === "empty") return "No memory imported yet.";
     if (!r.profile) return `Could not read your memory: ${r.error}`;
@@ -597,8 +732,10 @@ async function showTasks(queue, note) {
   fold.querySelector(".stack").replaceChildren(...suggested.map(taskRow));
   const notes = waiting === 1 ? "1 note" : `${waiting} notes`;
   // A run's own problem first; with none, only a missing model is a reason (#68).
-  const why = note ? "" : taskProblem ? `: ${taskProblem}` : model ? null : " (needs a model above)";
+  const why = note ? "" : taskProblem ? `: ${taskProblem}` : model ? null : " (needs a model in Connections)";
   if (taskProgress) return void ($("task-status").textContent = taskProgress);
+  homeTasks = tasks.length + dates.length;
+  drawHome();
   $("task-status").textContent = [
     note,
     waiting
@@ -720,6 +857,7 @@ $("save-reading").onclick = async () => {
     .map((l) => l.trim())
     .filter(Boolean);
   await chrome.storage.local.set({ pageReading: { enabled: $("read-pages").checked, neverRead } });
+  drawHome();
   $("reading-status").textContent = $("read-pages").checked
     ? `Saved. ${neverRead.length} sites are never read.`
     : "Saved. Pages are not read.";
@@ -786,5 +924,5 @@ $("cancel-import").onclick = () => {
   box.onchange = () => chrome.runtime.sendMessage({ type: "set-mode", mode: box.checked ? "off" : "focus" });
 }
 
-// Opened from Tuck's notes question: the section it named, in view.
-if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "start" });
+// Opened from Tuck's notes question: the section it named, in view, now that it is filled.
+if (location.hash) route();

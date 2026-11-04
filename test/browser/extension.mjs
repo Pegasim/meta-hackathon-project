@@ -662,6 +662,8 @@ if (shots) await videoTab.screenshot({ path: path.join(shots, "tuck-nudge.png") 
 // buttons stay; the toolbar icon follows the skin.
 await settingsPage.bringToFront();
 await settingsPage.reload();
+// Settings shows one tab at a time; the look is on Look.
+await settingsPage.click('.tabs a[data-tab="look"]');
 await worker.evaluate(() => {
   globalThis.__icons = [];
   const set = chrome.action.setIcon.bind(chrome.action);
@@ -1631,6 +1633,7 @@ await popup.evaluate(() => chrome.runtime.sendMessage({ type: "respond", choice:
 const learned = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-labels" }));
 await maybeTab.close();
 await settingsPage.reload();
+await settingsPage.click('.tabs a[data-tab="check"]');
 await settingsPage.locator("#label-list button").first().waitFor();
 const labelLines = await settingsPage.locator("#label-list").innerText();
 await settingsPage.locator("#label-list button").first().click();
@@ -2040,6 +2043,7 @@ const popupFailed = await popup.evaluate(() => ({
 }));
 await settingsPage.bringToFront();
 await settingsPage.reload();
+await settingsPage.click('.tabs a[data-tab="activity"]');
 await settingsPage.locator("#agent-runs .agent-run").first().waitFor({ timeout: 5000 });
 const trailText = await settingsPage.locator("#agent-runs").innerText();
 // The goal changes with a step on the card: the card clears, and Start this for the old
@@ -2097,6 +2101,7 @@ await ctx.route("https://api.github.com/**", (route) => {
 });
 await settingsPage.bringToFront();
 await settingsPage.reload();
+await settingsPage.click('.tabs a[data-tab="connections"]');
 // Settings fills its fields as it loads: Page reading's list comes after this one.
 await settingsPage.waitForFunction(() => document.getElementById("never-read").value !== "");
 await settingsPage.fill("#github-repos", "https://github.com/acme-demo/shop\nnot a repo");
@@ -2137,6 +2142,7 @@ const shopPlanned = await popup.evaluate(async () => {
   return null;
 });
 await settingsPage.reload();
+await settingsPage.click('.tabs a[data-tab="activity"]');
 await settingsPage.locator("#agent-runs .agent-run").first().waitFor({ timeout: 5000 });
 const githubTrail = await settingsPage.locator("#agent-runs").innerText();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
