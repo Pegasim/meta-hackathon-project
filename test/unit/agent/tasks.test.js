@@ -40,6 +40,8 @@ function fakeModel(verdict = () => ({ is_task: true, still_open: true, task: "Do
   return { complete, calls };
 }
 
+const titles = (notes) => notes.map((n) => n.title);
+
 test("later notes on the same topic come oldest first, nearest the entry", () => {
   const sample = [
     { topic: "shop", title: "Newest" },
@@ -48,10 +50,10 @@ test("later notes on the same topic come oldest first, nearest the entry", () =>
     { topic: "shop", title: "Task a" },
     { topic: "shop", title: "Older" },
   ];
-  assert.deepEqual(laterOnTopic({ topic: "shop", title: "Task a" }, sample), ["Next one", "Newest"]);
+  assert.deepEqual(titles(laterOnTopic({ topic: "shop", title: "Task a" }, sample)), ["Next one", "Newest"]);
   assert.deepEqual(laterOnTopic({ topic: "shop", title: "Newest" }, sample), []);
   assert.deepEqual(laterOnTopic({ topic: "shop", title: "Not in the sample" }, sample), []);
-  assert.deepEqual(laterOnTopic({ topic: "shop", title: "Task a" }, sample, { later: 1 }), ["Next one"]);
+  assert.deepEqual(titles(laterOnTopic({ topic: "shop", title: "Task a" }, sample, { later: 1 })), ["Next one"]);
 });
 
 test("a note from the same day is found by its words, wherever the sample put it", () => {
@@ -62,7 +64,7 @@ test("a note from the same day is found by its words, wherever the sample put it
     { topic: "grants", title: "Unrelated older note" },
     { topic: "other", title: "Bootcamp application elsewhere" },
   ];
-  assert.deepEqual(laterOnTopic({ topic: "grants", title: "Bootcamp application due 2026-11-09" }, sample), [
+  assert.deepEqual(titles(laterOnTopic({ topic: "grants", title: "Bootcamp application due 2026-11-09" }, sample)), [
     "Newest",
     "Bootcamp application submitted",
   ]);
@@ -87,7 +89,7 @@ test("each entry goes in with its fields and later notes, through clean", () => 
   assert.match(user.content, /^1\. \[shop\] todo, 2026-10-20: Task a$/m);
   assert.match(user.content, /Context: key \[REDACTED\]/);
   assert.doesNotMatch(user.content, /sk-abc/);
-  assert.match(user.content, /Other notes on this topic: "Task a merged"/);
+  assert.match(user.content, /Other notes on this topic:\n {3}- "Task a merged"$/m);
   assert.match(user.content, /^2\. \[shop\]/m);
   assert.doesNotMatch(user.content.split("2. [shop]")[1], /Other notes/, "no later notes, no line");
 });
@@ -173,12 +175,16 @@ test("an invalid reply is asked once more; a model that fails leaves the batch u
   assert.equal(down.error, "503");
 });
 
-test("batches of 15; a second run asks only about new or changed entries", async () => {
+test("batches of 10; a second run asks only about new or changed entries", async () => {
   const candidates = Array.from({ length: 20 }, (_, i) => entry(`e${i}`));
   const sample = candidates.map(({ topic, title }) => ({ topic, title }));
   const first = fakeModel();
   const r1 = await extractTasks(first.complete, { candidates, sample });
-  assert.equal(first.calls.length, 2);
+  assert.deepEqual(
+    first.calls.map((m) => (m.at(-1).content.match(/^\d+\. /gm) ?? []).length),
+    [10, 10],
+    "under the worker's 30-second limit (#76)",
+  );
   assert.equal(Object.keys(r1.cache).length, 20);
   assert.equal(r1.judged, 20);
 
@@ -546,4 +552,160 @@ test("refreshTasks pairs by the node's match keys, and a verdict from before key
   stored.taskPairs = {};
   await refreshTasks(complete, { memory, storage, today: "2026-11-02" });
   assert.equal(calls.length, 2, "nothing changed: no task call, and without keys no pair either");
+});
+
+// #76, comment of 2026-11-04: the node sees the whole day's notes with their results, and
+// one summary of the day's browsing.
+test("every note from the entry's day goes as possibly later, with its result; caps hold", () => {
+  const sample = [
+    { topic: "app", title: "Next week's note", date: "2026-11-05", result: "Shipped it." },
+    { topic: "app", title: "Alpha same day", date: "2026-11-04", result: "Merged the task-node fix." },
+    { topic: "app", title: "Plan the backend", date: "2026-11-04", result: "Split agreed." },
+    { topic: "app", title: "Zulu same day", date: "2026-11-04", result: "none" },
+    { topic: "app", title: "Yesterday", date: "2026-11-03", result: "Older." },
+    { topic: "other", title: "Elsewhere", date: "2026-11-04", result: "x" },
+  ];
+  const entry = { topic: "app", title: "Plan the backend", date: "2026-11-04" };
+  const got = laterOnTopic(entry, sample);
+  assert.deepEqual(
+    titles(got),
+    ["Zulu same day", "Alpha same day", "Next week's note"],
+    "the day's notes on both sides",
+  );
+  assert.deepEqual(got[1], { title: "Alpha same day", date: "2026-11-04", result: "Merged the task-node fix." });
+  assert.equal(got[0].result, undefined, "a result of none is left out");
+  assert.equal(laterOnTopic(entry, sample, { later: 2 }).length, 2, "LATER stays the cap across days");
+  assert.ok(!titles(got).includes("Yesterday"), "an older note is not a later one");
+});
+
+test("a later note goes with its date and result, cut and cleaned", () => {
+  const long = `Submitted the form; key sk-abc ${"x".repeat(300)}`;
+  const [, user] = taskMessages(
+    [{ entry: entry("a"), later: [{ title: "Form", date: "2026-11-04", result: long }, "Just a title"] }],
+    { clean: (s) => s.replace(/sk-\w+/, "[REDACTED]"), today: "2026-11-04" },
+  );
+  const line = user.content.split("\n").find((l) => l.includes('"Form"'));
+  assert.match(line, /^ {3}- 2026-11-04 "Form": Submitted the form; key \[REDACTED\] x+$/);
+  assert.ok(line.length < 200, "the result is cut to about 150 characters");
+  assert.match(user.content, /^ {3}- "Just a title"$/m);
+});
+
+test("the day's browsing goes once, cleaned, ahead of the entries; none, no block", () => {
+  const activity = 'Last 1440 min (90 min active):\n- github.com: 80 min ("acme/app", "token sk-abc")';
+  const [system, user] = taskMessages(
+    [
+      { entry: entry("a"), later: [] },
+      { entry: entry("b"), later: [] },
+    ],
+    { activity, clean: (s) => s.replace(/sk-\w+/, "[REDACTED]") },
+  );
+  assert.equal(user.content.match(/Their browsing over the last day/g).length, 1);
+  assert.ok(user.content.indexOf("github.com") < user.content.indexOf("Their entries:"));
+  assert.doesNotMatch(user.content, /sk-abc/);
+  assert.match(system.content, /evidence for still_open only:\s+never make a task from it/);
+  assert.match(system.content, /planning, coordination or "decide how to" step is closed/);
+  const [, plain] = taskMessages([{ entry: entry("a"), later: [] }]);
+  assert.doesNotMatch(plain.content, /browsing/);
+});
+
+test("a title names what the action is for", () => {
+  const [system] = taskMessages([{ entry: entry("a"), later: [] }]);
+  assert.match(system.content, /Name what the action is for \(the\s+programme, person, project or document\)/);
+  assert.match(
+    system.content,
+    /"Decide whether to submit the grant application\s+late", not "Decide whether to upload video and submit late"/,
+  );
+});
+
+test("refreshTasks sends one summary of the last 24 hours to every batch; a new day asks nothing again", async () => {
+  const queue = Array.from({ length: 16 }, (_, i) => entry(`e${i}`));
+  const asked = [];
+  const memoryWith = (text, sites) => ({
+    taskQueue: async () => queue,
+    profileSample: async () => [],
+    activity: async ({ minutes }) => (asked.push(minutes), { summary: { sites }, text }),
+  });
+  const stored = {};
+  const storage = {
+    get: async (keys) => Object.fromEntries(keys.filter((k) => k in stored).map((k) => [k, stored[k]])),
+    set: async (o) => Object.assign(stored, o),
+  };
+  const model = fakeModel();
+  await refreshTasks(model.complete, {
+    memory: memoryWith("", [{ host: "github.com", ms: 80 * 60000, titles: ["acme/app"] }]),
+    storage,
+    today: "2026-11-04",
+  });
+  assert.deepEqual(asked, [1440], "asked once per run, for 24 hours");
+  assert.equal(model.calls.length, 2);
+  assert.ok(model.calls.every((m) => m.at(-1).content.includes('- github.com: 80 min ("acme/app")')));
+  const again = fakeModel();
+  await refreshTasks(again.complete, {
+    memory: memoryWith("", [{ host: "youtube.com", ms: 180 * 60000, titles: [] }]),
+    storage,
+    today: "2026-11-04",
+  });
+  assert.equal(
+    again.calls.filter((m) => /short to-do list/.test(m[0].content)).length,
+    0,
+    "browsing is not in the hash",
+  );
+  const none = fakeModel();
+  await refreshTasks(none.complete, {
+    memory: memoryWith("Last 1440 min: no browser activity.", []),
+    storage: { get: async () => ({}), set: async () => {} },
+    today: "2026-11-04",
+  });
+  assert.doesNotMatch(none.calls[0].at(-1).content, /browsing/, "no sites, no block");
+  const old = fakeModel();
+  await refreshTasks(old.complete, {
+    memory: { taskQueue: async () => queue, profileSample: async () => [] },
+    storage: { get: async () => ({}), set: async () => {} },
+    today: "2026-11-04",
+  });
+  assert.equal(old.calls.length, 2, "a memory without activity still works");
+});
+
+test("the browsing block leaves out every site the person keeps from being read", async () => {
+  const sites = [
+    { host: "github.com", ms: 90 * 60000, titles: ["acme/app · Pull requests"] },
+    { host: "paypal.com", ms: 10 * 60000, titles: ["Activity · PayPal"] },
+    { host: "online.mybank.example", ms: 8 * 60000, titles: ["Account balance"] },
+    { host: "clinic.example", ms: 5 * 60000, titles: ["Lab results"] },
+    { host: "docs.example.dev", ms: 20 * 60000, titles: ["Storage API"] },
+  ];
+  const memory = {
+    taskQueue: async () => [entry("a")],
+    profileSample: async () => [],
+    activity: async () => ({ summary: { sites }, text: "unused" }),
+  };
+  const run = async (pageReading) => {
+    const model = fakeModel();
+    const stored = pageReading ? { pageReading } : {};
+    await refreshTasks(model.complete, {
+      memory,
+      storage: {
+        get: async (keys) => Object.fromEntries(keys.filter((k) => k in stored).map((k) => [k, stored[k]])),
+        set: async () => {},
+      },
+      today: "2026-11-04",
+    });
+    return model.calls[0].at(-1).content;
+  };
+  const builtIn = await run();
+  assert.match(builtIn, /- github\.com: 90 min \("acme\/app · Pull requests"\)/, "a normal site is there");
+  assert.match(builtIn, /docs\.example\.dev/);
+  assert.doesNotMatch(builtIn, /paypal|PayPal/, "the built-in list");
+  assert.doesNotMatch(builtIn, /mybank|Account balance/, "a host naming a bank");
+  assert.match(builtIn, /clinic\.example/, "not on the built-in list");
+  assert.match(builtIn, /\(115 min active\)/, "the total counts only what is shown");
+  const own = await run({ enabled: false, neverRead: ["clinic.example"] });
+  assert.doesNotMatch(own, /clinic|Lab results/, "the person's own list, with reading off too");
+  assert.doesNotMatch(own, /mybank/, "the word rule holds with any list");
+  assert.match(own, /paypal\.com/, "their list replaces the built-in one, as for excerpts");
+  const none = await run({
+    enabled: true,
+    neverRead: ["github.com", "docs.example.dev", "paypal.com", "clinic.example"],
+  });
+  assert.doesNotMatch(none, /browsing/, "nothing left: no block");
 });

@@ -389,13 +389,15 @@ export class Memory {
   // ---- Profile -----------------------------------------------------------
 
   // What an agent node reads to work out who this person is: the newest entries,
-  // trimmed to the three fields that say what they work on.
+  // trimmed to the fields that say what they work on. The profile node reads topic,
+  // title and next; the task node also the date and the result, to see whether a later
+  // note closed a task (#76).
   async profileSample({ limit = 60 } = {}) {
     await this.#load();
     return [...this.#entries]
       .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
       .slice(0, limit)
-      .map(({ topic, title, next }) => ({ topic, title, next }));
+      .map(({ topic, title, next, date, result }) => ({ topic, title, next, date, result }));
   }
 
   // { summary, topics, workHosts } as the node returned it, or null before an import.

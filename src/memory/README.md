@@ -63,7 +63,7 @@ await memory.recall("query", { limit });        // [{ ref, title, score, item }]
 await memory.openLoops();                       // entries with a next action
 await memory.latestIntent();                    // newest todo
 await memory.taskQueue({ today, limit, staleAfter, distilledFor }); // open loops by time left; each has due, daysLeft and writer
-await memory.profileSample({ limit });         // newest entries as { topic, title, next }, for the profile call
+await memory.profileSample({ limit });         // newest entries as { topic, title, next, date, result }, for the profile and task calls
 await memory.profile();                        // { summary, topics, workHosts }, or null before the first read
 await memory.setProfile(profile);              // stored in IndexedDB meta
 const { pack, prompt } = await memory.contextPack({ title, url });
