@@ -13,6 +13,13 @@ const VOICE = [
   "language the goal is written in.",
 ].join("\n");
 
+// #90: a note's next action was the next step on the day it was written, not today.
+const HISTORY = [
+  "A note's date and age say when it was written. A next action in a note from before",
+  "today is history: use it as a step only if nothing later (a newer note, list_tasks,",
+  "today's pages) says it is done; otherwise leave it out.",
+].join("\n");
+
 const PLAN = [
   "You are Tuck, a small focus companion in someone's browser. They just set a goal.",
   "Find what their own notes say about how to do it: deadlines, rules, decisions, lessons.",
@@ -22,6 +29,7 @@ const PLAN = [
   "at most one thing to watch out for that a note names. Every step must come from the",
   "goal or a note. If the notes say nothing about this goal, finish with no_plan: no plan",
   "is better than a generic one.",
+  HISTORY,
   VOICE,
 ].join("\n");
 
@@ -32,6 +40,7 @@ const STUCK = [
   "once, in one or two rounds), then finish with",
   "propose_step: one small, concrete action they can start now and do in 5 to 15",
   "minutes, naming the actual thing (a file, a section, a person, a page).",
+  HISTORY,
   VOICE,
 ].join("\n");
 
@@ -42,6 +51,7 @@ const NEXT = [
   "that says well done plainly and names what could come next, and the id of the one",
   "task you would offer, if any. A task due today or overdue is reminded separately:",
   "do not name it in the line.",
+  HISTORY,
   VOICE,
 ].join("\n");
 
@@ -57,7 +67,7 @@ export const planFor = (chat, deps, { title, due } = {}, opts = {}) =>
   runAgent(chat, {
     system: PLAN,
     user: [`Goal just set: ${title}`, due ? `Due: ${due}` : null].filter(Boolean).join("\n"),
-    tools: tools(deps, planTools, ["recent_activity", "look_at_page"]),
+    tools: tools(deps, planTools, ["look_at_page"]),
     ctx: { goal: { title } },
     ...opts,
   });
