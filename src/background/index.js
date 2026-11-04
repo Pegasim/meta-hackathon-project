@@ -38,7 +38,7 @@ import { makeIntent, isExpired, dayKey, syncFocus, stepDone } from "../attention
 import { daySummary, summaryEntry } from "../attention/summary.js";
 import { createSerialQueue } from "../attention/queue.js";
 import { openStore } from "../attention/store.js";
-import { classifyRelevance, privateSettings } from "../agent/relevance.js";
+import { classifyRelevance, privateSettings, agentSettings } from "../agent/relevance.js";
 import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks } from "../agent/tasks.js";
@@ -1502,7 +1502,7 @@ async function agentDeps(intent) {
 async function agentChat() {
   const settings = await loadModelSettings();
   if (!settings) return null;
-  const used = privateSettings(settings);
+  const used = agentSettings(settings); // Muse Wonder on Meta, never Contributor
   try {
     return { chat: toolClient(used), model: used.model ?? used.provider ?? null };
   } catch {
