@@ -1378,6 +1378,12 @@ const loopsAfterSaid = await popup.evaluate(async () => (await chrome.storage.lo
 await answer.click();
 await chatTab.waitForTimeout(300);
 const loopsAfterDone = await popup.evaluate(async () => (await chrome.storage.local.get("loops")).loops);
+// No brain folder yet: Done stays in Tuck (#95).
+const doneNotesUnconnected = await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const hits = await (await Memory.open()).recall("marked done in Tuck", { limit: 50 });
+  return hits.filter((h) => /marked done in Tuck/.test(h.title)).length;
+});
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
 await chatTab.waitForTimeout(500);
@@ -1838,6 +1844,43 @@ const githubTrail = await settingsPage.locator("#agent-runs").innerText();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
 await settingsPage.evaluate(() => chrome.storage.local.remove("githubRepos"));
 
+// #95: with a brain folder connected, Done on a row writes one event to its inbox; Not a
+// task writes nothing.
+const doneInbox = await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const memory = await Memory.open();
+  const brain = await (await navigator.storage.getDirectory()).getDirectoryHandle("brain-done", { create: true });
+  await memory.connectBrain(brain);
+  const note = (id, title, topic) =>
+    [
+      "---",
+      `title: "${title}"`,
+      "kind: todo",
+      `topic: ${topic}`,
+      "date: 2026-10-28",
+      "source: test",
+      `id: ${id}`,
+      "---",
+      "",
+      "- **Context:** A form for the grant.",
+      "- **Decision/Result:** Drafted.",
+      "- **Evidence:** none",
+      "- **Next action:** Send it",
+    ].join("\n");
+  await memory.importFiles([
+    { path: "notes/log/2026/grant.md", text: note("grant01", "Send the grant form", "grants") },
+    { path: "notes/log/2026/chore.md", text: note("chore01", "Water the office plant", "office") },
+  ]);
+  await chrome.runtime.sendMessage({ type: "memory-changed" });
+  await chrome.runtime.sendMessage({ type: "reminder-answer", id: "grant01", choice: "done" });
+  await chrome.runtime.sendMessage({ type: "reminder-answer", id: "chore01", choice: "not_task" });
+  await memory.maintain(); // consolidate, then export to the folder
+  const files = [];
+  for await (const [, h] of (await brain.getDirectoryHandle("inbox", { create: true })).entries())
+    if (h.kind === "file") files.push(await (await h.getFile()).text());
+  return files.filter((t) => /marked done in Tuck|Water the office plant/.test(t));
+});
+
 // The exported event log.
 await settingsPage.bringToFront();
 const log = await settingsPage.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }));
@@ -2136,6 +2179,13 @@ assert.match(reminderText, /Send the visa papers[\s\S]*Due today/, "the task nam
 assert.ok(loopsAfterSaid.visa01.saidOn, "said once it is on screen");
 assert.ok(loopsAfterDone.visa01.doneAt, "Done is remembered");
 assert.equal(reminderAgain, 0, "and it does not come back");
+assert.equal(doneNotesUnconnected, 0, "no brain folder: Done writes nothing to memory");
+assert.equal(doneInbox.length, 1, `one inbox file for Done, none for Not a task: ${doneInbox}`);
+assert.match(doneInbox[0], /^kind: event$/m);
+assert.match(doneInbox[0], /^topic: grants$/m);
+assert.match(doneInbox[0], /^title: "Send the grant form — marked done in Tuck"$/m);
+assert.match(doneInbox[0], /^Decision\/Result: Marked done on \d{4}-\d{2}-\d{2}\. Entries: grant01\.$/m);
+assert.match(doneInbox[0], /^Next action: none$/m);
 assert.equal(driftMaybe.evidence.unsure, true, "Tuck asks on a page it is unsure about");
 assert.equal(askedTasks, 2, "eleven open loops, two calls of at most 10");
 assert.equal(taskRows, 7, "the first 7 in sight");

@@ -13,6 +13,9 @@ import {
   splitRow,
   splitTasks,
 } from "../../../src/attention/reminders.js";
+import { doneEntry, noteAnswer } from "../../../src/attention/reminders.js";
+import { laterOnTopic } from "../../../src/agent/tasks.js";
+import { makeEntry, toInboxMarkdown } from "../../../src/memory/entry.js";
 
 const today = "2026-11-02";
 const task = (id, daysLeft, title = id) => ({ id, title, daysLeft, due: daysLeft == null ? null : "x" });
@@ -297,4 +300,95 @@ describe("a grouped row's deadline", () => {
     assert.equal(row.due, null);
     assert.equal(row.daysLeft, null);
   });
+});
+
+// Done in Tuck goes to the brain's inbox (#95). The fake stands in for Memory: add() makes
+// the entry the way Memory does, and a connected folder gets its inbox file.
+const fakeMemory = (folder) => {
+  const added = [];
+  return {
+    added,
+    brainState: async () => ({ connected: !!folder }),
+    add: async (fields) => {
+      const entry = makeEntry({ source: "extension", ...fields });
+      added.push(entry);
+      folder?.inbox.push(toInboxMarkdown(entry));
+      return entry;
+    },
+  };
+};
+const grantRow = {
+  id: "grant01",
+  topic: "grants",
+  title: "Send the grant form",
+  date: "2026-10-28",
+  members: ["grant01", "grant02"],
+};
+
+test("Done on a row writes one event to the brain's inbox, for the whole row", async () => {
+  const folder = { inbox: [] };
+  const memory = fakeMemory(folder);
+  const stored = await noteAnswer(memory, grantRow, "done", today);
+  assert.equal(folder.inbox.length, 1, "one entry, though the row groups two");
+  const { source, ...fields } = stored;
+  assert.equal(source, "extension");
+  assert.deepEqual(fields, {
+    kind: "event",
+    topic: "grants",
+    title: "Send the grant form — marked done in Tuck",
+    date: today,
+    context: "The person answered Done on this task in Tuck.",
+    result: `Marked done on ${today}. Entries: grant01, grant02.`,
+    evidence: "none",
+    next: "none",
+  });
+  assert.match(folder.inbox[0], /^kind: event$/m);
+  assert.match(folder.inbox[0], /^Next action: none$/m, "it never becomes a task itself");
+  const single = await noteAnswer(
+    fakeMemory({ inbox: [] }),
+    { id: "visa01", topic: "errands", title: "Post the visa papers" },
+    "done",
+    today,
+  );
+  assert.equal(single.result, `Marked done on ${today}. Entries: visa01.`);
+});
+
+test("Not a task, the other answers and a row with no title write nothing", async () => {
+  const folder = { inbox: [] };
+  const memory = fakeMemory(folder);
+  for (const choice of ["not_task", "not_same", "later", "switch"])
+    assert.equal(await noteAnswer(memory, grantRow, choice, today), null);
+  assert.equal(await noteAnswer(memory, { id: "gone" }, "done", today), null, "a row no longer on the list");
+  assert.deepEqual(memory.added, []);
+  assert.deepEqual(folder.inbox, []);
+});
+
+test("with no brain folder connected, Done writes nothing", async () => {
+  const memory = fakeMemory(null);
+  assert.equal(await noteAnswer(memory, grantRow, "done", today), null);
+  assert.deepEqual(memory.added, []);
+});
+
+test("a long task still makes a valid title", () => {
+  const e = makeEntry(doneEntry({ ...grantRow, title: "x".repeat(200) }, today));
+  assert.equal(e.title.length, 120);
+  assert.ok(e.title.endsWith(" — marked done in Tuck"));
+});
+
+test("the task node reads the Done note as a later note on each of the row's entries", () => {
+  const { kind: _, ...note } = doneEntry(grantRow, "2026-11-04");
+  // profileSample's shape, newest first.
+  const sample = [
+    note,
+    { topic: "grants", title: "Still need to send the grant form", date: "2026-11-01", next: "Send it" },
+    { topic: "grants", title: "Send the grant form", date: "2026-10-28", next: "Send it by Friday" },
+    { topic: "shop", title: "Fix the cart", date: "2026-11-03", next: "none" },
+  ];
+  for (const entry of sample.slice(1, 3)) {
+    const later = laterOnTopic(entry, sample);
+    assert.ok(
+      later.some((s) => s.title === note.title && s.result === note.result && s.date === "2026-11-04"),
+      `later notes for "${entry.title}" include the Done note`,
+    );
+  }
 });

@@ -145,3 +145,25 @@ export function splitRow(splits, row, ts) {
   ids.forEach((a, i) => ids.slice(i + 1).forEach((b) => (out[pairKey(a, b)] = ts)));
   return out;
 }
+
+// What Done on a row says in memory (#95): one event for the row, however many entries it
+// groups, so the task node's next run reads it as a later note on the topic, and so do other
+// tools reading the brain.
+const DONE_SUFFIX = " — marked done in Tuck";
+export const doneEntry = (row, today) => ({
+  kind: "event",
+  topic: row.topic,
+  title: row.title.slice(0, 120 - DONE_SUFFIX.length) + DONE_SUFFIX,
+  date: today,
+  context: "The person answered Done on this task in Tuck.",
+  result: `Marked done on ${today}. Entries: ${(row.members ?? [row.id]).join(", ")}.`,
+  next: "none",
+});
+
+// memory: the Memory API. Only Done writes, and only with a brain folder connected; Not a
+// task is a judgement about Tuck's list, not about the world. Returns the stored entry or null.
+export async function noteAnswer(memory, row, choice, today) {
+  if (choice !== "done" || !row?.title) return null;
+  if (!(await memory.brainState()).connected) return null;
+  return memory.add(doneEntry(row, today));
+}
