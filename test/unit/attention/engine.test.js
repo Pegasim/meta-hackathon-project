@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { initialState, step, nextWakeAt } from "../../../src/attention/engine.js";
 import { withOverrides } from "../../../src/attention/config.js";
 import { relevanceKey, hostOf } from "../../../src/attention/relevance.js";
+import { present } from "../../../src/tuck/present.js";
 
 const S = 1000;
 const t0 = Date.UTC(2026, 9, 31, 10, 0); // 13:00 in Istanbul
@@ -1125,6 +1126,32 @@ test("the wake time includes the next asking", () => {
   const inputs = [setIntent(t0), ctx(t0, REPO, "related"), agent(t0, "working"), waiting(t0 + S)];
   const { state } = run(inputs, { until: t0 + 11 * S, cfg: WORDS });
   assert.equal(nextWakeAt(state, WORDS), t0 + 31 * S);
+});
+
+// Issue #66: Muse working again means the person answered it in the terminal. The
+// worker takes the waiting word down on `agent_resumed` and logs it.
+const resumed = (out) => out.filter((o) => o.type === "agent_resumed");
+
+test("Muse back at work after a wait takes the waiting word back", () => {
+  const inputs = [setIntent(t0), ctx(t0, REPO, "related"), agent(t0, "working"), waiting(t0 + S)];
+  const { out } = run([...inputs, agent(t0 + 5 * S, "working")], { until: t0 + 10 * S, cfg: WORDS });
+  assert.deepEqual(askedAt(out.filter((o) => o.type === "trigger")), [[1, false]]);
+  assert.deepEqual(resumed(out), [{ type: "agent_resumed", ts: t0 + 5 * S }]);
+  // Only after a wait: starting again after a stop of another kind takes nothing back.
+  for (const status of ["completed", "failed", "unknown"]) {
+    const after = run([setIntent(t0), agent(t0, "working"), agent(t0 + S, status), agent(t0 + 5 * S, "working")], {
+      cfg: WORDS,
+    });
+    assert.deepEqual(resumed(after.out), [], status);
+  }
+});
+
+test("Muse finishing after a wait says it is done, in the wait's place", () => {
+  const inputs = [setIntent(t0), ctx(t0, REPO, "related"), agent(t0, "working"), waiting(t0 + S)];
+  const { out, triggers } = run([...inputs, agent(t0 + 5 * S, "completed")], { until: t0 + 10 * S, cfg: WORDS });
+  const said = triggers.filter((t) => t.kind === "agent").map((t) => present({ trigger: t })?.bubble?.text);
+  assert.deepEqual(said, ["Muse is waiting on you.", "Muse is done."]);
+  assert.deepEqual(resumed(out), [], "the done word replaces it, nothing is taken back first");
 });
 
 // A page for something else the person has to do is not drift (#8).
