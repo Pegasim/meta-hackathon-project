@@ -41,6 +41,7 @@ import { refreshTasks } from "../agent/tasks.js";
 import { planFor, stuckStep, nextAfter } from "../agent/moments.js";
 import { recentRuns } from "../agent/loop.js";
 import { noteOf } from "../agent/notes.js";
+import { githubLookup, closedRefs } from "../agent/github.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine, templateGreeting, toolKind, whenSaid } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
@@ -1311,9 +1312,26 @@ async function lastWorkExcerpt() {
   return { title: redact(last.title ?? "").text, excerpt: redact(page.text).text };
 }
 
+// #91: GitHub, for the repositories listed in Settings, or null when none is. One lookup
+// per list, so a rate limit holds across runs; answers are cached in session storage,
+// which outlives the worker.
+const githubCache = {
+  get: async (key) => (await chrome.storage.session.get(`gh:${key}`))[`gh:${key}`],
+  set: (key, value) => chrome.storage.session.set({ [`gh:${key}`]: value }),
+};
+let github = null;
+async function githubFor() {
+  const { githubRepos = [] } = await chrome.storage.local.get("githubRepos");
+  if (!githubRepos.length) return null;
+  if (github?.repos.join("\n") !== githubRepos.join("\n"))
+    github = githubLookup({ repos: githubRepos, cache: githubCache, clean: (t) => redact(t).text });
+  return github;
+}
+
 // What the agent's read tools see, through code that already exists.
-function agentDeps(intent) {
+async function agentDeps(intent) {
   return {
+    github: await githubFor(),
     recall: async (query) =>
       (await (await memory).recall(query, { limit: NOTES_SEARCHED }).catch(() => []))
         // Tuck's own records (goals and how their days went, topic "focus") are not the
@@ -1377,7 +1395,7 @@ function planAhead(intent) {
 async function writePlan(intent) {
   const agent = await agentChat();
   if (!agent) return;
-  const r = await planFor(agent.chat, agentDeps(intent), { title: intent.title });
+  const r = await planFor(agent.chat, await agentDeps(intent), { title: intent.title });
   await logRun("plan", r, agent.model, r.value && r.value.steps.map((s) => s.step));
   if (!r.value) return;
   // The goal may have ended or changed while the model worked.
@@ -1397,10 +1415,14 @@ async function stuck() {
   const intent = await st.activeIntent();
   if (!intent) return { ok: false, reason: "no goal" };
   const last = (await loadEngine()).lastRelevant;
-  const template = { step: stuckTemplate(last?.title, intent.title), minutes: 10, source: "template" };
+  // #91: a last page naming a merged or closed PR is not offered either.
+  const lastTitle = (await closedRefs(await githubFor(), [last?.title ?? ""]).catch(() => new Map())).size
+    ? null
+    : last?.title;
+  const template = { step: stuckTemplate(lastTitle, intent.title), minutes: 10, source: "template" };
   const agent = await agentChat();
   if (!agent) return { ok: true, ...template };
-  const r = await stuckStep(agent.chat, agentDeps(intent), { title: intent.title, step: intent.steps?.[0] });
+  const r = await stuckStep(agent.chat, await agentDeps(intent), { title: intent.title, step: intent.steps?.[0] });
   await logRun("stuck", r, agent.model, r.value?.step);
   return r.value ? { ok: true, ...r.value, source: "agent" } : { ok: true, ...template };
 }
@@ -1443,7 +1465,7 @@ function nextAhead(intent) {
 async function writeNext(intent) {
   const agent = await agentChat();
   if (!agent) return;
-  const r = await nextAfter(agent.chat, agentDeps(intent), { title: intent.title });
+  const r = await nextAfter(agent.chat, await agentDeps(intent), { title: intent.title });
   await logRun("next", r, agent.model, r.value?.message);
   if (!r.value) return;
   nextDrafts.set(intent.id, r.value);

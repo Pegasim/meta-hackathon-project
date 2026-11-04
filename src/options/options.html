@@ -125,6 +125,17 @@
   </section>
 
   <section class="card stack">
+    <h2>GitHub repositories</h2>
+    <p class="note">Before Tuck names a PR or issue from your notes as a step, it checks on GitHub whether it is still open, and leaves it out if it was merged or closed. With one repository listed, "#12" means that one; with several, write "owner/name#12". Only public repositories, and only names, numbers, states and titles are read: no code, diffs or comments. Nothing is asked of GitHub while the list is empty.</p>
+    <div>
+      <label for="github-repos">Repositories (one owner/name per line)</label>
+      <textarea id="github-repos" rows="3" spellcheck="false" placeholder="owner/name"></textarea>
+    </div>
+    <div class="row"><button id="save-github">Save repositories</button></div>
+    <p class="status small" id="github-status"></p>
+  </section>
+
+  <section class="card stack">
     <h2>Page reading</h2>
     <label class="row" style="color:var(--text)"><input id="read-pages" type="checkbox"> Look at the page before a nudge</label>
     <p class="note">Right before Tuck would nudge you about a page, it checks whether you are typing there (it notes when you last pressed a key, never which key), and reads up to 1,000 characters near where you type, from the conversation you last touched, or from the middle of the window, so a work chat on a social site does not count as drifting. Secrets are removed first. On Meta it goes to Muse Spark 1.3, not Contributor, so it is not used for training. Only the verdict is kept, never the text. Pages with a password field and the sites below are never read.</p>

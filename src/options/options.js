@@ -17,6 +17,7 @@ import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelS
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks, taskByConstruction } from "../agent/tasks.js";
 import { privateSettings } from "../agent/relevance.js";
+import { parseRepos } from "../agent/github.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { NEVER_READ, readingSettings } from "../attention/reading.js";
 import { wrongBrainFolder } from "./brain-folder.js";
@@ -675,6 +676,25 @@ async function showAgentRuns() {
 
 $("refresh-runs").onclick = showAgentRuns;
 await showAgentRuns();
+
+// ---- GitHub repositories (#91) -------------------------------------------
+
+// Read after the page has loaded: what was typed meanwhile is kept.
+const savedRepos = ((await chrome.storage.local.get("githubRepos")).githubRepos ?? []).join("\n");
+if (!$("github-repos").value) $("github-repos").value = savedRepos;
+
+$("save-github").onclick = async () => {
+  const { repos, bad } = parseRepos($("github-repos").value);
+  if (bad.length) {
+    $("github-status").textContent = `Not a repository: ${bad.join(", ")}. Write it as owner/name.`;
+    return;
+  }
+  await chrome.storage.local.set({ githubRepos: repos });
+  $("github-repos").value = repos.join("\n");
+  $("github-status").textContent = repos.length
+    ? `Saved. ${repos.length === 1 ? "1 repository is" : `${repos.length} repositories are`} checked.`
+    : "Saved. Nothing is asked of GitHub.";
+};
 
 // ---- Page reading --------------------------------------------------------
 
