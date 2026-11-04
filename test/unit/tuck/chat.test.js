@@ -16,6 +16,10 @@ import {
   SETUP_ASK,
   SETUP_BAD,
   SETUP_THANKS,
+  notesThread,
+  NOTES_ASK,
+  NOTES_SKIPPED,
+  THINKING,
   chatView,
   OPENER,
   LOOKING,
@@ -166,4 +170,19 @@ test("needsKey: no key needs one, except Ollama", () => {
   assert.equal(needsKey({ provider: "meta", apiKey: "" }), true);
   assert.equal(needsKey({ provider: "meta", apiKey: "k" }), false);
   assert.equal(needsKey({ provider: "ollama" }), false);
+});
+
+test("after the key, Tuck asks about notes once: a folder, a chat history, or skip", () => {
+  const t = notesThread();
+  assert.equal(t.messages[0].text, NOTES_ASK);
+  assert.deepEqual(
+    t.messages[0].chips.map((c) => c.msg),
+    [
+      { type: "notes-choice", choice: "brain" },
+      { type: "notes-choice", choice: "export" },
+      { type: "notes-choice", choice: "skip" },
+    ],
+  );
+  assert.equal(chatView(t).bubble.compact, true);
+  for (const line of [NOTES_ASK, NOTES_SKIPPED, THINKING]) assert.ok(followsVoice(line), line);
 });

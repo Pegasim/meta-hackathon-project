@@ -229,7 +229,8 @@ export const stuckTools = {
       required: ["step"],
     },
     finish: (args, ctx) => ({
-      step: checkStep(args?.step, grounds(ctx)),
+      // What the person wrote in the chat (ctx.said) grounds a step as the notes do.
+      step: checkStep(args?.step, grounds(ctx, ctx.said ? [ctx.said] : [])),
       minutes: clamp(args?.minutes, 5, 15, 10),
     }),
   },

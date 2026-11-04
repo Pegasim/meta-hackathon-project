@@ -785,3 +785,6 @@ $("cancel-import").onclick = () => {
   chrome.storage.local.get({ mode: "focus" }).then(({ mode }) => (box.checked = mode === "off"));
   box.onchange = () => chrome.runtime.sendMessage({ type: "set-mode", mode: box.checked ? "off" : "focus" });
 }
+
+// Opened from Tuck's notes question: the section it named, in view.
+if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: "start" });

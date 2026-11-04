@@ -401,7 +401,9 @@ await settingsPage.evaluate(async (baseUrl) => {
   const { saveModelSettings } = await import("/memory/model.js");
   // Remembered, so the key survives the restart below and the second look can call the model.
   await saveModelSettings({ provider: "meta", baseUrl, model: "fake", apiKey: "test-key" }, { remember: true });
+  // The first-run notes question (asked once after the key) is not what this test drives.
   await chrome.storage.local.set({
+    notesAsked: true,
     attentionConfig: {
       toleranceSec: 3,
       escalateAfterSec: 4,

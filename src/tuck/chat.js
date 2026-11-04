@@ -137,3 +137,18 @@ export const setupView = ({ error = false } = {}) => ({
   pose: "hello",
   bubble: { kind: "setup", text: SETUP_ASK, error: error ? SETUP_BAD : null },
 });
+
+// Then, once: does the person have notes? Without them Tuck reads nothing and says so.
+export const NOTES_ASK = "Got it. Do you have notes I can read?";
+export const NOTES_SKIPPED = "Okay, no notes. What are we working on?";
+export const THINKING = "Thinking…"; // the wait when there is nothing to look up
+export const notesThread = () =>
+  newThread({
+    intent: null,
+    opener: NOTES_ASK,
+    chips: [
+      { label: "Connect a notes folder", msg: { type: "notes-choice", choice: "brain" } },
+      { label: "Import a chat history", msg: { type: "notes-choice", choice: "export" } },
+      { label: "Skip", msg: { type: "notes-choice", choice: "skip" } },
+    ],
+  });

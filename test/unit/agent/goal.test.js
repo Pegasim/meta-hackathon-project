@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { goalTools } from "../../../src/agent/tools.js";
-import { goalFrom } from "../../../src/agent/moments.js";
+import { goalTools, stuckTools } from "../../../src/agent/tools.js";
+import { goalFrom, chatStep } from "../../../src/agent/moments.js";
 
 function scripted(...replies) {
   let n = 0;
@@ -121,4 +121,58 @@ test("goalFrom offers only notes and tasks to read", async () => {
   await goalFrom(chat, deps([]), { said: "the investor deck" });
   assert.ok(offered.includes("recall_notes") && offered.includes("keep_goal") && offered.includes("propose_goal"));
   assert.ok(!offered.includes("look_at_page") && !offered.includes("recent_activity"));
+});
+
+// What the chat offers the model: with no notes, nothing to read; what the person wrote
+// in the chat never reads their page.
+const offeredBy = async (run) => {
+  let offered;
+  const chat = async (messages, opts) => {
+    offered ??= { tools: opts.tools.map((t) => t.function.name), user: messages[1].content };
+    const name = offered.tools.includes("keep_goal") ? "keep_goal" : "propose_step";
+    const args =
+      name === "keep_goal"
+        ? { reply: "Okay. Where do you start?" }
+        : { step: "Write the bubble styles for the chat", minutes: 10 };
+    return {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "c1", type: "function", function: { name, arguments: JSON.stringify(args) } }],
+    };
+  };
+  const r = await run(chat);
+  return { ...offered, r };
+};
+
+test("with no notes, the goal chat reads nothing: only the finishing tools", async () => {
+  const { tools, r } = await offeredBy((chat) =>
+    goalFrom(chat, deps([]), { said: "tuck's chat interface" }, { notes: false }),
+  );
+  assert.deepEqual(tools.sort(), ["keep_goal", "propose_goal"]);
+  assert.equal(r.value.reply, "Okay. Where do you start?");
+});
+
+test("what the person writes with a goal running reads their notes only, never the page", async () => {
+  const { tools, user } = await offeredBy((chat) =>
+    chatStep(chat, deps([]), { title: "Build the chat", step: null, said: "the bubbles look off" }),
+  );
+  assert.ok(tools.includes("recall_notes"));
+  for (const t of ["look_at_page", "recent_activity"]) assert.ok(!tools.includes(t), `${t} is not offered`);
+  assert.match(user, /They wrote: the bubbles look off/);
+});
+
+test("with no notes, what the person writes gets a step from their words alone", async () => {
+  const { tools, r } = await offeredBy((chat) =>
+    chatStep(chat, deps([]), { title: "Build the chat", said: "the bubbles look off" }, { notes: false }),
+  );
+  assert.deepEqual(tools, ["propose_step"]);
+  assert.equal(r.value.step, "Write the bubble styles for the chat");
+});
+
+test("a step may be built from what the person wrote", () => {
+  const v = stuckTools.propose_step.finish(
+    { step: "Fix the bubble padding", minutes: 10 },
+    { goal: { title: "Ship it" }, said: "the bubble padding is wrong" },
+  );
+  assert.equal(v.step, "Fix the bubble padding");
 });

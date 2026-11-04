@@ -59,6 +59,32 @@ const GOAL = [
   VOICE,
 ].join("\n");
 
+const GOAL_NO_NOTES = [
+  "You are Tuck, a small focus companion. The person just told you what they want to do",
+  "today, in their own words. They have no notes. Finish with keep_goal: their words are",
+  "the goal. Your reply talks to them like a friend at the next desk: react to what they",
+  "said, then one short question about what they will do first. One or two short",
+  "sentences, no lists, no advice.",
+  VOICE,
+].join("\n");
+
+const CHAT_STEP = [
+  "You are Tuck, a small focus companion. The person is working on a goal and just wrote",
+  "to you. What they wrote matters most. Search their notes once for the same thing. Use a",
+  "note only if it is about what they wrote; otherwise build the step from their words and",
+  "the goal alone. Finish with propose_step: one small, concrete action that answers what",
+  "they wrote, doable in 5 to 15 minutes.",
+  HISTORY,
+  VOICE,
+].join("\n");
+
+const CHAT_STEP_NO_NOTES = [
+  "You are Tuck, a small focus companion. The person is working on a goal and just wrote",
+  "to you. They have no notes. Finish with propose_step: one small, concrete action that",
+  "answers what they wrote, built from their words and the goal, doable in 5 to 15 minutes.",
+  VOICE,
+].join("\n");
+
 // Written while the goal is still running, said when it is done (background: goalDoneView).
 const NEXT = [
   "You are Tuck, a small focus companion in someone's browser. The person has finished",
@@ -153,12 +179,38 @@ export const nextAfter = (chat, deps, { title } = {}, opts = {}) =>
     ),
   );
 
-export const goalFrom = (chat, deps, { said } = {}, opts = {}) =>
+// notes: false when the person has no notes (nothing connected, or they skipped): nothing
+// is read, and the model answers from their words alone.
+export const goalFrom = (chat, deps, { said } = {}, { notes = true, ...opts } = {}) =>
   runAgent(chat, {
-    system: GOAL,
+    system: notes ? GOAL : GOAL_NO_NOTES,
     user: `They said: ${said}`,
-    tools: tools(deps, goalTools, ["look_at_page", "recent_activity"]),
+    tools: notes ? tools(deps, goalTools, ["look_at_page", "recent_activity"]) : goalTools,
     ctx: { said, goal: { title: said } },
     readRounds: 1,
     ...opts,
   });
+
+// What the person writes in the chat with a goal running. Their words come first: a note
+// is used only when it is about the same thing, and their screen is never read (the row's
+// "I'm stuck", with no words, still looks at the last work page: stuckStep).
+export const chatStep = (chat, deps, { title, step, said } = {}, { notes = true, ...opts } = {}) =>
+  runAgent(chat, {
+    system: notes ? CHAT_STEP : CHAT_STEP_NO_NOTES,
+    user: [`Their goal: ${title}`, step ? `Current step: ${step}` : null, `They wrote: ${said}`]
+      .filter(Boolean)
+      .join("\n"),
+    tools: notes
+      ? tools(deps, stuckTools, ["look_at_page", "recent_activity", "list_tasks", "goal", "github_status"])
+      : stuckTools,
+    ctx: { said, goal: { title, step } },
+    readRounds: 1,
+    ...opts,
+  }).then((r) =>
+    withoutClosed(
+      r,
+      deps.github,
+      (v) => [v.step],
+      () => null,
+    ),
+  );
