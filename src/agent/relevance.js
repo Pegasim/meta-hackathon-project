@@ -48,23 +48,13 @@ const SYSTEM_EXCERPT = [
 ].join("\n");
 
 // Page text goes to a model that does not train on it: Meta's Contributor tier may,
-// so on Meta it becomes plain Muse Spark 1.3 (same key), whether Contributor was picked
-// as the provider or typed as the model. Other providers are left as set.
+// so on Meta it becomes plain `meta`, Muse Wonder 1.0 (same key), whether Contributor
+// was picked as the provider or typed as the model. Other providers are left as set.
 export function privateSettings(settings = {}) {
   const provider = settings.provider ?? DEFAULT_PROVIDER;
   if (provider !== "meta" && provider !== "meta-contributor") return settings;
   const model = settings.model && !/contributor/i.test(settings.model) ? settings.model : undefined;
   return { ...settings, provider: "meta", model };
-}
-
-// The chat and the agent loop (goal chat, chat step, I'm stuck, plan, what's next) talk
-// through Muse Wonder on Meta: it holds a conversation's context better than Spark, which
-// still judges pages and writes the drift words. Built on privateSettings, so never
-// Contributor. Another provider keeps the model the person chose.
-export const AGENT_MODEL = "muse-wonder-1.0";
-export function agentSettings(settings = {}) {
-  const used = privateSettings(settings);
-  return used.provider === "meta" ? { ...used, model: AGENT_MODEL } : used;
 }
 
 // The person's own notes the memory search found for this page, when it found any.

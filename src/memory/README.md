@@ -169,7 +169,7 @@ In every case its id and key are kept in `meta` (`removed`), and `importFiles()`
 
 | Preset | Model | Note |
 |---|---|---|
-| `meta` (default) | `muse-spark-1.3` on Meta's Model API | Standard price, not used for training |
+| `meta` (default) | `muse-wonder-1.0` on Meta's Model API | Standard price, not used for training |
 | `meta-contributor` | `muse-spark-1.3-contributor` on Meta's Model API | Not offered in settings. It still resolves so settings saved earlier load, and `privateSettings()` swaps it for `meta` on every call that carries notes: Meta may train on what Contributor is sent |
 | `openrouter` | `meta/muse-glimmer-30b` | Muse Glimmer is not served on Meta's Model API |
 | `ollama` | `muse-glimmer` on `localhost:11434` | Local; no key. Ollama must allow the extension origin (`OLLAMA_ORIGINS`) |

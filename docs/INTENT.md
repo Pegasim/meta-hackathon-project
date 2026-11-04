@@ -57,7 +57,7 @@ medical or therapeutic help.
   local exception (`bridge/`): Muse Code's hooks tell Tuck whether the agent is working or
   waiting. Status only, with the project folder's name and an approval's tool name; never a
   prompt, a tool's input, a message or terminal output.
-- **Constraint:** Meta models, and `muse-spark-1.3` rather than `-contributor`: Meta may train on what
+- **Constraint:** Meta models, and plain `meta` (`muse-wonder-1.0`) rather than `-contributor`: Meta may train on what
   Contributor is sent, and Tuck sends people's notes.
 - **Constraint:** `src/memory/` belongs to Safa and is used only through its `Memory` API.
 - **Constraint:** everything in English; the companion answers in the user's language.

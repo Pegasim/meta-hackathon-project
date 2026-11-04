@@ -1,9 +1,10 @@
 // Model client for OpenAI-compatible chat completions.
-// "meta" (the default) and "meta-contributor" are Meta's Model API: same model;
-// Contributor costs far less, Meta may train on its inputs and outputs, and it is
-// only offered in some countries. Tuck sends people's notes to the model, so
-// Contributor is not offered in settings: it stays resolvable only so settings
-// saved earlier still load, and privateSettings() swaps it out of every call.
+// "meta" (the default, Muse Wonder 1.0) and "meta-contributor" (Muse Spark 1.3
+// Contributor) are Meta's Model API: Contributor costs far less, Meta may train on
+// its inputs and outputs, and it is only offered in some countries. Tuck sends
+// people's notes to the model, so Contributor is not offered in settings: it stays
+// resolvable only so settings saved earlier still load, and privateSettings() swaps
+// it out of every call.
 // Muse Spark Open and Muse Glimmer are not
 // served on the Model API: the Spark Open entries are the hosts Meta's deploy
 // docs list; Glimmer is on OpenRouter or runs locally through Ollama.
@@ -12,7 +13,7 @@ export const DEFAULT_PROVIDER = "meta";
 
 export const PROVIDERS = {
   "meta-contributor": { baseUrl: "https://api.meta.ai/v1", model: "muse-spark-1.3-contributor" },
-  meta: { baseUrl: "https://api.meta.ai/v1", model: "muse-spark-1.3" },
+  meta: { baseUrl: "https://api.meta.ai/v1", model: "muse-wonder-1.0" },
   openrouter: { baseUrl: "https://openrouter.ai/api/v1", model: "meta/muse-glimmer-30b" },
   ollama: { baseUrl: "http://localhost:11434/v1", model: "muse-glimmer" },
   together: { baseUrl: "https://api.together.xyz/v1", model: "meta-models/muse-spark-open" },

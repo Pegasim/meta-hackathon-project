@@ -20,8 +20,8 @@ test("provider presets resolve to base URL and model", () => {
     model: "meta-models/muse-spark-open",
     apiKey: "k",
   });
-  assert.equal(resolveConfig({ provider: "meta", apiKey: "k" }).model, "muse-spark-1.3");
-  assert.equal(resolveConfig({ apiKey: "k" }).model, "muse-spark-1.3"); // default: plain Meta, never Contributor
+  assert.equal(resolveConfig({ provider: "meta", apiKey: "k" }).model, "muse-wonder-1.0");
+  assert.equal(resolveConfig({ apiKey: "k" }).model, "muse-wonder-1.0"); // default: plain Meta, never Contributor
   // Settings saved while Contributor was offered must still load.
   assert.equal(resolveConfig({ provider: "meta-contributor", apiKey: "k" }).model, "muse-spark-1.3-contributor");
   assert.equal(resolveConfig({ provider: "openrouter", apiKey: "k" }).model, "meta/muse-glimmer-30b");
@@ -129,7 +129,7 @@ test("toolClient sends the tools and returns the assistant message with its tool
   assert.deepEqual(body.tools, tools);
   assert.equal(body.tool_choice, "auto");
   assert.equal(body.reasoning_effort, "low");
-  assert.equal(body.model, "muse-spark-1.3");
+  assert.equal(body.model, "muse-wonder-1.0");
 });
 
 test("toolClient: a reply with neither text nor a tool call is an error; plain text is a message", async () => {
