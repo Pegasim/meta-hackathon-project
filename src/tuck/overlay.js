@@ -96,7 +96,65 @@
             background: var(--tk-surface); color: var(--tk-ink); }
     input:focus { border-color: var(--tk-accent); }
     input:focus-visible { outline: 2px solid var(--tk-ink); outline-offset: 1px; }
-    .pick { margin-bottom: 8px; display: grid; gap: 6px; }`;
+    .pick { margin-bottom: 8px; display: grid; gap: 6px; }
+    /* The icon row and the goal card above it (menu), and the chat (dock-chat design). */
+    .bubble.menu { background: none; border: 0; box-shadow: none; padding: 0; width: auto; }
+    .bubble.menu::before { display: none; }
+    .menu-wrap { display: grid; gap: 8px; justify-items: end; }
+    .dock[data-side="right"] .menu-wrap { justify-items: start; }
+    .goalcard { width: 250px; background: var(--tk-surface); border: 1px solid var(--tk-outline); border-radius: 14px;
+                padding: 10px 12px; box-shadow: 0 6px 20px rgba(0,0,0,.10); }
+    .goalcard .g-title { color: var(--tk-muted); font-size: 12px; }
+    .goalcard .g-lab { margin-top: 6px; font-size: 10.5px; font-weight: 600; letter-spacing: .02em; color: var(--tk-muted); }
+    .goalcard .g-now { display: flex; gap: 8px; align-items: flex-start; margin-top: 2px; }
+    .goalcard .g-step { flex: 1; font-size: 14px; font-weight: 600; line-height: 1.3; }
+    .goalcard .g-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px;
+                        font-size: 11.5px; color: var(--tk-muted); }
+    .dots { display: flex; gap: 4px; align-items: center; }
+    .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--tk-outline); }
+    .dots i.done { background: var(--tk-pink); } .dots i.on { background: var(--tk-accent); }
+    .dots span { margin-left: 4px; }
+    .focus { display: flex; gap: 4px; align-items: center; }
+    .focus svg { width: 14px; height: 14px; }
+    button.ck { all: unset; cursor: pointer; flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid;
+                place-items: center; border: 1.5px solid var(--tk-accent); color: var(--tk-on-accent); position: relative; }
+    button.ck svg { width: 14px; height: 14px; opacity: .35; }
+    button.ck:hover, button.ck:focus-visible { background: var(--tk-accent); }
+    button.ck:hover svg, button.ck:focus-visible svg { opacity: 1; }
+    .icons { display: flex; align-items: center; gap: 4px; background: var(--tk-surface); border: 1px solid var(--tk-outline);
+             border-radius: 999px; padding: 5px; box-shadow: 0 6px 20px rgba(0,0,0,.10); }
+    .icons .sep { width: 1px; height: 26px; background: var(--tk-outline); margin: 0 3px; }
+    button.ib { all: unset; cursor: pointer; position: relative; width: 42px; height: 42px; border-radius: 50%;
+                display: grid; place-items: center; color: var(--tk-ink); }
+    button.ib svg { width: 22px; height: 22px; }
+    button.ib:hover { background: color-mix(in srgb, var(--tk-accent) 22%, transparent); }
+    button.ib.main { width: 48px; height: 48px; border: 1.5px solid var(--tk-accent); box-sizing: border-box; }
+    button.ib:focus-visible, button.ck:focus-visible { outline: 2px solid var(--tk-ink); outline-offset: 1px; }
+    .tip { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); white-space: nowrap;
+           font-size: 11px; font-weight: 500; background: var(--tk-ink); color: var(--tk-surface); padding: 2px 7px;
+           border-radius: 6px; opacity: 0; pointer-events: none; transition: opacity .12s; }
+    button:hover > .tip, button:focus-visible > .tip { opacity: 1; }
+    @media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
+    .bubble.chat { width: 300px; padding: 10px 12px; }
+    .c-head { display: flex; align-items: center; gap: 8px; margin: 0 18px 8px 0; font-size: 12px; font-weight: 600;
+              color: var(--tk-muted); }
+    .c-head .c-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .c-head .c-change { all: unset; cursor: pointer; font-weight: 400; text-decoration: underline; }
+    .c-msgs { display: flex; flex-direction: column; gap: 7px; max-height: 300px; overflow-y: auto; }
+    .c-msg { max-width: 250px; font-size: 13px; line-height: 1.4; }
+    .c-msg .text { margin: 0; font-size: 13px; font-weight: 400; }
+    .c-msg.tuck { align-self: flex-start; }
+    .c-msg.tuck > .text { background: #fff; border: 1px solid var(--tk-outline); border-radius: 11px 11px 11px 3px; padding: 6px 9px; }
+    @media (prefers-color-scheme: dark) { .c-msg.tuck > .text { background: transparent; } }
+    .c-msg.me { align-self: flex-end; background: var(--tk-accent); color: var(--tk-on-accent);
+                border-radius: 11px 11px 3px 11px; padding: 6px 9px; }
+    .c-msg.pending > .text { color: var(--tk-muted); }
+    .c-trail { font-size: 11.5px; color: var(--tk-muted); border-left: 2px solid var(--tk-pink); padding: 1px 0 1px 8px;
+               margin: 0 0 5px; display: grid; gap: 1px; }
+    .c-msg .row, .c-msg .pick { margin-top: 6px; }
+    .c-msg .next { margin: 4px 0 0; white-space: pre-line; }
+    .c-form { display: flex; gap: 6px; margin-top: 8px; }
+    .c-form input { flex: 1; }`;
 
   function el(tag, props = {}, ...children) {
     const e = Object.assign(document.createElement(tag), props);
@@ -225,6 +283,7 @@
       if (dragged) return ((dragged = false), e.preventDefault());
       // A nudge is answered, as × answers it (Tuck tucked away then leaves with it).
       if (current?.bubble?.kind === "nudge") send({ type: "respond", choice: "dismiss" });
+      else if (current?.bubble?.kind === "chat") closeChat();
       else if (current?.bubble) {
         if (current.bubble.kind === "goal") send({ type: "goal-form-closed" });
         closeStuck();
@@ -326,11 +385,153 @@
     current = null;
   }
 
+  // ---- The icon row and the chat --------------------------------------------
+  const ICON = globalThis.tuckIcons ?? {};
+  const svgOf = (name) => {
+    const span = el("span");
+    span.innerHTML = ICON[name] ?? "";
+    return span.firstElementChild ?? span;
+  };
+  const ACTIONS = {
+    chat: { label: "Talk to Tuck", icon: "chat", msg: { type: "chat-open" } },
+    stuck: { label: "I'm stuck", icon: "stuck", msg: { type: "chat-say", text: "I'm stuck", stuck: true } },
+    break: { label: "5-min break", icon: "brk", msg: { type: "respond", choice: "break" } },
+    done: { label: "Done", icon: "done", msg: { type: "complete-intent", from: "tuck" } },
+    away: { label: "Tuck away", icon: "away", msg: { type: "tuck-away" } },
+  };
+  function iconButton(cls, label, icon, onclick) {
+    const b = el(
+      "button",
+      { className: cls, ariaLabel: label, onclick },
+      svgOf(icon),
+      el("span", { className: "tip", textContent: label }),
+    );
+    b.type = "button";
+    return b;
+  }
+
+  function drawMenu(box, b) {
+    const wrap = el("div", { className: "menu-wrap" });
+    const g = b.goal;
+    if (g) {
+      const card = el("div", { className: "goalcard" }, el("div", { className: "g-title", textContent: g.title }));
+      if (g.now) {
+        const now = el("div", { className: "g-now" }, el("div", { className: "g-step", textContent: g.now }));
+        if (g.canStep) now.append(iconButton("ck", "Step done", "check", () => send({ type: "step-done" })));
+        card.append(el("div", { className: "g-lab", textContent: "NOW" }), now);
+      }
+      const foot = el("div", { className: "g-foot" });
+      if (g.dots) {
+        const dots = el("div", { className: "dots" });
+        for (let i = 0; i < g.dots.total; i++)
+          dots.append(el("i", { className: i < g.dots.done ? "done" : i === g.dots.done ? "on" : "" }));
+        dots.append(el("span", { textContent: `${g.dots.done + 1} of ${g.dots.total}` }));
+        foot.append(dots);
+      } else foot.append(el("span"));
+      foot.append(
+        el("span", { className: "focus" }, svgOf("timer"), el("span", { textContent: `Focus ${g.focusMin}m` })),
+      );
+      card.append(foot);
+      wrap.append(card);
+    }
+    const row = el("div", { className: "icons", role: "toolbar", ariaLabel: "Tuck" });
+    for (const name of b.actions) {
+      const a = ACTIONS[name];
+      if (!a) continue;
+      row.append(iconButton(name === "chat" ? "ib main" : "ib", a.label, a.icon, () => send(a.msg)));
+      if (name === "chat") row.append(el("span", { className: "sep" }));
+    }
+    wrap.append(row);
+    box.append(wrap);
+  }
+
+  function drawChat(box, b) {
+    const close = el("button", {
+      className: "close",
+      ariaLabel: "Close",
+      textContent: "×",
+      onclick: () => closeChat(),
+    });
+    const head = el("div", { className: "c-head" }, el("span", { className: "c-title", textContent: b.title }));
+    if (b.change)
+      head.append(
+        el("button", { className: "c-change", textContent: "Change", onclick: () => send({ type: "tuck-change" }) }),
+      );
+    const list = el("div", { className: "c-msgs" });
+    for (const m of b.messages) {
+      const msg = el("div", { className: `c-msg ${m.from}${m.pending ? " pending" : ""}` });
+      if (m.trail?.length)
+        msg.append(el("div", { className: "c-trail" }, ...m.trail.map((t) => el("span", { textContent: t }))));
+      msg.append(el("p", { className: "text", textContent: m.text }));
+      if (m.next) msg.append(el("p", { className: "next", textContent: m.next }));
+      if (m.chips?.length) {
+        const pick = el("div", { className: "pick" });
+        for (const chip of m.chips)
+          pick.append(
+            el("button", {
+              className: "b",
+              textContent: chip.label ?? chip,
+              onclick: () => send(chip.msg ?? { type: "chat-chip", title: chip }),
+            }),
+          );
+        msg.append(pick);
+      }
+      if (m.buttons?.length) {
+        const row = el("div", { className: "row" });
+        for (const btn of m.buttons) {
+          const button = el("button", {
+            className: `b${btn.primary ? " primary" : ""}`,
+            textContent: btn.label,
+            onclick: () => send(btn.msg),
+          });
+          button.dataset.choice = btn.choice ?? "";
+          row.append(button);
+        }
+        msg.append(row);
+      }
+      list.append(msg);
+    }
+    const input = el("input", {
+      name: b.field.name,
+      placeholder: b.field.placeholder,
+      maxLength: 200,
+      autocomplete: "off",
+    });
+    const sendBtn = el("button", { className: "b primary start", type: "submit", textContent: "Send" });
+    const form = el("form", { className: "c-form" }, input, sendBtn);
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (text.length < 2) return;
+      input.value = "";
+      send({ type: "chat-say", text });
+    };
+    box.append(head, list, form, close);
+    requestAnimationFrame(() => (list.scrollTop = list.scrollHeight));
+    return input;
+  }
+
+  // Closing the chat ends its thread; with no goal it also snoozes the chat on new pages.
+  function closeChat() {
+    if (current?.bubble?.field?.name === "goal") send({ type: "goal-form-closed" });
+    send({ type: "chat-closed" });
+    closeBubble();
+    if (current?.away) leave();
+  }
+
   function drawBubble(b) {
     const box = root.querySelector(".bubble");
     box.replaceChildren();
+    box.className = "bubble";
     if (!b) return (box.hidden = true);
     box.hidden = false;
+    if (b.kind === "menu" || b.kind === "chat") {
+      box.classList.add(b.kind);
+      if (b.kind === "menu") return drawMenu(box, b);
+      const input = drawChat(box, b);
+      setTimeout(() => input.isConnected && input.focus(), 50);
+      return;
+    }
     box.append(el("p", { className: "text", textContent: b.text }));
     if (b.reminder) {
       const { id, title, line } = b.reminder;
@@ -471,6 +672,18 @@
     const seen = hides;
     if (!root?.isConnected) await loadPos();
     if (seen !== hides || !ensureRoot(assets)) return;
+    // The same chat, changed (a message, a lookup line): redrawn in place, draft and focus kept.
+    if (v.update && current?.bubble?.kind === "chat" && v.bubble?.kind === "chat" && dock().classList.contains("in")) {
+      const old = root.querySelector(".bubble input");
+      const draft = old?.value ?? "";
+      const focused = old && root.activeElement === old;
+      current = v;
+      if (v.pose !== pose) setPose(v.pose);
+      drawBubble(v.bubble);
+      const input = root.querySelector(".bubble input");
+      if (input) ((input.value = draft), focused && input.focus());
+      return;
+    }
     // Quiet presence never interrupts a word on screen; after a hop it is what Tuck settles to.
     if (v.quiet) resting = v.pose;
     if (v.quiet && current?.settle) return void (current.settle = v.pose);
