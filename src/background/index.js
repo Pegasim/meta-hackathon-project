@@ -1939,7 +1939,6 @@ async function chatPlan(tabId, intent) {
   const plan = (await hasNotes())
     ? await writePlan(intent, { onStep: (e) => live(trailLine(e)) }).catch(() => null)
     : null;
-  nextAhead(intent);
   const t = threads.get(tabId);
   if (!t) return;
   // No plan: the planning line goes; the chat stays on what Tuck last said.
