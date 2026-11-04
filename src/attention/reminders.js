@@ -173,3 +173,10 @@ export async function noteAnswer(memory, row, choice, today) {
   if (!(await memory.brainState()).connected) return null;
   return memory.add(doneEntry(row, today));
 }
+
+// Parked thoughts (#59): what the person noted with Tuck's shortcut, to look at later.
+// parked: [{ id, text, at }] from chrome.storage.local, oldest first. Each is named once,
+// at a break's end or a finished goal, then leaves the list (it stays in memory as a todo).
+export const park = (parked = [], { id, text }, at) => [...parked, { id, text, at }];
+export const nextParked = (parked = []) => parked[0] ?? null;
+export const unpark = (parked = [], id) => parked.filter((p) => p.id !== id);

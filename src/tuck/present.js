@@ -66,7 +66,7 @@ export function stuckWanted(ask, { live, intentId, tabId }) {
 }
 
 // input: {trigger, loops} for an engine trigger, or {event, intent, agent} for
-// "goal_set" | "goal_done" | "resolved" | "back" | "presence" | "break" | "card" | "away". Returns null when
+// "goal_set" | "goal_done" | "summon" | "parked" | "resolved" | "back" | "presence" | "break" | "card" | "away". Returns null when
 // Tuck stays away. Poses follow the spec's pose table (2026-11-04-tuck-v1-skins-design.md).
 export function present({ trigger, loops = [], event, intent, agent }) {
   if (trigger) {
@@ -149,6 +149,19 @@ export function present({ trigger, loops = [], event, intent, agent }) {
         pose: "hello",
         bubble: { kind: "note", text: "Okay. Click the toolbar icon to bring me back." },
         leaveAfterMs: 2500,
+      };
+    case "summon":
+      // The keyboard shortcut (#59): with a goal, a field to park a thought for later
+      // (and a way to change the goal); without one, the goal form.
+      return intent
+        ? { pose: "hello", bubble: { kind: "park", text: "Park it for later" } }
+        : { pose: "hello", bubble: goalForm("What are we working on?") };
+    case "parked":
+      return {
+        pose: "happy",
+        settle: resting,
+        bubble: { kind: "note", text: "Parked. I'll bring it up later." },
+        closeBubbleAfterMs: 2000,
       };
     case "goal_done":
       return { pose: "hello", bubble: goalForm("Nice work. What's next?") };

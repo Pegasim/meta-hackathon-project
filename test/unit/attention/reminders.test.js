@@ -12,6 +12,9 @@ import {
   markAll,
   splitRow,
   splitTasks,
+  park,
+  nextParked,
+  unpark,
 } from "../../../src/attention/reminders.js";
 import { doneEntry, noteAnswer } from "../../../src/attention/reminders.js";
 import { laterOnTopic } from "../../../src/agent/tasks.js";
@@ -406,4 +409,13 @@ test("the task node reads the Done note as a later note on each of the row's ent
       `later notes for "${entry.title}" include the Done note`,
     );
   }
+});
+
+test("a parked thought is named oldest first, once: named, it leaves the list (#59)", () => {
+  const parked = park(park([], { id: "a", text: "Check the bank app" }, 1), { id: "b", text: "Reply to Ali" }, 2);
+  assert.deepEqual(nextParked(parked), { id: "a", text: "Check the bank app", at: 1 });
+  const after = unpark(parked, "a");
+  assert.equal(nextParked(after).id, "b");
+  assert.equal(nextParked(unpark(after, "b")), null);
+  assert.equal(nextParked(), null);
 });

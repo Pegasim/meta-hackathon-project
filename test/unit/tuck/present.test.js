@@ -330,3 +330,20 @@ test("asked while tucked away, the wait and the step both say so, so Tuck leaves
   assert.equal(v.away, true);
   assert.equal(v.stuck, "a1");
 });
+
+test("the shortcut (#59): the park field with a goal running, the goal form without", () => {
+  const withGoal = present({ event: "summon", intent: { title: "Fix the bug" } });
+  assert.equal(withGoal.bubble.kind, "park");
+  assert.equal(withGoal.bubble.text, "Park it for later");
+  const without = present({ event: "summon", intent: null });
+  assert.equal(without.bubble.kind, "goal");
+  assert.equal(without.pose, "hello");
+});
+
+test("a parked thought gets a short note that closes by itself, in Tuck's voice", () => {
+  const v = present({ event: "parked" });
+  assert.equal(v.bubble.kind, "note");
+  assert.ok(v.closeBubbleAfterMs > 0);
+  assert.equal(v.settle, "rest");
+  assert.ok(followsVoice(v.bubble.text), v.bubble.text);
+});

@@ -129,6 +129,9 @@ export function reminderLine(when) {
     : `Due ${when}. Still on your list?`;
 }
 
+// A thought parked with the shortcut (#59), named at the next natural moment.
+export const PARKED_LINE = "You parked this for later. Still on your list?";
+
 const EMOJI = /\p{Extended_Pictographic}/u;
 const SECONDS = /\b\d+\s*(s|sec|secs|seconds?)\b/i;
 export const MAX_WORDS = 12;

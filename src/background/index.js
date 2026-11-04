@@ -29,6 +29,9 @@ import {
   splitRow,
   taskList,
   noteAnswer,
+  park,
+  nextParked,
+  unpark,
 } from "../attention/reminders.js";
 import { ENDS_DETOUR, initialState, step, nextWakeAt } from "../attention/engine.js";
 import { makeIntent, isExpired, dayKey } from "../attention/intents.js";
@@ -44,7 +47,7 @@ import { recentRuns } from "../agent/loop.js";
 import { noteOf } from "../agent/notes.js";
 import { githubLookup, closedRefs } from "../agent/github.js";
 import { dueLabel, localDate } from "../memory/due.js";
-import { siteName, reminderLine, templateGreeting, toolKind, whenSaid } from "../tuck/voice.js";
+import { siteName, reminderLine, templateGreeting, toolKind, whenSaid, PARKED_LINE } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
 import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
 import { present, comesWhileAway, stuckView, stuckWanted } from "../tuck/present.js";
@@ -54,7 +57,7 @@ const memory = Memory.open();
 const store = openStore();
 const enqueue = createSerialQueue();
 const OWN_PAGES = chrome.runtime.getURL("");
-const BADGE = { loud: ["!", "#dc2626"], look: ["·", "#64748b"] };
+const BADGE = { loud: ["!", "#dc2626"], look: ["·", "#64748b"], away: ["zz", "#94a3b8"] };
 
 const todayLabel = (d = new Date()) => `${d.toLocaleDateString("en-US", { weekday: "long" })} ${localDate(d)}`;
 
@@ -645,7 +648,9 @@ async function judgeExcerpt(need, from) {
 
 // ---- Interventions -------------------------------------------------------
 
+// With no word to mark, a Tuck tucked away shows "zz" (#87).
 async function setBadge(kind) {
+  kind ??= (await isAway()) ? "away" : null;
   const [text, color] = kind ? BADGE[kind] : ["", "#64748b"];
   await chrome.action.setBadgeText({ text });
   await chrome.action.setBadgeBackgroundColor({ color });
@@ -678,7 +683,8 @@ async function showTrigger(t, s) {
   if (t.kind === "session_start") return greet(s.current?.tabId);
   const view = present({ trigger: shown });
   // A return or a break's end is a natural moment; a drift is not.
-  if (t.kind === "return" || t.kind === "break_over") return showWithReminder(s.current?.tabId, view, s.intent?.title);
+  if (t.kind === "return" || t.kind === "break_over")
+    return showWithReminder(s.current?.tabId, view, s.intent?.title, { parked: t.kind === "break_over" });
   const drawn = await showTuck(s.current?.tabId, view);
   if (t.kind === "agent" && !drawn) await chrome.storage.session.set({ agentWordToSay: view });
 }
@@ -694,11 +700,19 @@ async function sayHeldAgentWord(tabId, s) {
 }
 
 // Shows Tuck with the most urgent thing worth a word, if any. It counts as said only
-// once it is on screen. Returns whether Tuck was shown.
-async function showWithReminder(tabId, view, goalTitle) {
+// once it is on screen. Returns whether Tuck was shown. With parked (a break's end, a
+// finished goal), a thought parked with the shortcut comes first, and only once (#59).
+async function showWithReminder(tabId, view, goalTitle, { parked = false } = {}) {
   const today = localDate();
   const { mode } = await loadEngine();
   const quiet = mode === "dnd" || mode === "off";
+  const thought = parked && view?.bubble && !quiet ? nextParked(await loadParked()) : null;
+  if (thought) {
+    const reminder = { id: thought.id, title: thought.text, line: PARKED_LINE };
+    const shown = await showTuck(tabId, { ...view, bubble: { ...view.bubble, reminder } });
+    if (shown) await saveParked(unpark(await loadParked(), thought.id));
+    return shown;
+  }
   const item =
     view?.bubble && !quiet ? pickReminder(await toDo(today), { goalTitle, loops: await loadLoops(), today }) : null;
   if (!item) return showTuck(tabId, view);
@@ -733,6 +747,45 @@ async function reminderAnswer({ id, title, choice }, sender) {
   // Off the list now: a page judged as that commitment is judged again.
   if (choice === "done" || choice === "not_task") await memoryChanged();
   if (choice === "switch") return setIntent({ title, from: "tuck", fromLoopId: id }, sender);
+  return { ok: true };
+}
+
+// ---- The shortcut (#59) ---------------------------------------------------
+
+const loadParked = async () => (await chrome.storage.local.get({ parked: [] })).parked;
+const saveParked = (parked) => chrome.storage.local.set({ parked });
+
+// The keyboard shortcut (manifest commands, changeable at chrome://extensions/shortcuts):
+// Tuck on the page in front, the park field with a goal running, the goal form without.
+// Where Tuck cannot draw (chrome:// pages, the Web Store, the PDF viewer), the popup.
+async function command(name, tab) {
+  if (name !== "open-tuck") return;
+  const tabId = tab?.id ?? (await activeTab())?.id;
+  const view = present({ event: "summon", intent: await (await store).activeIntent() });
+  if (!(await showTuck(tabId, view))) await chrome.action.openPopup().catch(() => {});
+}
+chrome.commands.onCommand.addListener(command);
+globalThis.tuckCommand = command; // the browser test presses the shortcut through this
+
+// A thought parked for later: a todo in memory in the person's own words, named once at
+// the next break's end or finished goal. No model call.
+async function parkThought({ text }, sender) {
+  const title = String(text ?? "")
+    .trim()
+    .slice(0, 120);
+  if (title.length < 3) return { ok: false };
+  const m = await memory;
+  const entry = await m.add({
+    kind: "todo",
+    topic: "parked",
+    title,
+    context: "Parked from Tuck to look at later.",
+    result: title,
+    next: title, // an open loop: on the to-do list until it is done
+  });
+  await saveParked(park(await loadParked(), { id: entry.id, text: title }, Date.now()));
+  await log({ type: "feedback", ts: Date.now(), kind: "parked", payload: { id: entry.id } });
+  await showTuck(sender?.tab?.id, present({ event: "parked", agent: (await loadEngine()).agent?.status }));
   return { ok: true };
 }
 
@@ -952,6 +1005,21 @@ async function noGoalView(s) {
 }
 
 const pageChanged = (prev, s) => prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
+
+// The toolbar icon says Tuck is tucked away: "zz" and its tooltip (#87). A word's badge
+// ("!" or "·") stays until the word is answered; setBadge puts "zz" back then.
+async function awayMarked() {
+  const away = await isAway();
+  const name = chrome.runtime.getManifest().name;
+  await chrome.action.setTitle({ title: away ? `${name}: tucked away. Click to bring Tuck back.` : name });
+  const text = await chrome.action.getBadgeText({});
+  if (text === "" || text === BADGE.away[0]) await setBadge(null);
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.tuckAway) awayMarked();
+});
+chrome.runtime.onStartup.addListener(awayMarked);
+chrome.runtime.onInstalled.addListener(awayMarked);
 
 // Back from tucked away (Bring Tuck back in the popup): Tuck is on the page in front at
 // once, as presence would draw it there.
@@ -1598,7 +1666,10 @@ async function completeIntent() {
     // Tuck asks what's next, on the page in front, in the agent's words when they are ready,
     // unless it is tucked away.
     if (await isAway()) await hideTuck();
-    else await showWithReminder((await loadEngine()).current?.tabId, await goalDoneView(intent), intent.title);
+    else
+      await showWithReminder((await loadEngine()).current?.tabId, await goalDoneView(intent), intent.title, {
+        parked: true,
+      });
     return intent;
   });
 }
@@ -1672,6 +1743,7 @@ const HANDLERS = {
       if (from != null) await showTuck(from, present({ event: "away" }));
     });
   },
+  park: parkThought,
   "goal-form-closed": () => chrome.storage.session.set({ goalFormClosedAt: Date.now() }),
   "tuck-change": async (_msg, sender) => showTuck(sender?.tab?.id, present({ event: "card", intent: null })),
   maintain,
