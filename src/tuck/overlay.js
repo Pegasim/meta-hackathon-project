@@ -25,6 +25,8 @@
   let pose = "rest";
   let resting = "rest"; // the pose with nothing to say (the last quiet view's): rest, work or sleep
   let timers = [];
+  let hides = 0; // tuck-hide messages seen: a show that waited past one is stale
+  let enterFrame = null; // the slide-in waiting for the next frame; a hide before it cancels it
 
   // Removed, disabled or reloaded, the extension leaves this script in the page with no
   // runtime behind it, and its host in the DOM. Nothing tells the page, so look.
@@ -32,6 +34,7 @@
   const orphanCheck = setInterval(() => orphaned() && leavePage(), ORPHAN_CHECK_MS);
   function leavePage() {
     clearInterval(orphanCheck);
+    cancelAnimationFrame(enterFrame);
     timers.forEach(clearTimeout);
     timers = [];
     window.removeEventListener("resize", place);
@@ -54,10 +57,12 @@
             opacity: 0; transform: scale(.6); transition: opacity .35s ease, transform .45s cubic-bezier(.2,.8,.2,1);
             pointer-events: none; }
     .dock.in { opacity: 1; transform: none; }
+    @media (prefers-reduced-motion: reduce) { .dock { transition: none; } }
     .avatar { all: unset; cursor: grab; pointer-events: auto; border-radius: 16px; touch-action: none; display: block; }
     .avatar.dragging { cursor: grabbing; }
-    .avatar:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 2px; }
-    .tuck { --tuck-accent: var(--tk-accent); width: var(--tk-w); height: var(--tk-h); filter: drop-shadow(0 2px 6px rgba(0,0,0,.18)); }
+    .avatar:focus-visible { outline: 2px solid var(--tk-ink); outline-offset: 2px; }
+    .tuck { --tuck-accent: var(--tk-accent); width: var(--tk-w); height: var(--tk-h);
+            filter: drop-shadow(0 0 .6px var(--tk-rim)) drop-shadow(0 2px 6px rgba(0,0,0,.18)); }
     .bubble { pointer-events: auto; position: absolute; width: 260px; background: var(--tk-surface); color: var(--tk-ink);
               border: 1px solid var(--tk-outline); border-radius: 16px; padding: 12px 14px; font-weight: 400;
               box-shadow: 0 8px 24px rgba(0,0,0,.14); }
@@ -79,15 +84,15 @@
                font-size: 13px; color: var(--tk-ink); background: var(--tk-surface); }
     button.b.primary { background: var(--tk-accent); border-color: var(--tk-accent); font-weight: 600; color: var(--tk-on-accent); }
     button.b:hover { border-color: var(--tk-accent); }
-    button.b:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
+    button.b:focus-visible { outline: 2px solid var(--tk-ink); outline-offset: 1px; }
     .close { all: unset; cursor: pointer; position: absolute; top: 6px; right: 10px; color: var(--tk-muted); font-size: 16px; }
     .close:hover { color: var(--tk-ink); }
-    .close:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; border-radius: 4px; }
+    .close:focus-visible { outline: 2px solid var(--tk-ink); outline-offset: 1px; border-radius: 4px; }
     form { display: grid; gap: 6px; margin: 0; }
     input { all: unset; border: 1px solid var(--tk-outline); border-radius: 8px; padding: 6px 8px; font-size: 13px;
             background: var(--tk-surface); color: var(--tk-ink); }
     input:focus { border-color: var(--tk-accent); }
-    input:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
+    input:focus-visible { outline: 2px solid var(--tk-ink); outline-offset: 1px; }
     .pick { margin-bottom: 8px; display: grid; gap: 6px; }`;
 
   function el(tag, props = {}, ...children) {
@@ -156,7 +161,9 @@
     // A drag ends with a click event too; only a real click counts.
     avatar.addEventListener("click", (e) => {
       if (dragged) return ((dragged = false), e.preventDefault());
-      if (current?.bubble) closeBubble();
+      // A nudge is answered, as × answers it (Tuck tucked away then leaves with it).
+      if (current?.bubble?.kind === "nudge") send({ type: "respond", choice: "dismiss" });
+      else if (current?.bubble) closeBubble();
       else send({ type: "tuck-click" });
     });
   }
@@ -228,6 +235,7 @@
   }
 
   function leave() {
+    cancelAnimationFrame(enterFrame); // a show still waiting for its frame must not bring Tuck back
     dock().classList.remove("in");
     current = null;
   }
@@ -332,8 +340,9 @@
   }
 
   async function show(v, assets) {
+    const seen = hides;
     if (!root?.isConnected) await loadPos();
-    if (!ensureRoot(assets)) return;
+    if (seen !== hides || !ensureRoot(assets)) return;
     // Quiet presence never interrupts a word on screen; after a hop it is what Tuck settles to.
     if (v.quiet) resting = v.pose;
     if (v.quiet && current?.settle) return void (current.settle = v.pose);
@@ -341,6 +350,7 @@
     timers.forEach(clearTimeout);
     timers = [];
     current = v;
+    if (v.settle) resting = v.settle; // what Tuck rests as once the word closes
     place();
     setPose(v.pose);
     drawBubble(v.bubble);
@@ -349,7 +359,13 @@
       dock().style.transition = "none";
       dock().classList.add("in");
       requestAnimationFrame(() => (dock().style.transition = ""));
-    } else requestAnimationFrame(() => dock().classList.add("in"));
+    } else {
+      cancelAnimationFrame(enterFrame);
+      enterFrame = requestAnimationFrame(() => {
+        enterFrame = null;
+        dock().classList.add("in");
+      });
+    }
     if (v.settle)
       later(1400, () => {
         if (!current?.settle) return; // gone meanwhile
@@ -362,7 +378,7 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "tuck-show") show(msg.view, msg.assets);
     else if (msg?.type === "tuck-look" && root?.isConnected) (ensureRoot(msg.assets), setPose(pose));
-    else if (msg?.type === "tuck-hide" && root) leave();
+    else if (msg?.type === "tuck-hide") (hides++, root && leave());
     else if (msg?.type === "tuck-rest" && root && current)
       (drawBubble(null), setPose(resting), (current.bubble = null));
   });

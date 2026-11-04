@@ -6,6 +6,12 @@
 
 ## Decided
 
+**A Chrome restart is not a new day: the day's greeting comes once (2026-11-04, Tuck v1 skins).**
+The engine lives in session storage, which a restart wipes, so `sessionDay` went back to null and the first page with no goal greeted again: after a restart, a Done brought "Hi. What are we working on today?" back, and the greeting also undid Tuck away. `sessionDay` is now kept in local storage too and given back with the mode and the goal.
+
+**Tuck's focus ring is in the ink colour, not the accent (2026-11-04, Tuck v1 skins).**
+The skins spec asked for an accent focus ring on the bubble's buttons, inputs, × and Tuck itself. The v1 accent is mint (#94BFAE), and mint on the cream surface is about 1.9:1, below DESIGN.md's 3:1 floor for focus rings, so a keyboard user could lose their place. The ring uses `--tk-ink` instead, which every skin's theme has and which clears the floor on its own surface; the accent stays as the primary button's fill.
+
 **A page for another of the person's commitments is not drift, and the log says what each call was sent, as counts (2026-11-03, issue #8).**
 Time on the tax form while the goal is the avatar is not a distraction to talk someone back from, and calling it unrelated is the false warning INTENT counts against Tuck. So `other_commitment` is a label of its own: it holds the drift budget like neutral, gets no word, and is never a page to go back to. The model can only find it when it knows the other commitments, so the to-do list's first 5 open titles go in the prompt, redacted, to a model that does not train on them; with an empty list the rule and the list stay out and the prompt is unchanged. Each model call's log record now has `sent`: how many examples, notes and commitments it got, and whether a profile and a conversation heading went with it. The texts stay out, as the excerpt and the model's reason already did, because the log is exported and recordings of it are committed. Measured on a 15-minute recording (`test/fixtures/2026-11-03-avatar`): no warning in 13 minutes of work, both drifts caught, 46 s and 42 s into them; `npm run eval` 98.0% accurate, false "unrelated" 5.0% (one of three runs of `shop-gh-pr`).
 

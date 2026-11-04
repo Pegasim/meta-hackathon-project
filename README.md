@@ -15,7 +15,7 @@ src/                 the extension — "Load unpacked" points here
   agent/             LLM nodes, structured output: relevance.js (LLM#1), nudge.js (LLM#4), profile.js (LLM#5), tasks.js (LLM#6)
   memory/            Safa's memory: entries, recall, context pack, brain folder (see src/memory/README.md)
   tuck/              Tuck on the page: overlay, bubble layout, what to show, voice
-    assets/          Tuck's artwork and motion (SVG + CSS, five states)
+    skins/           Tuck's skins: artwork, motion and theme each (SVG + CSS + skin.json)
   popup/  options/   the toolbar popup and the settings page
   shared/            ui.css and the default skin's toolbar icons (every skin has its own)
 test/

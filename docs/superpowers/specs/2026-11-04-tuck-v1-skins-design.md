@@ -214,7 +214,7 @@ Restyled to belong to the character, using only the theme variables:
   else 13 regular (Claude's call).
 - Buttons: the primary answer filled `--tk-accent` with `--tk-on-accent` text; the
   others outlined in `--tk-outline`, hover to the accent border; visible focus ring in
-  the accent. The × stays, top right.
+  the ink colour (3:1 floor, DESIGN.md). The × stays, top right.
 - Content and words do not change (`present.js` decides them, `voice.js` stays).
 - The popup header and the popup's colours use the same variables, so the popup matches
   the chosen skin.

@@ -95,8 +95,9 @@ const loadEngine = async () => (await chrome.storage.session.get("engine")).engi
 async function engineState(cfg, ts) {
   const { engine } = await chrome.storage.session.get("engine");
   if (engine) return engine;
-  let s = initialState();
-  const { mode } = await chrome.storage.local.get("mode");
+  // The day's greeting too: a restart is not a new day.
+  const { mode, sessionDay = null } = await chrome.storage.local.get(["mode", "sessionDay"]);
+  let s = { ...initialState(), sessionDay };
   if (mode && mode !== "focus")
     s = (await apply(s, { type: "session", ts, kind: "mode", payload: { mode } }, cfg)).state;
   const st = await store;
@@ -146,7 +147,11 @@ async function apply(s, input, cfg) {
   if (input.type === "agent") await chrome.storage.session.remove("agentWordToSay"); // old news now
   const r = step(s, input, cfg);
   await saveEngine(r.state);
+  if (r.state.sessionDay !== s.sessionDay) await chrome.storage.local.set({ sessionDay: r.state.sessionDay });
   await log(input); // ticks too: replay tells sleep from a long stay by them
+  // Tucked away, a page switched to lets go of a Tuck left there; a word drawn below comes back.
+  if (input.type === "context" && pageChanged(s, r.state) && (await isAway()))
+    await chrome.tabs.sendMessage(input.tabId, { type: "tuck-hide" }).catch(() => {});
   for (const o of r.out) {
     if (o.type === "need_relevance") askRelevance(o);
     else if (o.type === "read_ahead") readAhead(o);
@@ -789,10 +794,23 @@ function restingView(s) {
   return present({ event: "presence", agent: s.agent?.status });
 }
 
+const pageChanged = (prev, s) => prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
+
+// Back from tucked away (the popup switch): Tuck is on the page in front at once, as presence
+// would draw it there.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || changes.tuckAway?.newValue !== false || changes.tuckAway.oldValue !== true) return;
+  enqueue(async () => {
+    const s = await loadEngine();
+    const view = restingView(s);
+    if (view && s.current?.url) await showTuck(s.current.tabId, view);
+  });
+});
+
 // While there is a goal, Tuck is on every page (not paused or off), asleep on a break.
 async function presence(prev, s, input) {
   if (!s.current?.url || (await isAway())) return;
-  const changed = prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
+  const changed = pageChanged(prev, s);
   const view = restingView(s);
   // A reload keeps the tab and URL but wipes Tuck from the page: it comes back at once,
   // where it was. A page that cannot be scripted answers null, not false.
@@ -1119,10 +1137,18 @@ const HANDLERS = {
   "export-log": async () => (await store).exportLog(),
   "import-log": async ({ log }) => (await store).importLog(log),
   "record-active": () => sense(activeTab),
-  // Clicking Tuck with no nudge: the goal card (or the goal form when there is none).
+  // Clicking Tuck with no nudge: the goal card (or the goal form when there is none). A
+  // Tuck still on a page while tucked away just leaves.
   "tuck-click": async (_msg, sender) =>
-    showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
-  "tuck-away": async () => (await chrome.storage.local.set({ tuckAway: true }), hideTuck()),
+    (await isAway())
+      ? chrome.tabs.sendMessage(sender?.tab?.id, { type: "tuck-hide" }).catch(() => {})
+      : showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
+  // Every tab lets Tuck go, not just the one in front.
+  "tuck-away": async () => {
+    await chrome.storage.local.set({ tuckAway: true });
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, { type: "tuck-hide" }).catch(() => {})));
+  },
   "tuck-change": async (_msg, sender) => showTuck(sender?.tab?.id, present({ event: "card", intent: null })),
   maintain,
   // The brain, then every other connected folder (read only); none of them asks for
