@@ -62,7 +62,7 @@ await memory.consolidate();                     // { accepted, duplicates, rejec
 await memory.recall("query", { limit });        // [{ ref, title, score, item }]
 await memory.openLoops();                       // entries with a next action
 await memory.latestIntent();                    // newest todo
-await memory.taskQueue({ today, limit, staleAfter }); // open loops by time left; each has due and daysLeft
+await memory.taskQueue({ today, limit, staleAfter, distilledFor }); // open loops by time left; each has due, daysLeft and writer
 await memory.profileSample({ limit });         // newest entries as { topic, title, next }, for the profile call
 await memory.profile();                        // { summary, topics, workHosts }, or null before the first read
 await memory.setProfile(profile);              // stored in IndexedDB meta
@@ -140,6 +140,8 @@ One format for everything. An entry is the second-brain record (`Date · Context
 - Dates in plain words ("closes today") are not parsed.
 
 **Task queue.** `taskQueue()` orders open loops by time left, as plain arithmetic with no model call: dated loops soonest first, then undated ones newest first, then loops whose deadline passed more than `staleAfter` days ago (14 by default), because nothing marks a loop done and an old note would otherwise sit at the top forever. Days are counted on the user's local date, not UTC (`localDate()`).
+
+**Who wrote a loop.** Each loop carries `writer` (`writtenBy()`): `own` for the person's (a Markdown folder, a goal set in the extension, a paste, an export, `brain add` run by hand, which writes `source: manual`), `agent` for a coding agent's session note in a brain (any other `source`, such as `claude-code`), and `distilled` for a distill job's (`source` naming `distill`, such as the brain's nightly `brain-distill`). Within one deadline, and among the undated, own loops come first, then an agent's, then distilled ones. A distilled loop older than `distilledFor` days (14 by default) is left out, unless its deadline is still live: the distill job restates work that comes up again, so an old one is the state of a finished session (#76).
 
 **Ids.** An entry read from `notes/log/` keeps the `id` in its file. Every other entry gets `entryId()`: a hash of its date, topic and title plus its title, context, result, evidence and next. The same entry gets the same id on every import, and editing any of those fields gives it a new one. Whether an inbox entry keeps its id once the brain's own `consolidate` has filed it is not verified.
 
