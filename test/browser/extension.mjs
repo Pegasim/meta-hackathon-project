@@ -1158,6 +1158,45 @@ async function settledDockCount(page, wait = 1500) {
   await page.waitForTimeout(wait);
   return dockCount(page);
 }
+// #87: Tuck away takes its turn with the words being drawn. A word already on its way (its
+// job past the away check, held here at Chrome's executeScript, a fake at the boundary) is
+// drawn and then hidden, not drawn after the hide.
+await worker.evaluate(() => {
+  const run = chrome.scripting.executeScript.bind(chrome.scripting);
+  globalThis.__runScript = run;
+  globalThis.__held = new Promise((r) => (globalThis.__release = r));
+  globalThis.__holding = false;
+  chrome.scripting.executeScript = async (details) => {
+    const tab = await chrome.tabs.get(details.target.tabId).catch(() => null);
+    if (!globalThis.__holding && /\/notes$/.test(tab?.url ?? "")) {
+      globalThis.__holding = true;
+      await globalThis.__held;
+    }
+    return run(details);
+  };
+});
+const raceTab = await ctx.newPage();
+await raceTab.goto(`http://localhost:${port}/notes`);
+await raceTab.bringToFront();
+// Not waited for: its reply comes once the held word is drawn.
+await popup.evaluate(() => void chrome.runtime.sendMessage({ type: "record-active" }));
+const awayRace = { held: false };
+for (let i = 0; i < 50 && !awayRace.held; i++) {
+  if (i) await raceTab.waitForTimeout(100);
+  awayRace.held = await worker.evaluate(() => globalThis.__holding);
+}
+// The popup's Tuck away meanwhile: its reply, or a second without one (it waits its turn).
+await popup.evaluate(() =>
+  Promise.race([chrome.runtime.sendMessage({ type: "tuck-away" }), new Promise((r) => setTimeout(r, 1000))]),
+);
+await worker.evaluate(() => {
+  chrome.scripting.executeScript = globalThis.__runScript;
+  globalThis.__release();
+});
+awayRace.drawn = await settledDockCount(raceTab, 1500);
+awayRace.flag = await tuckAwayNow();
+await raceTab.close();
+await popup.evaluate(() => chrome.storage.local.set({ tuckAway: false }));
 // An older tab with Tuck drawn on it, from before Tuck was tucked away.
 const awayOlder = await ctx.newPage();
 await awayOlder.goto(repo);
@@ -2267,6 +2306,7 @@ assert.deepEqual(
   },
   "Tuck away",
 );
+assert.deepEqual(awayRace, { held: true, drawn: 0, flag: true }, "Tuck away waits for a word on its way");
 for (const t of ["context", "relevance", "llm", "state", "trigger", "response", "feedback", "session"])
   assert.ok(types.has(t), `log has ${t}: ${[...types]}`);
 assert.ok(!log.events.some((e) => String(e.url ?? "").startsWith("chrome-extension:")), "no extension URLs in the log");
