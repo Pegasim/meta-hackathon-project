@@ -36,6 +36,12 @@
       "48": "shared/icons/icon-48.png"
     }
   },
+  "commands": {
+    "open-tuck": {
+      "suggested_key": { "default": "Alt+Shift+K", "mac": "MacCtrl+T" },
+      "description": "Open Tuck here: set a goal, or park a thought for later"
+    }
+  },
   "options_page": "options/options.html",
   "icons": {
     "16": "shared/icons/icon-16.png",

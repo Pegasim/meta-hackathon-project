@@ -244,3 +244,20 @@ test("the goal card carries the plan from the person's notes, when there is one 
   assert.equal(v.bubble.watchOut, "The video is at most 3 minutes");
   assert.equal(v.bubble.next, "Write the demo script");
 });
+
+test("the shortcut (#59): the park field with a goal running, the goal form without", () => {
+  const withGoal = present({ event: "summon", intent: { title: "Fix the bug" } });
+  assert.equal(withGoal.bubble.kind, "park");
+  assert.equal(withGoal.bubble.text, "Park it for later");
+  const without = present({ event: "summon", intent: null });
+  assert.equal(without.bubble.kind, "goal");
+  assert.equal(without.pose, "hello");
+});
+
+test("a parked thought gets a short note that closes by itself, in Tuck's voice", () => {
+  const v = present({ event: "parked" });
+  assert.equal(v.bubble.kind, "note");
+  assert.ok(v.closeBubbleAfterMs > 0);
+  assert.equal(v.settle, "rest");
+  assert.ok(followsVoice(v.bubble.text), v.bubble.text);
+});

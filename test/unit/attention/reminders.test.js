@@ -12,6 +12,9 @@ import {
   markAll,
   splitRow,
   splitTasks,
+  park,
+  nextParked,
+  unpark,
 } from "../../../src/attention/reminders.js";
 
 const today = "2026-11-02";
@@ -205,4 +208,13 @@ test("Today holds at most 5 rows; what does not fit stays in the list, not lost"
     rest.map((e) => e.id),
     ["e", "f"],
   );
+});
+
+test("a parked thought is named oldest first, once: named, it leaves the list (#59)", () => {
+  const parked = park(park([], { id: "a", text: "Check the bank app" }, 1), { id: "b", text: "Reply to Ali" }, 2);
+  assert.deepEqual(nextParked(parked), { id: "a", text: "Check the bank app", at: 1 });
+  const after = unpark(parked, "a");
+  assert.equal(nextParked(after).id, "b");
+  assert.equal(nextParked(unpark(after, "b")), null);
+  assert.equal(nextParked(), null);
 });

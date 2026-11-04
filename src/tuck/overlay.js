@@ -262,6 +262,8 @@
     const bubble = el("div", { className: "bubble", hidden: true, role: "status", ariaLive: "polite" });
     // Site shortcuts (YouTube's k, Gmail's c) must not fire while typing to Tuck.
     for (const type of ["keydown", "keyup", "keypress"]) bubble.addEventListener(type, (e) => e.stopPropagation());
+    // Esc closes the bubble as × does (#59).
+    bubble.addEventListener("keydown", (e) => e.key === "Escape" && bubble.querySelector(".close")?.click());
     shadow.append(el("style"), el("div", { className: "dock" }, avatar, bubble));
     document.documentElement.append(host);
     root = shadow;
@@ -410,7 +412,34 @@
       box.append(form);
       setTimeout(() => goal.focus(), 300);
     }
-    if (b.dismissable || b.kind === "goal" || b.kind === "card")
+    if (b.kind === "park") {
+      // The shortcut with a goal running (#59): a thought noted for later, not opened now.
+      const thought = el("input", { name: "thought", placeholder: "What came up?", required: true, maxLength: 120 });
+      const form = el(
+        "form",
+        {},
+        thought,
+        el(
+          "div",
+          { className: "row" },
+          el("button", { className: "b primary park", type: "submit", textContent: "Park" }),
+          el("button", {
+            className: "b change",
+            type: "button",
+            textContent: "Change goal",
+            onclick: () => send({ type: "tuck-change" }),
+          }),
+        ),
+      );
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        const text = thought.value.trim();
+        if (text.length >= 3) send({ type: "park", text });
+      };
+      box.append(form);
+      setTimeout(() => thought.focus(), 300);
+    }
+    if (b.dismissable || b.kind === "goal" || b.kind === "card" || b.kind === "park")
       box.append(
         el("button", {
           className: "close",

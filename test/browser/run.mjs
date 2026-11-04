@@ -9,6 +9,7 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import assert from "node:assert/strict";
+import http from "node:http";
 
 const { chromium } = createRequire(import.meta.url)("playwright");
 const root = path.resolve(import.meta.dirname, "../../src"); // the extension
@@ -680,6 +681,71 @@ if (process.env.SCREENSHOT_DIR)
   await split.screenshot({ path: path.join(process.env.SCREENSHOT_DIR, "settings-tasks.png"), fullPage: true });
 await split.close();
 
+// The shortcut (#59): Chrome takes the suggested key, and the command handler opens the
+// goal form with no goal, the park field with one; a parked thought is kept; Esc closes;
+// where Tuck cannot draw, the fallback runs without an error.
+const commands = await page.evaluate(() => chrome.commands.getAll());
+const openTuck = commands.find((c) => c.name === "open-tuck");
+assert.ok(openTuck, "the open-tuck command is registered");
+assert.notEqual(openTuck.shortcut, "", `Chrome accepted the suggested key: ${JSON.stringify(openTuck)}`);
+if (process.platform === "darwin") assert.match(openTuck.shortcut, /T$/, `Control+T on macOS: ${openTuck.shortcut}`);
+const site = http.createServer((_req, res) =>
+  res.writeHead(200, { "Content-Type": "text/html" }).end("<title>Pricing page</title><p>Pricing page"),
+);
+await new Promise((r) => site.listen(0, "127.0.0.1", r));
+const workUrl = `http://127.0.0.1:${site.address().port}/work`;
+const work = await ctx.newPage();
+await work.goto(workUrl);
+await work.bringToFront();
+const sw = () => ctx.serviceWorkers()[0];
+const press = (url) =>
+  sw().evaluate(async (url) => {
+    const tab = (await chrome.tabs.query({})).find((t) => t.url === url);
+    await globalThis.tuckCommand("open-tuck", tab);
+  }, url);
+const bubbleInput = () =>
+  work.evaluate(() => {
+    const b = document.getElementById("tuck-companion")?.shadowRoot?.querySelector(".bubble");
+    return b && !b.hidden ? (b.querySelector("input")?.name ?? "") : null;
+  });
+const waitFor = async (want, what) => {
+  for (let i = 0; i < 50 && (await bubbleInput()) !== want; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await bubbleInput(), want, what);
+};
+await press(workUrl);
+await waitFor("goal", "no goal: the shortcut opens the goal form");
+await page.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the pricing page" }));
+await press(workUrl);
+await waitFor("thought", "a goal running: the shortcut opens the park field");
+await new Promise((r) => setTimeout(r, 400)); // the field takes focus after the bubble opens
+await work.keyboard.type("Check the bank app");
+await work.keyboard.press("Enter");
+let parked = [];
+for (let i = 0; i < 50 && !parked.length; i++) {
+  parked = await page.evaluate(async () => (await chrome.storage.local.get({ parked: [] })).parked);
+  if (!parked.length) await new Promise((r) => setTimeout(r, 100));
+}
+assert.deepEqual(
+  parked.map((p) => p.text),
+  ["Check the bank app"],
+  "the parked thought is kept to be named later",
+);
+const parkedTodo = await page.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const m = await Memory.open();
+  await m.consolidate(); // the inbox reaches the log, as maintain() does every 15 minutes
+  return (await m.openLoops()).some((e) => e.title === "Check the bank app");
+});
+assert.ok(parkedTodo, "and it is a todo in memory");
+await press(workUrl);
+await waitFor("thought", "the shortcut again");
+await new Promise((r) => setTimeout(r, 400));
+await work.keyboard.press("Escape");
+await waitFor(null, "Esc closes the bubble");
+const extTab = page.url();
+await press(extTab); // an extension page: Tuck cannot draw there, the popup is the fallback
+site.close();
+
 await ctx.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
@@ -836,4 +902,5 @@ assert.deepEqual(
 );
 assert.equal(otherMemory.size, 60);
 assert.equal(otherMemory.first, "Order a new queen", "the folder's checkbox leads the undated tasks (#82)");
+
 console.log("browser test: ok");
