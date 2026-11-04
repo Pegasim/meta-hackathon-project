@@ -28,7 +28,11 @@ async function render() {
     $("intent-title").textContent = intent.title;
     $("intent-next").textContent = intent.steps?.length ? `Next: ${intent.steps[0]}` : "";
   }
-  $("mode").value = engine.mode;
+  // One switch: Focus or Do not disturb. Gentle reads as Focus; Off is Settings' Pause Tuck.
+  const paused = engine.mode === "off";
+  $("focus-switch").checked = ["focus", "gentle"].includes(engine.mode);
+  $("focus-switch").disabled = paused;
+  $("focus-label").textContent = paused ? "Paused in Settings" : $("focus-switch").checked ? "Focus" : "Do not disturb";
   $("state-pill").textContent = STATE[engine.state] ?? engine.state;
   $("state-pill").className = `pill ${engine.state}`;
   const show =
@@ -79,6 +83,22 @@ async function renderSetup() {
     ? `Set up: ${missing.join(", ")} in <a href="#" id="setup-link">Settings</a>.`
     : "";
   $("setup-link")?.addEventListener("click", openSettings);
+  // First run: the key can go in right here, as in Tuck's setup bubble.
+  if (missing[0] === "add a model API key") {
+    const form = document.createElement("form");
+    form.className = "row";
+    form.style.marginTop = "8px";
+    form.innerHTML = `<input id="setup-key" type="password" placeholder="Paste your Meta API key" autocomplete="off"><button class="primary" type="submit">Save</button>`;
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const key = $("setup-key").value.trim();
+      if (key.length < 8) return;
+      const r = await send("save-key", { key });
+      if (r?.ok) renderSetup();
+      else (($("setup-key").value = ""), ($("setup-key").placeholder = "That key didn't work. Try again."));
+    };
+    $("setup").append(form);
+  }
 }
 
 function openSettings(e) {
@@ -139,8 +159,8 @@ $("start-step").onclick = async () => {
   render();
 };
 
-$("mode").onchange = async () => {
-  await send("set-mode", { mode: $("mode").value });
+$("focus-switch").onchange = async () => {
+  await send("set-mode", { mode: $("focus-switch").checked ? "focus" : "dnd" });
   render();
 };
 

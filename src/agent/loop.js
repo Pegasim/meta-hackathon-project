@@ -54,10 +54,17 @@ export async function runAgent(
     readRounds = READ_ROUNDS,
     now = Date.now,
     effort = "low",
+    onStep = () => {}, // each trail entry as it happens: the chat shows what Tuck looks at
   },
 ) {
   const started = now();
   const trail = [];
+  const step = (entry) => {
+    trail.push(entry);
+    try {
+      onStep(entry);
+    } catch {} // a page gone meanwhile must not stop the loop
+  };
   const schema = ([name, t]) => ({
     type: "function",
     function: { name, description: t.description, parameters: t.parameters },
@@ -109,19 +116,19 @@ export async function runAgent(
         if (!result && tool.finish) {
           try {
             const value = tool.finish(args, ctx);
-            trail.push({ tool: name, args: brief(args) });
+            step({ tool: name, args: brief(args) });
             return done({ value, source: "agent", tool: name });
           } catch (err) {
             result = { error: err.message ?? String(err) };
-            trail.push({ tool: name, args: brief(args), result: `rejected: ${result.error}` });
+            step({ tool: name, args: brief(args), result: `rejected: ${result.error}` });
           }
         } else if (!result) {
           try {
             result = await tool.run(args, ctx);
-            trail.push({ tool: name, args: brief(args), result: tool.summary?.(result) ?? "done" });
+            step({ tool: name, args: brief(args), result: tool.summary?.(result) ?? "done" });
           } catch (err) {
             result = { error: err.message ?? String(err) };
-            trail.push({ tool: name, args: brief(args), result: `error: ${result.error}` });
+            step({ tool: name, args: brief(args), result: `error: ${result.error}` });
           }
         }
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });

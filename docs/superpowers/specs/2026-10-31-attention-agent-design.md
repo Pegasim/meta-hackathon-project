@@ -264,6 +264,8 @@ Answers to the reviewer's questions, open to İrem's approval:
 
 ## 12. Addendum (2026-10-31): Tuck on the page
 
+> **Changed 2026-11-04:** clicking Tuck opens the icon row and the goal card, and every goal form is the chat. See `2026-11-04-tuck-dock-chat-design.md`.
+
 Superseded for the avatar, poses, presence on breaks and Tuck away by `2026-11-04-tuck-v1-skins-design.md`.
 
 Approved by İrem from a mockup. The avatar is **Tuck** (assets: `src/tuck/assets/`, from İrem's Tuck v2 paper motion kit): five states — resting, thinking, checkin, welcome, sleeping. Effect colour soft mint `#94BFAE`, body default lilac.

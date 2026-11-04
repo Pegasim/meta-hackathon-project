@@ -39,7 +39,32 @@ export function makeIntent(
     expiredAt: null,
     memoryEntryId,
     fromLoopId,
+    focusMs: 0, // time in Focus mode on this goal, paused in breaks and Do not disturb
+    focusSince: null, // when the running stretch began; null while paused
+    stepIndex: 0, // which plan step (#78) is the one on now
   };
+}
+
+// The goal card's "Focus 18m". active: Focus mode and not on a break. Plain time, no page
+// verdicts: a wrong verdict cannot bend it. Same object back when nothing flips.
+export function syncFocus(intent, active, now) {
+  const running = intent.focusSince != null;
+  if (active === running) return intent;
+  return active
+    ? { ...intent, focusSince: now }
+    : { ...intent, focusMs: (intent.focusMs ?? 0) + (now - intent.focusSince), focusSince: null };
+}
+
+export const focusMinutes = (intent, now) =>
+  Math.floor(((intent.focusMs ?? 0) + (intent.focusSince != null ? now - intent.focusSince : 0)) / 60000);
+
+// "Step done" on the card: the next plan step becomes the one on now. The last step, or a
+// goal with no plan, stays as it is.
+export function stepDone(intent) {
+  const steps = intent.plan?.steps ?? [];
+  const next = (intent.stepIndex ?? 0) + 1;
+  if (next >= steps.length) return intent;
+  return { ...intent, stepIndex: next, steps: [steps[next].step] };
 }
 
 export function isExpired(intent, nowTs, lastActiveTs, cfg, tzOffsetMin) {

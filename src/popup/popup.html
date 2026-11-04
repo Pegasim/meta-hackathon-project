@@ -9,7 +9,9 @@
   body { width: 360px; padding: 12px; }
   #trigger-text { font-weight: 600; }
   a { color: var(--text); }
-  #mode { width: auto; }
+  .switch { gap: 6px; cursor: pointer; margin: 0; color: var(--text); font-size: 13px; }
+  .switch input { width: 32px; height: 18px; margin: 0; accent-color: var(--accent); }
+  .switch input:disabled + span { color: var(--muted); }
   .brand { display: flex; align-items: center; gap: 8px; }
   #tuck-away { border: none; background: none; padding: 7px 4px; color: var(--muted); text-decoration: underline; }
   #tuck-away:hover { color: var(--text); }
@@ -72,12 +74,10 @@
   <section class="card">
     <div class="row between">
       <h2 style="margin:0">Now</h2>
-      <select id="mode" aria-label="Mode">
-        <option value="focus">Focus</option>
-        <option value="gentle">Gentle</option>
-        <option value="dnd">Do not disturb</option>
-        <option value="off">Off</option>
-      </select>
+      <label class="switch row" for="focus-switch">
+        <input type="checkbox" id="focus-switch" role="switch">
+        <span id="focus-label">Focus</span>
+      </label>
     </div>
     <p style="margin-top:8px"><span id="state-pill" class="pill">…</span></p>
     <div id="trigger" hidden style="margin-top:10px">

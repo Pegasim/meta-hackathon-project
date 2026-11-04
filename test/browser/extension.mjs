@@ -344,6 +344,12 @@ function agentReply(messages) {
       ...(rules && { watch_out: "Never show the API key on screen" }),
     });
   }
+  // The goal chat: the checkout bug is made concrete with a first step; anything else is kept.
+  if (/just told you what they want/.test(system)) {
+    if (!/checkout bug/.test(goal)) return call("keep_goal", { reply: "Okay. What will you do first?" });
+    if (!results.length) return call("recall_notes", { query: goal });
+    return call("propose_goal", { title: "Fix the checkout bug", step: "Write the failing checkout test" });
+  }
   if (/stuck on their goal/.test(system)) {
     if (!results.length) return call("goal");
     if (results.length === 1) return call("recent_activity");
@@ -516,16 +522,21 @@ await recipesTab.close();
 await repoTab.bringToFront();
 await tuck.locator("input[name=goal]").waitFor({ timeout: 8000 });
 await tuck.locator("input[name=goal]").fill("Fix the checkout bug");
-await tuck.locator("input[name=step]").fill("Write the failing test");
 await tuck.locator("button.start").click();
+// The goal chat (dock-chat design): Tuck proposes the goal with a first step from the notes.
+await tuck.locator(".bubble button", { hasText: "Set as goal" }).waitFor({ timeout: 8000 });
+// What Tuck looked up shows above its answer, from the search words, not the notes' text.
+const goalChatTrail = await tuck.locator(".bubble .c-trail").innerText();
+await tuck.locator(".bubble button", { hasText: "Set as goal" }).click();
 await tuck.locator(".bubble .text", { hasText: "Got it" }).waitFor();
+await tuck.locator(".bubble .close").click();
 // Tuck stays, resting; a click is a hello with the goal card.
 await repoTab.waitForTimeout(2500);
 const restState = await tuck.locator("svg.tuck").getAttribute("data-pose");
 await tuck.locator(".avatar").click();
-await tuck.locator(".bubble .text", { hasText: "Fix the checkout bug" }).waitFor();
+await tuck.locator(".bubble .goalcard", { hasText: "Fix the checkout bug" }).waitFor();
 const clickState = await tuck.locator("svg.tuck").getAttribute("data-pose");
-await tuck.locator(".bubble .close").click();
+await tuck.locator(".avatar").click(); // a second click closes the row
 await repoTab.waitForTimeout(1500);
 
 // A reload keeps the tab and URL but wipes what was injected: Tuck comes back, resting,
@@ -1076,9 +1087,9 @@ const afterStopOnBreak = {
 };
 // The goal card on a break: Tuck says hello, and goes back to sleep when it closes.
 await breakPage.locator("#tuck-companion .avatar").click();
-await breakPage.locator("#tuck-companion .bubble .text", { hasText: "Fix the checkout bug" }).waitFor();
+await breakPage.locator("#tuck-companion .bubble .goalcard", { hasText: "Fix the checkout bug" }).waitFor();
 const cardOnBreak = await poseOf(breakPage);
-await breakPage.locator("#tuck-companion .bubble .close").click();
+await breakPage.locator("#tuck-companion .avatar").click(); // a second click closes the row
 const afterCardOnBreak = await waitForPose(breakPage, "sleep");
 await breakPage.close();
 const wakeTab = await ctx.newPage();
@@ -1544,7 +1555,9 @@ away.flagAfterGreeting = await tuckAwayNow();
 // The goal set from Tuck's form while the agent works: once the note closes, Tuck works.
 await awayBack.locator("#tuck-companion .bubble input[name=goal]").fill("Fix the checkout bug");
 await awayBack.locator("#tuck-companion button.start").click();
+await awayBack.locator("#tuck-companion .bubble button", { hasText: "Set as goal" }).click({ timeout: 8000 });
 await awayBack.locator("#tuck-companion .bubble .text", { hasText: "Got it" }).waitFor({ timeout: 5000 });
+await awayBack.locator("#tuck-companion .bubble .close").click(); // the chat stays until closed
 await awayBack.waitForTimeout(2600);
 away.goalSetWhileWorking = await poseOf(awayBack);
 await agentSays("unknown");
@@ -1950,7 +1963,7 @@ const planned = await popup.evaluate(async () => {
 const planCalls = loopCalls.slice(loopsBefore).filter((c) => /just set a goal/.test(c.messages[0].content));
 await demoTab.locator("#tuck-companion .avatar").click();
 const demoCard = demoTab.locator("#tuck-companion .bubble");
-await demoCard.locator(".plan").waitFor({ timeout: 5000 });
+await demoCard.locator(".goalcard .dots").waitFor({ timeout: 5000 });
 const demoCardText = await demoCard.innerText();
 const beforeDemoDrift = await lastTrigger();
 // #61: the bubble's "I'm stuck" runs while Tuck is tucked away: the drift word still comes,
@@ -2179,8 +2192,9 @@ assert.deepEqual(
   ["Write a 3-minute demo script", "Record the demo video in one take", "Check no API key is on screen"],
 );
 assert.equal(planned.steps[0], "Write a 3-minute demo script", "the plan's first step is the goal's step");
-assert.match(demoCardText, /Record the demo video in one take/, "the plan is on Tuck's card");
-assert.match(demoCardText, /Watch out: Never show the API key on screen/);
+// The card shows the step on now and the plan as dots (dock-chat design, B).
+assert.match(demoCardText, /NOW\s+Write a 3-minute demo script/, "the plan's first step is Tuck's NOW");
+assert.match(demoCardText, /1 of 3/, "the plan is on Tuck's card as its progress");
 assert.match(demoWord?.[1].content ?? "", /Next step: Write a 3-minute demo script/, "the drift word has the step");
 assert.equal(stuckAsked, 1, "a double click on I'm stuck asks once");
 assert.ok(stuckKept, "the drift words still due do not replace the step");
@@ -2265,8 +2279,10 @@ assert.match(ringLook.filter, /drop-shadow\(rgb\(255, 255, 255\) 0px 0px 0\.6px\
 assert.match(ringLook.filter, /drop-shadow\(rgba\(0, 0, 0, 0\.18\) 0px 2px 6px\)/, "with the soft shadow");
 assert.equal(ringLook.inputFocused, true, "the goal box has focus, so its ring is drawn");
 assert.equal(ringLook.inputRing, ringLook.ink, "the focus ring is the ink colour");
-assert.equal(ringLook.rings.length, 4, `avatar, buttons, × and inputs: ${ringLook.rings}`);
-for (const ring of ringLook.rings)
+// A focus-visible rule that draws a ring (outline); others show a tooltip or a fill.
+const drawnRings = ringLook.rings.filter((r) => /outline:/.test(r));
+assert.equal(drawnRings.length, 5, `avatar, buttons, ×, inputs and the icon row: ${drawnRings}`);
+for (const ring of drawnRings)
   assert.match(ring, /outline: 2px solid var\(--tk-ink\)/, `every focus ring is ink: ${ring}`);
 assert.match(ringLook.reducedSlide, /^0s(, 0s)*$/, "no slide-in with reduced motion");
 assert.ok(bubbleLook.hostAt >= 0, "the overlay's own CSS marker was found, so the colour check is not vacuous");
@@ -2282,6 +2298,7 @@ assert.deepEqual(
   "after a reload Tuck is back on the page, resting, once",
 );
 assert.equal(clickState, "hello", "clicking Tuck is a hello");
+assert.match(goalChatTrail, /^Searched your notes: fix the checkout bug · \d+ notes?$/, "the goal chat shows its lookup");
 assert.ok(dragged.x < 100, `dragged to the left: ${dragged.x}`);
 assert.ok(bubbleAfterDrag.x >= dragged.x, "on the left, the bubble opens rightwards");
 assert.ok(formStillOpen, "a drag is not a click");
@@ -2292,7 +2309,7 @@ assert.equal(firstState, "drift", "the first detection is a visible drift pose")
 assert.equal(firstText, "Still on the video? Back to the failing test.", "Tuck says the model's line");
 assert.ok(nudgeCalls.length >= 1);
 assert.match(nudgeCalls[0][1].content, /Site now: localhost/);
-assert.match(nudgeCalls[0][1].content, /Next step: Write the failing test/);
+assert.match(nudgeCalls[0][1].content, /Next step: Write the failing checkout test/);
 assert.ok(secondWord, "the L2 word was drawn");
 assert.equal(nudgeState, "drift");
 assert.equal(paperIcon, "tuck/skins/paper/icons/16.png", "the toolbar icon follows the skin");

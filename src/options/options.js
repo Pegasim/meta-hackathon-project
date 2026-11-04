@@ -778,3 +778,10 @@ $("cancel-import").onclick = () => {
   $("cancel-import").hidden = true;
   $("log-status").textContent = "";
 };
+
+// Pause Tuck: the "off" mode, which records nothing. The popup's switch is Focus or Do not disturb.
+{
+  const box = $("pause-tuck");
+  chrome.storage.local.get({ mode: "focus" }).then(({ mode }) => (box.checked = mode === "off"));
+  box.onchange = () => chrome.runtime.sendMessage({ type: "set-mode", mode: box.checked ? "off" : "focus" });
+}
