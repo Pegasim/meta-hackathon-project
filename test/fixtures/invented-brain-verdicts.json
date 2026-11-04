@@ -1,0 +1,16 @@
+{
+  "taskVerdicts": {
+    "grant": { "isTask": true, "open": true, "task": "Submit the grant form", "who": "you" },
+    "dentist": { "isTask": true, "open": true, "task": "Book the dentist", "who": "you", "personal": true },
+    "library": { "isTask": true, "open": true, "task": "Renew the library card", "who": "you" },
+    "bread": { "isTask": true, "open": true, "task": "Bake a loaf of bread", "who": "you" },
+    "fine": { "isTask": true, "open": true, "task": "Pay the parking fine", "who": "you" },
+    "plants": { "isTask": true, "open": true, "task": "Repot the plants", "who": "you" },
+    "cart-pr": { "isTask": true, "open": true, "task": "Review the cart PR", "who": "you" },
+    "flaky": { "isTask": true, "open": true, "task": "Fix the flaky checkout test", "who": "you" },
+    "newsletter": { "isTask": false, "open": false }
+  },
+  "taskPairs": {},
+  "loops": { "plants": { "doneAt": 1793000000000 } },
+  "taskSettings": { "hidePersonal": false }
+}

@@ -628,9 +628,11 @@ const cacheLeft = await slow.evaluate(async () =>
 );
 await slow.close();
 
-// Today and Coming up (#77): invented checkboxes dated around today, and a goal picked from
-// an undated one. Checkboxes need no model, so the views show at once. The fixture vault
-// has fixed dates, so it is removed first: its rows would move between views by the day.
+// Today, Missed, Coming up and Long run (#77, #92): invented checkboxes dated around today,
+// and a goal picked from an undated one. Checkboxes need no model, so the views show at
+// once. The fixture vault has fixed dates, so it is removed first: its rows would move
+// between views by the day. A coding agent's note, judged a task, sits under the closed
+// fold below them: the checkboxes are the person's own.
 const split = await ctx.newPage();
 split.on("pageerror", (e) => errors.push(String(e)));
 await split.goto(`chrome-extension://${id}/options/options.html`);
@@ -656,6 +658,25 @@ await split.evaluate(async () => {
   ].join("\n");
   const folder = fromMarkdownFolder([{ path: "todo.md", text }], { folderName: "Split" });
   await memory.importEntries({ origin: "md:Split", name: "Split", ...folder });
+  const agentNote = [
+    "---",
+    'title: "Cart PR opened"',
+    "kind: event",
+    "topic: shop",
+    `date: ${day(0)}`,
+    "source: claude-code",
+    "id: agent-pr",
+    "---",
+    "",
+    "- **Context:** Invented.",
+    "- **Decision/Result:** Opened.",
+    "- **Evidence:** none",
+    "- **Next action:** Review the cart PR",
+  ].join("\n");
+  await memory.importFiles([{ path: "notes/log/2026/agent-pr.md", text: agentNote }]);
+  const { taskVerdicts = {} } = await chrome.storage.local.get("taskVerdicts");
+  const verdict = { isTask: true, open: true, task: "Review the cart PR", who: "you" };
+  await chrome.storage.local.set({ taskVerdicts: { ...taskVerdicts, "agent-pr": verdict } });
   // The id as Tuck knows it, with its origin, as a "switch" from the bubble sends it.
   const queue = await memory.taskQueue({ limit: Infinity });
   const bike = queue.find((e) => /bike/.test(e.title));
@@ -676,6 +697,12 @@ const views = await split.evaluate(() => {
   }
   return out;
 });
+const fold = await split.evaluate(() => {
+  const el = document.getElementById("task-suggested");
+  return { shown: !el.hidden, open: el.open, summary: el.querySelector("summary").textContent, text: el.innerText };
+});
+await split.click("#task-suggested summary");
+const foldOpened = await split.locator("#task-suggested .row").innerText();
 if (process.env.SCREENSHOT_DIR)
   await split.screenshot({ path: path.join(process.env.SCREENSHOT_DIR, "settings-tasks.png"), fullPage: true });
 await split.close();
@@ -818,17 +845,24 @@ assert.deepEqual(
   views,
   [
     "Today: Fix the bike light",
-    "Today: Pay the electricity bill",
     "Today: Send the visa papers",
     "Today: Book the dentist",
+    "Missed: Pay the electricity bill: deadline passed 2 days ago",
     "Coming up: Sit the exam",
     "Coming up: Renew the passport",
-    "Everything else: File the tax return",
-    "Everything else: Call grandma",
-    "Everything else: Return the library books",
+    "Long run: File the tax return",
+    "Long run: Call grandma",
+    "Long run: Return the library books",
   ],
-  "the goal's row, then what is close; dated within 60 days; the rest in the queue's order (long missed last)",
+  "the goal's row, then what is due; missed within a week; dated within 60 days; the rest in the queue's order (#77, #92)",
 );
+assert.deepEqual(
+  [fold.shown, fold.open, fold.summary],
+  [true, false, "Suggested from your memory (1)"],
+  "an agent's row under a closed fold, once the person has rows of their own (#92)",
+);
+assert.doesNotMatch(fold.text, /Review the cart PR/, "closed: its rows are out of sight");
+assert.match(foldOpened, /Review the cart PR/, "opened, the row with its buttons");
 assert.deepEqual(
   otherMemory.topics,
   ["beekeeping", "pottery", "work"],

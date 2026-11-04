@@ -72,7 +72,8 @@ test("a reminder's line follows the voice", () => {
   for (const when of ["today", "tomorrow", "yesterday", "3 days ago"])
     assert.ok(followsVoice(reminderLine(when)), when);
   assert.equal(reminderLine("tomorrow"), "Due tomorrow. Still on your list?");
-  assert.equal(reminderLine("yesterday"), "That was due yesterday. Still on your list?");
+  assert.equal(reminderLine("yesterday"), "Deadline passed yesterday. Still on your list?");
+  assert.equal(reminderLine("2 days ago"), "Deadline passed 2 days ago. Still on your list?", "never as today's");
 });
 
 test("the greeting after a goal: how it went, in plain facts (#46)", () => {

@@ -8,6 +8,10 @@
   body { max-width: 560px; margin: 24px auto; padding: 0 16px; }
   h1 { font-size: 20px; margin-bottom: 16px; }
   .status { margin-top: 8px; white-space: pre-line; }
+  summary { cursor: pointer; width: fit-content; }
+  summary:hover { color: var(--accent); }
+  summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  details > .stack { margin-top: 10px; }
 </style>
 </head>
 <body class="stack">
@@ -108,6 +112,7 @@
     <p class="status small" id="task-status"></p>
     <div class="stack" id="task-list"></div>
     <div class="row"><button id="all-tasks" hidden>Show all</button></div>
+    <details id="task-suggested" hidden><summary class="small">Suggested from your memory</summary><div class="stack"></div></details>
     <p class="small"><strong>Learned from your answers</strong></p>
     <div class="stack" id="label-list"></div>
   </section>

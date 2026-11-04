@@ -1,4 +1,4 @@
-import { stillOpen, taskList, taskKey, splitTasks } from "../attention/reminders.js";
+import { stillOpen, taskList, taskKey, splitTasks, isClose } from "../attention/reminders.js";
 import { openStore } from "../attention/store.js";
 import {
   Memory,
@@ -499,7 +499,7 @@ function listRow(text, label, onclick) {
   return row;
 }
 
-// Today and Coming up in full (#77); of the rest, the first few, then Show all.
+// Today, Missed and Coming up in full (#77, #92); of the rest, the first few, then Show all.
 const FIRST_TASKS = 7;
 let allTasks = false;
 const heading = (text) => Object.assign(document.createElement("p"), { className: "small muted", textContent: text });
@@ -550,28 +550,38 @@ async function showTasks(queue, note) {
     await showProfile();
   };
   const taskRow = (e) => {
-    const row = listRow(
-      `${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}${e.members ? ` (${e.sources})` : ""}`,
-      "Done",
-      answer(e, "done"),
-    );
+    const passed = isClose(e) && e.daysLeft < 0;
+    const when = passed
+      ? `: deadline passed ${dueLabel(e.daysLeft)}`
+      : e.due
+        ? `: due ${e.due} (${dueLabel(e.daysLeft)})`
+        : "";
+    const row = listRow(`${e.title}${when}${e.members ? ` (${e.sources})` : ""}`, "Done", answer(e, "done"));
     row.append(button("Not a task", answer(e, "not_task")));
     if (e.members) row.append(button("Not the same", answer(e, "not_same")));
     return row;
   };
   // A view with nothing in it is left out; with only undated tasks, the list reads as before.
   const view = (name, rows) => (rows.length ? [...(name ? [heading(name)] : []), ...rows.map(taskRow)] : []);
-  const { today, comingUp, rest } = splitTasks(tasks, { goalFrom: goal?.fromLoopId });
+  const ownKeys = new Set(queue.filter((e) => e.writer === "own" && e.source !== "extension").map(taskKey));
+  const { today, missed, comingUp, rest, suggested } = splitTasks(tasks, { goalFrom: goal?.fromLoopId, ownKeys });
   $("task-list").replaceChildren(
     ...view("Today", today),
+    ...view("Missed", missed),
     ...view("Coming up", comingUp),
     ...view(
-      today.length || comingUp.length ? "Everything else" : null,
+      today.length || missed.length || comingUp.length ? "Long run" : null,
       rest.slice(0, allTasks ? rest.length : FIRST_TASKS),
     ),
   );
   $("all-tasks").hidden = rest.length <= FIRST_TASKS;
-  $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${tasks.length}`;
+  $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${tasks.length - suggested.length}`;
+  // Rows a coding agent or the distill wrote, once the person has their own (#92): closed,
+  // and kept closed or open across redraws, as the person left it.
+  const fold = $("task-suggested");
+  fold.hidden = !suggested.length;
+  fold.querySelector("summary").textContent = `Suggested from your memory (${suggested.length})`;
+  fold.querySelector(".stack").replaceChildren(...suggested.map(taskRow));
   const notes = waiting === 1 ? "1 note" : `${waiting} notes`;
   // A run's own problem first; with none, only a missing model is a reason (#68).
   const why = note ? "" : taskProblem ? `: ${taskProblem}` : model ? null : " (needs a model above)";
