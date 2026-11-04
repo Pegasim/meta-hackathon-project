@@ -68,6 +68,8 @@ $("provider").onchange = () => {
 $("save").onclick = async () => {
   await saveModelSettings(current(), { remember: $("remember").checked });
   $("model-status").textContent = $("remember").checked ? "Saved on this device." : "Saved until Chrome closes.";
+  // A brain connected before the model was saved has not been read: read it now (#68).
+  if (await unread()) await rereadMemory().catch((err) => ($("profile-status").textContent = `Failed: ${err.message}`));
 };
 
 $("test").onclick = async () => {
@@ -362,9 +364,12 @@ async function readProfile() {
 // While it runs, taskProgress says how far it got, so a redraw in between keeps saying so.
 // It is cleared by the re-read that started it, right before its last draw, so the status
 // does not look settled while that draw, with the run's own note, is still to come.
+// The run lives in this page and its verdicts are stored only at the end, so closing the
+// page stops it and loses the batches already read (#68): the status says so.
 let taskProgress = null;
 async function readTasks() {
-  const progress = (text) => ($("task-status").textContent = taskProgress = text);
+  const progress = (text) =>
+    ($("task-status").textContent = taskProgress = `${text} Keep this page open until it is done.`);
   progress("Reading your tasks…");
   try {
     const settings = await loadModelSettings();
@@ -374,7 +379,7 @@ async function readTasks() {
       storage: chrome.storage.local,
       today: localDate(),
       clean: (text) => redact(text).text,
-      onProgress: ({ done, total }) => progress(`Reading your tasks… ${done} of ${total}`),
+      onProgress: ({ done, total }) => progress(`Reading your tasks… ${done} of ${total}.`),
     });
     return r.failed ? `${r.failed} entries could not be read: ${r.errors.join(" | ")}. Re-read to try again.` : null;
   } catch (err) {
@@ -404,6 +409,16 @@ async function rereadOnce() {
   });
   const [note, taskNote] = await Promise.all([profile, tasks]).finally(() => (taskProgress = null));
   await showProfile(note, taskNote);
+}
+
+// Memory that no run has read: no profile, or no task verdicts stored (#68).
+async function unread() {
+  const [sources, profile, { taskVerdicts }] = await Promise.all([
+    memory.sources(),
+    memory.profile().catch(() => null),
+    chrome.storage.local.get("taskVerdicts"),
+  ]);
+  return sources.some((s) => s.entries || s.documents) && (!profile || !taskVerdicts);
 }
 
 const queueNow = () => memory.taskQueue({ today: localDate(), limit: Infinity });
@@ -465,6 +480,7 @@ async function showTasks(queue, note) {
     "taskSplits",
     "taskProblem",
   ]);
+  const model = await loadModelSettings();
   if (draw !== taskDraws) return;
   $("hide-personal").checked = !!taskSettings.hidePersonal;
   // Goals set here are not tasks from the notes: they end with Done on the goal itself.
@@ -499,12 +515,15 @@ async function showTasks(queue, note) {
   $("all-tasks").hidden = tasks.length <= FIRST_TASKS;
   $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${tasks.length}`;
   const notes = waiting === 1 ? "1 note" : `${waiting} notes`;
-  const why = note ? "" : taskProblem ? `: ${taskProblem}` : " (needs a model above)";
+  // A run's own problem first; with none, only a missing model is a reason (#68).
+  const why = note ? "" : taskProblem ? `: ${taskProblem}` : model ? null : " (needs a model above)";
   if (taskProgress) return void ($("task-status").textContent = taskProgress);
   $("task-status").textContent = [
     note,
     waiting
-      ? `Tuck could not read your notes yet${why}, so ${notes} with a next action are not listed. Press Re-read my memory to try again.`
+      ? why === null
+        ? `Your notes are not read yet, so ${notes} with a next action are not listed. Press Re-read my memory to read them.`
+        : `Tuck could not read your notes yet${why}, so ${notes} with a next action are not listed. Press Re-read my memory to try again.`
       : null,
     tasks.length || waiting ? null : "No open tasks.",
   ]
