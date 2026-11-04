@@ -2,172 +2,290 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Focus settings</title>
+<title>Tuck settings</title>
 <link rel="stylesheet" href="../shared/ui.css">
+<style id="skin-theme"></style>
 <style>
-  body { max-width: 560px; margin: 24px auto; padding: 0 16px; }
-  h1 { font-size: 20px; margin-bottom: 16px; }
-  .status { margin-top: 8px; white-space: pre-line; }
-  summary { cursor: pointer; width: fit-content; }
-  summary:hover { color: var(--accent); }
-  summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .page { max-width: 920px; margin: 0 auto; padding: 28px 24px 64px; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 48px; height: 48px; object-fit: contain; flex: none; image-rendering: pixelated; }
+  .brand .sub { font-size: 12.5px; color: var(--muted); }
+
+  .switch { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--text); font-size: 13.5px; font-weight: 600; cursor: pointer; }
+  .switch input { appearance: none; width: 40px; height: 24px; border-radius: 999px; background: var(--btn); position: relative; cursor: pointer; transition: background .15s; }
+  .switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+  .switch input:checked { background: var(--accent); }
+  .switch input:checked::after { transform: translateX(16px); background: var(--accent-text); }
+
+  .tabs { display: flex; gap: 4px; padding: 5px; margin: 22px 0 24px; background: var(--card); border-radius: 999px; width: fit-content; max-width: 100%; overflow-x: auto; }
+  .tabs a { display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 15px; border-radius: 999px; color: var(--muted); font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .tabs a:hover { color: var(--text); background: var(--raised); }
+  .tabs a[aria-current="page"] { background: var(--accent); color: var(--accent-text); }
+  .tabs svg, .card-title svg { width: 18px; height: 18px; flex: none; }
+
+  .panel > * + * { margin-top: 14px; }
+  .panel-head h1 { font-size: 22px; }
+  .panel-head p { color: color-mix(in srgb, var(--muted) 80%, var(--text)); margin-top: 4px; max-width: 62ch; }
+  .card > h2, .card-title { font-size: 15px; color: var(--text); letter-spacing: 0; display: flex; align-items: center; gap: 8px; margin: 0; }
+  .card-title svg { color: color-mix(in srgb, var(--accent) 65%, var(--text)); }
+  .card .note, .card > p.small.muted { max-width: 70ch; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
+
+  a.btn { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 16px; border-radius: 999px; background: var(--btn); color: var(--text); font-weight: 600; font-size: 13.5px; text-decoration: none; white-space: nowrap; width: fit-content; }
+  a.btn:hover { background: var(--btn-hover); }
+  a.btn.primary { background: var(--accent); color: var(--accent-text); }
+  a.btn.primary:hover { background: var(--accent-hover); }
+
+  .hero { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .hero .avatar { width: 84px; height: 84px; }
+  .say { flex: 1; min-width: 220px; background: var(--raised); border-radius: 22px 22px 22px 6px; padding: 14px 18px; font-size: 15px; }
+  .summary .value { font-weight: 700; margin-top: 8px; }
+  .summary .value + .small { color: var(--muted); margin: 2px 0 14px; }
+
+  .status { white-space: pre-line; background: var(--raised); border-radius: 14px; padding: 10px 14px; }
+  .status:empty { display: none; }
+  .list > * + * { margin-top: 8px; }
+  .list .row { background: var(--raised); border-radius: 18px; padding: 8px 8px 8px 16px; flex-wrap: nowrap; }
+  .list .row > span { flex: 1; min-width: 0; font-size: 13.5px; }
+  .list .row button { min-height: 32px; padding: 0 14px; font-size: 13px; background: var(--card); }
+  .list .row button:hover { background: var(--btn); }
+  #task-list > p.small.muted { font-weight: 700; padding: 6px 4px 0; }
+  .agent-run { background: var(--raised); border-radius: 18px; padding: 12px 16px; }
+  .agent-run > * + * { margin-top: 4px; }
+  .check { display: flex; align-items: flex-start; gap: 10px; color: var(--text); font-size: 13.5px; font-weight: 500; margin: 0; }
+  .check input { margin-top: 2px; flex: none; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .ask { background: var(--raised); border-radius: 18px; padding: 12px 16px; white-space: pre-line; }
+  summary { cursor: pointer; width: fit-content; font-weight: 600; }
   details > .stack { margin-top: 10px; }
+  code { background: var(--raised); border-radius: 6px; padding: 1px 5px; font-size: 12.5px; }
+  .look { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .look .fields { flex: 1; min-width: 260px; grid-template-columns: 1fr; }
+  .stage { width: 180px; height: 180px; border-radius: 50%; background: var(--raised); display: grid; place-items: center; flex: none; }
+  #tuck-preview { transform: scale(1.7); }
 </style>
 </head>
-<body class="stack">
-  <h1>Focus settings</h1>
+<body>
+<div class="page">
+  <header class="top">
+    <div class="brand">
+      <img class="avatar" id="avatar" alt="">
+      <div><h1>Tuck</h1><div class="sub">Settings</div></div>
+    </div>
+    <label class="switch" for="pause-tuck" title="Nothing is recorded while paused, and Tuck stays off every page."><input id="pause-tuck" type="checkbox" role="switch"> Pause Tuck</label>
+  </header>
 
-  <section class="card stack">
-    <h2>Model</h2>
-    <div>
-      <label for="provider">Provider</label>
-      <select id="provider"></select>
-    </div>
-    <div>
-      <label for="model">Model</label>
-      <input id="model" type="text" spellcheck="false">
-    </div>
-    <div id="key-row">
-      <label for="key">API key</label>
-      <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key">
-    </div>
-    <label class="row" style="color:var(--text)"><input id="remember" type="checkbox"> Remember the key on this device</label>
-    <p class="note">Without this, the key is kept in memory only and you enter it again after Chrome restarts.</p>
-    <div class="row">
-      <button class="primary" id="save">Save</button>
-      <button id="test">Test connection</button>
-    </div>
-    <p class="status small" id="model-status"></p>
-  </section>
+  <nav class="tabs" aria-label="Settings sections">
+    <a href="#home" data-tab="home"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,120v96H152V152H104v64H40V120a8,8,0,0,1,2.34-5.66l80-80a8,8,0,0,1,11.32,0l80,80A8,8,0,0,1,216,120Z" opacity="0.2"/><path d="M219.31,108.68l-80-80a16,16,0,0,0-22.62,0l-80,80A15.87,15.87,0,0,0,32,120v96a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V160h32v56a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V120A15.87,15.87,0,0,0,219.31,108.68ZM208,208H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48V120l80-80,80,80Z"/></svg> Home</a>
+    <a href="#look" data-tab="look"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M232,108a20,20,0,1,1-20-20A20,20,0,0,1,232,108ZM64,108a20,20,0,1,0-20,20A20,20,0,0,0,64,108ZM92,80A20,20,0,1,0,72,60,20,20,0,0,0,92,80Zm72,0a20,20,0,1,0-20-20A20,20,0,0,0,164,80Zm19.24,75.85A43.46,43.46,0,0,1,162.57,130a36,36,0,0,0-69.14,0,43.49,43.49,0,0,1-20.67,25.9,32,32,0,0,0,27.73,57.62,72.49,72.49,0,0,1,55,0,32,32,0,0,0,27.73-57.62Z" opacity="0.2"/><path d="M212,80a28,28,0,1,0,28,28A28,28,0,0,0,212,80Zm0,40a12,12,0,1,1,12-12A12,12,0,0,1,212,120ZM72,108a28,28,0,1,0-28,28A28,28,0,0,0,72,108ZM44,120a12,12,0,1,1,12-12A12,12,0,0,1,44,120ZM92,88A28,28,0,1,0,64,60,28,28,0,0,0,92,88Zm0-40A12,12,0,1,1,80,60,12,12,0,0,1,92,48Zm72,40a28,28,0,1,0-28-28A28,28,0,0,0,164,88Zm0-40a12,12,0,1,1-12,12A12,12,0,0,1,164,48Zm23.12,100.86a35.3,35.3,0,0,1-16.87-21.14,44,44,0,0,0-84.5,0A35.25,35.25,0,0,1,69,148.82,40,40,0,0,0,88,224a39.48,39.48,0,0,0,15.52-3.13,64.09,64.09,0,0,1,48.87,0,40,40,0,0,0,34.73-72ZM168,208a24,24,0,0,1-9.45-1.93,80.14,80.14,0,0,0-61.19,0,24,24,0,0,1-20.71-43.26,51.22,51.22,0,0,0,24.46-30.67,28,28,0,0,1,53.78,0,51.27,51.27,0,0,0,24.53,30.71A24,24,0,0,1,168,208Z"/></svg> Look</a>
+    <a href="#notes" data-tab="notes"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M232,80v88.89a7.11,7.11,0,0,1-7.11,7.11H200V112a8,8,0,0,0-8-8H120L90.13,81.6a8,8,0,0,0-4.8-1.6H64V56a8,8,0,0,1,8-8h45.33a8,8,0,0,1,4.8,1.6L152,72h72A8,8,0,0,1,232,80Z" opacity="0.2"/><path d="M224,64H154.67L126.93,43.2a16.12,16.12,0,0,0-9.6-3.2H72A16,16,0,0,0,56,56V72H40A16,16,0,0,0,24,88V200a16,16,0,0,0,16,16H192.89A15.13,15.13,0,0,0,208,200.89V184h16.89A15.13,15.13,0,0,0,240,168.89V80A16,16,0,0,0,224,64ZM192,200H40V88H85.33l29.87,22.4A8,8,0,0,0,120,112h72Zm32-32H208V112a16,16,0,0,0-16-16H122.67L94.93,75.2a16.12,16.12,0,0,0-9.6-3.2H72V56h45.33L147.2,78.4A8,8,0,0,0,152,80h72Z"/></svg> Notes</a>
+    <a href="#check" data-tab="check"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,64V192H128V64Z" opacity="0.2"/><path d="M224,128a8,8,0,0,1-8,8H128a8,8,0,0,1,0-16h88A8,8,0,0,1,224,128ZM128,72h88a8,8,0,0,0,0-16H128a8,8,0,0,0,0,16Zm88,112H128a8,8,0,0,0,0,16h88a8,8,0,0,0,0-16ZM82.34,42.34,56,68.69,45.66,58.34A8,8,0,0,0,34.34,69.66l16,16a8,8,0,0,0,11.32,0l32-32A8,8,0,0,0,82.34,42.34Zm0,64L56,132.69,45.66,122.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0-11.32-11.32Zm0,64L56,196.69,45.66,186.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0-11.32-11.32Z"/></svg> Check</a>
+    <a href="#privacy" data-tab="privacy"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,56v56c0,96-88,120-88,120S40,208,40,112V56a8,8,0,0,1,8-8H208A8,8,0,0,1,216,56Z" opacity="0.2"/><path d="M208,40H48A16,16,0,0,0,32,56v56c0,52.72,25.52,84.67,46.93,102.19,23.06,18.86,46,25.26,47,25.53a8,8,0,0,0,4.2,0c1-.27,23.91-6.67,47-25.53C198.48,196.67,224,164.72,224,112V56A16,16,0,0,0,208,40Zm0,72c0,37.07-13.66,67.16-40.6,89.42A129.3,129.3,0,0,1,128,223.62a128.25,128.25,0,0,1-38.92-21.81C61.82,179.51,48,149.3,48,112l0-56,160,0ZM82.34,141.66a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32l-56,56a8,8,0,0,1-11.32,0Z"/></svg> Privacy</a>
+    <a href="#connections" data-tab="connections"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M185,127,127,185a24,24,0,0,1-33.94,0L71,162.91A24,24,0,0,1,71,129L129,71a24,24,0,0,1,33.94,0L185,93.09A24,24,0,0,1,185,127Z" opacity="0.2"/><path d="M237.66,18.34a8,8,0,0,0-11.32,0l-52.4,52.41-5.37-5.38a32.05,32.05,0,0,0-45.26,0L100,88.69l-6.34-6.35A8,8,0,0,0,82.34,93.66L88.69,100,65.37,123.31a32,32,0,0,0,0,45.26l5.38,5.37-52.41,52.4a8,8,0,0,0,11.32,11.32l52.4-52.41,5.37,5.38a32.06,32.06,0,0,0,45.26,0L156,167.31l6.34,6.35a8,8,0,0,0,11.32-11.32L167.31,156l23.32-23.31a32,32,0,0,0,0-45.26l-5.38-5.37,52.41-52.4A8,8,0,0,0,237.66,18.34Zm-116.29,161a16,16,0,0,1-22.62,0L76.69,157.25a16,16,0,0,1,0-22.62L100,111.31,144.69,156Zm57.94-57.94h0L156,144.69,111.31,100l23.32-23.31a16,16,0,0,1,22.62,0l22.06,22a16,16,0,0,1,0,22.63ZM88.57,35A8,8,0,0,1,103.43,29l8,20A8,8,0,0,1,96.57,55ZM24.57,93A8,8,0,0,1,35,88.57l20,8A8,8,0,0,1,49,111.43l-20-8A8,8,0,0,1,24.57,93ZM231.43,163a8,8,0,0,1-10.4,4.46l-20-8A8,8,0,1,1,207,144.57l20,8A8,8,0,0,1,231.43,163Zm-64,58.06A8,8,0,0,1,152.57,227l-8-20A8,8,0,0,1,159.43,201Z"/></svg> Connections</a>
+    <a href="#activity" data-tab="activity"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,128a88,88,0,1,1-88-88A88,88,0,0,1,216,128Z" opacity="0.2"/><path d="M136,80v43.47l36.12,21.67a8,8,0,0,1-8.24,13.72l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Zm-8-48A95.44,95.44,0,0,0,60.08,60.15C52.81,67.51,46.35,74.59,40,82V64a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H72a8,8,0,0,0,0-16H49c7.15-8.42,14.27-16.35,22.39-24.57a80,80,0,1,1,1.66,114.75,8,8,0,1,0-11,11.64A96,96,0,1,0,128,32Z"/></svg> Activity</a>
+  </nav>
 
-  <section class="card stack">
-    <h2>Tuck's look</h2>
-    <div>
-      <label for="tuck-skin">Look</label>
-      <select id="tuck-skin"></select>
+  <main>
+  <!-- Home: what to do next, and a card per area. -->
+  <div class="panel" data-panel="home">
+    <div class="card hero">
+      <img class="avatar" id="hero-avatar" alt="">
+      <p class="say" id="home-say">Hi, I'm Tuck.</p>
+      <a class="btn primary" id="home-go" href="#check">Check what I know</a>
     </div>
-    <div id="tuck-item-row">
-      <label for="tuck-item">Wears or carries</label>
-      <select id="tuck-item"></select>
+    <div class="grid">
+      <div class="card summary"><h2 class="card-title"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M232,108a20,20,0,1,1-20-20A20,20,0,0,1,232,108ZM64,108a20,20,0,1,0-20,20A20,20,0,0,0,64,108ZM92,80A20,20,0,1,0,72,60,20,20,0,0,0,92,80Zm72,0a20,20,0,1,0-20-20A20,20,0,0,0,164,80Zm19.24,75.85A43.46,43.46,0,0,1,162.57,130a36,36,0,0,0-69.14,0,43.49,43.49,0,0,1-20.67,25.9,32,32,0,0,0,27.73,57.62,72.49,72.49,0,0,1,55,0,32,32,0,0,0,27.73-57.62Z" opacity="0.2"/><path d="M212,80a28,28,0,1,0,28,28A28,28,0,0,0,212,80Zm0,40a12,12,0,1,1,12-12A12,12,0,0,1,212,120ZM72,108a28,28,0,1,0-28,28A28,28,0,0,0,72,108ZM44,120a12,12,0,1,1,12-12A12,12,0,0,1,44,120ZM92,88A28,28,0,1,0,64,60,28,28,0,0,0,92,88Zm0-40A12,12,0,1,1,80,60,12,12,0,0,1,92,48Zm72,40a28,28,0,1,0-28-28A28,28,0,0,0,164,88Zm0-40a12,12,0,1,1-12,12A12,12,0,0,1,164,48Zm23.12,100.86a35.3,35.3,0,0,1-16.87-21.14,44,44,0,0,0-84.5,0A35.25,35.25,0,0,1,69,148.82,40,40,0,0,0,88,224a39.48,39.48,0,0,0,15.52-3.13,64.09,64.09,0,0,1,48.87,0,40,40,0,0,0,34.73-72ZM168,208a24,24,0,0,1-9.45-1.93,80.14,80.14,0,0,0-61.19,0,24,24,0,0,1-20.71-43.26,51.22,51.22,0,0,0,24.46-30.67,28,28,0,0,1,53.78,0,51.27,51.27,0,0,0,24.53,30.71A24,24,0,0,1,168,208Z"/></svg> Look</h2><p class="value" id="home-look">…</p><p class="small" id="home-look-sub"></p><a class="btn" href="#look">Change look</a></div>
+      <div class="card summary"><h2 class="card-title"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M232,80v88.89a7.11,7.11,0,0,1-7.11,7.11H200V112a8,8,0,0,0-8-8H120L90.13,81.6a8,8,0,0,0-4.8-1.6H64V56a8,8,0,0,1,8-8h45.33a8,8,0,0,1,4.8,1.6L152,72h72A8,8,0,0,1,232,80Z" opacity="0.2"/><path d="M224,64H154.67L126.93,43.2a16.12,16.12,0,0,0-9.6-3.2H72A16,16,0,0,0,56,56V72H40A16,16,0,0,0,24,88V200a16,16,0,0,0,16,16H192.89A15.13,15.13,0,0,0,208,200.89V184h16.89A15.13,15.13,0,0,0,240,168.89V80A16,16,0,0,0,224,64ZM192,200H40V88H85.33l29.87,22.4A8,8,0,0,0,120,112h72Zm32-32H208V112a16,16,0,0,0-16-16H122.67L94.93,75.2a16.12,16.12,0,0,0-9.6-3.2H72V56h45.33L147.2,78.4A8,8,0,0,0,152,80h72Z"/></svg> Notes</h2><p class="value" id="home-notes">…</p><p class="small" id="home-notes-sub"></p><a class="btn" href="#notes">Add notes</a></div>
+      <div class="card summary"><h2 class="card-title"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M185,127,127,185a24,24,0,0,1-33.94,0L71,162.91A24,24,0,0,1,71,129L129,71a24,24,0,0,1,33.94,0L185,93.09A24,24,0,0,1,185,127Z" opacity="0.2"/><path d="M237.66,18.34a8,8,0,0,0-11.32,0l-52.4,52.41-5.37-5.38a32.05,32.05,0,0,0-45.26,0L100,88.69l-6.34-6.35A8,8,0,0,0,82.34,93.66L88.69,100,65.37,123.31a32,32,0,0,0,0,45.26l5.38,5.37-52.41,52.4a8,8,0,0,0,11.32,11.32l52.4-52.41,5.37,5.38a32.06,32.06,0,0,0,45.26,0L156,167.31l6.34,6.35a8,8,0,0,0,11.32-11.32L167.31,156l23.32-23.31a32,32,0,0,0,0-45.26l-5.38-5.37,52.41-52.4A8,8,0,0,0,237.66,18.34Zm-116.29,161a16,16,0,0,1-22.62,0L76.69,157.25a16,16,0,0,1,0-22.62L100,111.31,144.69,156Zm57.94-57.94h0L156,144.69,111.31,100l23.32-23.31a16,16,0,0,1,22.62,0l22.06,22a16,16,0,0,1,0,22.63ZM88.57,35A8,8,0,0,1,103.43,29l8,20A8,8,0,0,1,96.57,55ZM24.57,93A8,8,0,0,1,35,88.57l20,8A8,8,0,0,1,49,111.43l-20-8A8,8,0,0,1,24.57,93ZM231.43,163a8,8,0,0,1-10.4,4.46l-20-8A8,8,0,1,1,207,144.57l20,8A8,8,0,0,1,231.43,163Zm-64,58.06A8,8,0,0,1,152.57,227l-8-20A8,8,0,0,1,159.43,201Z"/></svg> Model</h2><p class="value" id="home-model">…</p><p class="small" id="home-model-sub"></p><a class="btn" href="#connections">Edit</a></div>
+      <div class="card summary"><h2 class="card-title"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,56v56c0,96-88,120-88,120S40,208,40,112V56a8,8,0,0,1,8-8H208A8,8,0,0,1,216,56Z" opacity="0.2"/><path d="M208,40H48A16,16,0,0,0,32,56v56c0,52.72,25.52,84.67,46.93,102.19,23.06,18.86,46,25.26,47,25.53a8,8,0,0,0,4.2,0c1-.27,23.91-6.67,47-25.53C198.48,196.67,224,164.72,224,112V56A16,16,0,0,0,208,40Zm0,72c0,37.07-13.66,67.16-40.6,89.42A129.3,129.3,0,0,1,128,223.62a128.25,128.25,0,0,1-38.92-21.81C61.82,179.51,48,149.3,48,112l0-56,160,0ZM82.34,141.66a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32l-56,56a8,8,0,0,1-11.32,0Z"/></svg> Privacy</h2><p class="value" id="home-privacy">…</p><p class="small" id="home-privacy-sub"></p><a class="btn" href="#privacy">Edit</a></div>
     </div>
-    <div>
-      <label for="tuck-motion">Motion</label>
-      <select id="tuck-motion">
-        <option value="system">Follow my computer's reduce-motion setting</option>
-        <option value="on">Always animate</option>
-        <option value="off">Keep Tuck still</option>
-      </select>
-    </div>
-    <div id="tuck-preview" aria-hidden="true"></div>
-  </section>
+  </div>
 
-  <section class="card stack" id="brain-section">
-    <h2>Brain</h2>
-    <p class="small muted">Connect your second-brain folder. It is read in the browser; new memory entries are written into its <code>inbox/</code>.</p>
-    <div class="row">
-      <button class="primary" id="connect">Connect folder</button>
-      <button id="sync">Sync now</button>
+  <div class="panel" data-panel="look" hidden>
+    <div class="panel-head"><h1>Tuck's look</h1><p>How Tuck looks on your pages and in the toolbar.</p></div>
+    <div class="card look">
+      <div class="stage"><div id="tuck-preview" aria-hidden="true"></div></div>
+      <div class="fields">
+        <div>
+          <label for="tuck-skin">Look</label>
+          <select id="tuck-skin"></select>
+        </div>
+        <div id="tuck-item-row">
+          <label for="tuck-item">Wears or carries</label>
+          <select id="tuck-item"></select>
+        </div>
+        <div>
+          <label for="tuck-theme">Theme</label>
+          <select id="tuck-theme">
+            <option value="system">Follow my computer</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <div>
+          <label for="tuck-motion">Motion</label>
+          <select id="tuck-motion">
+            <option value="system">Follow my computer's reduce-motion setting</option>
+            <option value="on">Always animate</option>
+            <option value="off">Keep Tuck still</option>
+          </select>
+        </div>
+      </div>
     </div>
-    <p class="status small" id="brain-status"></p>
-  </section>
+  </div>
 
-  <section class="card stack" id="other-section">
-    <h2>Other memory</h2>
-    <p class="small muted">Notes that live somewhere else. A notes folder (Obsidian or plain Markdown) is read in the browser and never written to; its unchecked <code>- [ ]</code> items become tasks. A pasted memory is sent once, with secrets removed, to Muse Wonder 1.0 (not Contributor) and turned into entries. An export file (Claude's <code>conversations.json</code>, or Gemini's <code>MyActivity.json</code> from Google Takeout) is read in the browser; only conversations from the last 30 days in which you name a date or a to-do are sent, at most 50, after you see how many.</p>
-    <div class="stack" id="source-list"></div>
-    <div class="row">
-      <button id="add-folder">Add a notes folder</button>
-      <button id="add-export">Add an export file</button>
-      <input type="file" id="export-file" accept=".json,application/json" hidden>
-    </div>
-    <p class="status small" id="source-status"></p>
-    <p class="status small" id="export-status"></p>
-    <div class="row">
-      <button class="primary" id="import-export" hidden>Import from the export</button>
-    </div>
-    <p class="small"><strong>Paste what your assistant knows</strong></p>
-    <p class="small muted">Ask Claude, ChatGPT or Gemini this, then paste its answer below.</p>
-    <p class="note" id="ask-text"></p>
-    <div class="row">
-      <button id="copy-ask">Copy the question</button>
-    </div>
-    <textarea id="paste-text" rows="6" spellcheck="false" placeholder="Paste the answer here"></textarea>
-    <div class="row">
-      <button id="preview-paste">Preview what is sent</button>
-      <button class="primary" id="import-paste" disabled>Import</button>
-    </div>
-    <pre class="activity" id="paste-preview" hidden></pre>
-    <p class="status small" id="paste-status"></p>
-  </section>
+  <div class="panel" data-panel="notes" hidden>
+    <div class="panel-head"><h1>Notes</h1><p>Where Tuck learns what you work on. After a change, check what it read in Check.</p></div>
+    <section class="card stack" id="brain-section">
+      <h2 class="card-title"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M232,80v88.89a7.11,7.11,0,0,1-7.11,7.11H200V112a8,8,0,0,0-8-8H120L90.13,81.6a8,8,0,0,0-4.8-1.6H64V56a8,8,0,0,1,8-8h45.33a8,8,0,0,1,4.8,1.6L152,72h72A8,8,0,0,1,232,80Z" opacity="0.2"/><path d="M224,64H154.67L126.93,43.2a16.12,16.12,0,0,0-9.6-3.2H72A16,16,0,0,0,56,56V72H40A16,16,0,0,0,24,88V200a16,16,0,0,0,16,16H192.89A15.13,15.13,0,0,0,208,200.89V184h16.89A15.13,15.13,0,0,0,240,168.89V80A16,16,0,0,0,224,64ZM192,200H40V88H85.33l29.87,22.4A8,8,0,0,0,120,112h72Zm32-32H208V112a16,16,0,0,0-16-16H122.67L94.93,75.2a16.12,16.12,0,0,0-9.6-3.2H72V56h45.33L147.2,78.4A8,8,0,0,0,152,80h72Z"/></svg> Brain folder</h2>
+      <p class="small muted">Connect your second-brain folder. It is read in the browser; new memory entries are written into its <code>inbox/</code>.</p>
+      <div class="row">
+        <button class="primary" id="connect">Connect folder</button>
+        <button id="sync">Sync now</button>
+      </div>
+      <p class="status small" id="brain-status"></p>
+    </section>
 
-  <section class="card stack">
-    <h2>What Tuck knows</h2>
-    <p class="small muted">Read from your memory after an import, so Tuck knows what you work on and what is running out. Check it: a deadline read wrongly makes Tuck confidently wrong.</p>
-    <div class="row">
-      <button id="reread">Re-read my memory</button>
-    </div>
-    <p class="status small" id="profile-status"></p>
-    <p class="small"><strong>Your tasks</strong></p>
-    <label class="row small" style="color:var(--text)"><input id="hide-personal" type="checkbox"> Hide personal topics (health, dating, money) here and in Tuck's bubble</label>
-    <p class="status small" id="task-status"></p>
-    <div class="stack" id="task-list"></div>
-    <div class="row"><button id="all-tasks" hidden>Show all</button></div>
-    <details id="task-suggested" hidden><summary class="small">Suggested from your memory</summary><div class="stack"></div></details>
-    <p class="small"><strong>Learned from your answers</strong></p>
-    <div class="stack" id="label-list"></div>
-  </section>
+    <section class="card stack" id="other-section">
+      <h2 class="card-title">Other notes and exports</h2>
+      <p class="small muted">A notes folder (Obsidian or plain Markdown) is read in the browser and never written to; its unchecked <code>- [ ]</code> items become tasks. An export file (Claude's <code>conversations.json</code>, or Gemini's <code>MyActivity.json</code> from Google Takeout) is read in the browser; only conversations from the last 30 days in which you name a date or a to-do are sent, at most 50, after you see how many.</p>
+      <div class="stack list" id="source-list"></div>
+      <div class="row">
+        <button id="add-folder">Add a notes folder</button>
+        <button id="add-export">Add an export file</button>
+        <input type="file" id="export-file" accept=".json,application/json" hidden>
+      </div>
+      <p class="status small" id="source-status"></p>
+      <p class="status small" id="export-status"></p>
+      <div class="row">
+        <button class="primary" id="import-export" hidden>Import from the export</button>
+      </div>
+    </section>
 
-  <section class="card stack">
-    <h2>What Tuck looked at</h2>
-    <p class="small muted">When you set or finish a goal, or say you are stuck, Tuck looks things up before it answers. These are its last lookups: what it searched for and how much it found, never your notes' text.</p>
-    <div class="stack" id="agent-runs"></div>
-    <div class="row"><button id="refresh-runs">Refresh</button></div>
-  </section>
+    <section class="card stack">
+      <h2 class="card-title">Paste what your assistant knows</h2>
+      <p class="small muted">Ask Claude, ChatGPT or Gemini this, then paste its answer below. A pasted memory is sent once, with secrets removed, to Muse Wonder 1.0 (not Contributor) and turned into entries.</p>
+      <p class="note ask" id="ask-text"></p>
+      <div class="row">
+        <button id="copy-ask">Copy the question</button>
+      </div>
+      <textarea id="paste-text" rows="6" spellcheck="false" placeholder="Paste the answer here"></textarea>
+      <div class="row">
+        <button id="preview-paste">Preview what is sent</button>
+        <button class="primary" id="import-paste" disabled>Import</button>
+      </div>
+      <pre class="activity" id="paste-preview" hidden></pre>
+      <p class="status small" id="paste-status"></p>
+    </section>
+  </div>
 
-  <section class="card stack">
-    <h2>GitHub repositories</h2>
-    <p class="note">Before Tuck names a PR or issue from your notes as a step, it checks on GitHub whether it is still open, and leaves it out if it was merged or closed. With one repository listed, "#12" means that one; with several, write "owner/name#12". Only public repositories, and only names, numbers, states and titles are read: no code, diffs or comments. Nothing is asked of GitHub while the list is empty.</p>
-    <div>
-      <label for="github-repos">Repositories (one owner/name per line)</label>
-      <textarea id="github-repos" rows="3" spellcheck="false" placeholder="owner/name"></textarea>
-    </div>
-    <div class="row"><button id="save-github">Save repositories</button></div>
-    <p class="status small" id="github-status"></p>
-  </section>
+  <div class="panel" data-panel="check" hidden>
+    <div class="panel-head"><h1>Check what Tuck knows</h1><p>Read from your notes after an import. Check it: a deadline read wrongly makes Tuck confidently wrong.</p></div>
+    <section class="card stack">
+      <div class="row between">
+        <h2 class="card-title">About you</h2>
+        <button id="reread">Re-read my memory</button>
+      </div>
+      <p class="status small" id="profile-status"></p>
+    </section>
+    <section class="card stack">
+      <h2 class="card-title"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,64V192H128V64Z" opacity="0.2"/><path d="M224,128a8,8,0,0,1-8,8H128a8,8,0,0,1,0-16h88A8,8,0,0,1,224,128ZM128,72h88a8,8,0,0,0,0-16H128a8,8,0,0,0,0,16Zm88,112H128a8,8,0,0,0,0,16h88a8,8,0,0,0,0-16ZM82.34,42.34,56,68.69,45.66,58.34A8,8,0,0,0,34.34,69.66l16,16a8,8,0,0,0,11.32,0l32-32A8,8,0,0,0,82.34,42.34Zm0,64L56,132.69,45.66,122.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0-11.32-11.32Zm0,64L56,196.69,45.66,186.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0-11.32-11.32Z"/></svg> Your tasks</h2>
+      <label class="check small"><input id="hide-personal" type="checkbox"> Hide personal topics (health, dating, money) here and in Tuck's bubble</label>
+      <p class="status small" id="task-status"></p>
+      <div class="stack list" id="task-list"></div>
+      <div class="row"><button id="all-tasks" hidden>Show all</button></div>
+      <details id="task-suggested" hidden><summary class="small">Suggested from your memory</summary><div class="stack list"></div></details>
+    </section>
+    <section class="card stack">
+      <h2 class="card-title">Learned from your answers</h2>
+      <div class="stack list" id="label-list"></div>
+    </section>
+  </div>
 
-  <section class="card stack">
-    <h2>Pause Tuck</h2>
-    <label class="row" style="color:var(--text)"><input id="pause-tuck" type="checkbox"> Pause Tuck</label>
-    <p class="note">Nothing is recorded while paused, and Tuck stays off every page. Turn it off to go back to Focus.</p>
-  </section>
+  <div class="panel" data-panel="privacy" hidden>
+    <div class="panel-head"><h1>Privacy</h1><p>What Tuck may read on a page, and what it never reads.</p></div>
+    <section class="card stack">
+      <h2 class="card-title"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,56v56c0,96-88,120-88,120S40,208,40,112V56a8,8,0,0,1,8-8H208A8,8,0,0,1,216,56Z" opacity="0.2"/><path d="M208,40H48A16,16,0,0,0,32,56v56c0,52.72,25.52,84.67,46.93,102.19,23.06,18.86,46,25.26,47,25.53a8,8,0,0,0,4.2,0c1-.27,23.91-6.67,47-25.53C198.48,196.67,224,164.72,224,112V56A16,16,0,0,0,208,40Zm0,72c0,37.07-13.66,67.16-40.6,89.42A129.3,129.3,0,0,1,128,223.62a128.25,128.25,0,0,1-38.92-21.81C61.82,179.51,48,149.3,48,112l0-56,160,0ZM82.34,141.66a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32l-56,56a8,8,0,0,1-11.32,0Z"/></svg> Page reading</h2>
+      <label class="check"><input id="read-pages" type="checkbox"> Look at the page before a nudge</label>
+      <p class="note">Right before Tuck would nudge you about a page, it checks whether you are typing there (it notes when you last pressed a key, never which key), and reads up to 1,000 characters near where you type, from the conversation you last touched, or from the middle of the window, so a work chat on a social site does not count as drifting. Secrets are removed first. On Meta it goes to Muse Wonder 1.0, not Contributor, so it is not used for training. Only the verdict is kept, never the text. Pages with a password field and the sites below are never read.</p>
+      <div>
+        <label for="never-read">Never read (one site per line; subdomains included). Sites with "bank", "vault" or "password" in their name are never read either.</label>
+        <textarea id="never-read" rows="6" spellcheck="false"></textarea>
+      </div>
+      <div class="row">
+        <button class="primary" id="save-reading">Save</button>
+        <button id="reset-reading">Reset the list</button>
+      </div>
+      <p class="status small" id="reading-status"></p>
+    </section>
+  </div>
 
-  <section class="card stack">
-    <h2>Page reading</h2>
-    <label class="row" style="color:var(--text)"><input id="read-pages" type="checkbox"> Look at the page before a nudge</label>
-    <p class="note">Right before Tuck would nudge you about a page, it checks whether you are typing there (it notes when you last pressed a key, never which key), and reads up to 1,000 characters near where you type, from the conversation you last touched, or from the middle of the window, so a work chat on a social site does not count as drifting. Secrets are removed first. On Meta it goes to Muse Wonder 1.0, not Contributor, so it is not used for training. Only the verdict is kept, never the text. Pages with a password field and the sites below are never read.</p>
-    <div>
-      <label for="never-read">Never read (one site per line; subdomains included). Sites with "bank", "vault" or "password" in their name are never read either.</label>
-      <textarea id="never-read" rows="6" spellcheck="false"></textarea>
-    </div>
-    <div class="row">
-      <button id="save-reading">Save</button>
-      <button id="reset-reading">Reset the list</button>
-    </div>
-    <p class="status small" id="reading-status"></p>
-  </section>
+  <div class="panel" data-panel="connections" hidden>
+    <div class="panel-head"><h1>Connections</h1><p>The model Tuck thinks with, and the GitHub repositories it may check.</p></div>
+    <section class="card stack" id="model-section">
+      <h2 class="card-title"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M185,127,127,185a24,24,0,0,1-33.94,0L71,162.91A24,24,0,0,1,71,129L129,71a24,24,0,0,1,33.94,0L185,93.09A24,24,0,0,1,185,127Z" opacity="0.2"/><path d="M237.66,18.34a8,8,0,0,0-11.32,0l-52.4,52.41-5.37-5.38a32.05,32.05,0,0,0-45.26,0L100,88.69l-6.34-6.35A8,8,0,0,0,82.34,93.66L88.69,100,65.37,123.31a32,32,0,0,0,0,45.26l5.38,5.37-52.41,52.4a8,8,0,0,0,11.32,11.32l52.4-52.41,5.37,5.38a32.06,32.06,0,0,0,45.26,0L156,167.31l6.34,6.35a8,8,0,0,0,11.32-11.32L167.31,156l23.32-23.31a32,32,0,0,0,0-45.26l-5.38-5.37,52.41-52.4A8,8,0,0,0,237.66,18.34Zm-116.29,161a16,16,0,0,1-22.62,0L76.69,157.25a16,16,0,0,1,0-22.62L100,111.31,144.69,156Zm57.94-57.94h0L156,144.69,111.31,100l23.32-23.31a16,16,0,0,1,22.62,0l22.06,22a16,16,0,0,1,0,22.63ZM88.57,35A8,8,0,0,1,103.43,29l8,20A8,8,0,0,1,96.57,55ZM24.57,93A8,8,0,0,1,35,88.57l20,8A8,8,0,0,1,49,111.43l-20-8A8,8,0,0,1,24.57,93ZM231.43,163a8,8,0,0,1-10.4,4.46l-20-8A8,8,0,1,1,207,144.57l20,8A8,8,0,0,1,231.43,163Zm-64,58.06A8,8,0,0,1,152.57,227l-8-20A8,8,0,0,1,159.43,201Z"/></svg> Model</h2>
+      <div class="fields">
+        <div>
+          <label for="provider">Provider</label>
+          <select id="provider"></select>
+        </div>
+        <div>
+          <label for="model">Model</label>
+          <input id="model" type="text" spellcheck="false">
+        </div>
+      </div>
+      <div id="key-row">
+        <label for="key">API key</label>
+        <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key">
+      </div>
+      <label class="check"><input id="remember" type="checkbox"> Remember the key on this device</label>
+      <p class="note">Without this, the key is kept in memory only and you enter it again after Chrome restarts.</p>
+      <div class="row">
+        <button class="primary" id="save">Save</button>
+        <button id="test">Test connection</button>
+      </div>
+      <p class="status small" id="model-status"></p>
+    </section>
 
-  <section class="card stack">
-    <h2>Event log</h2>
-    <p class="small muted">Everything the companion noticed and decided: pages (URL and title), judgments, states, nudges and your answers. Page text is never kept, except the name at the top of a conversation. Kept for 7 days on this device.</p>
-    <div class="row">
-      <button id="export-log">Export event log</button>
-      <button id="import-log">Import event log</button>
-      <button id="cancel-import" hidden>Cancel</button>
-      <input type="file" id="import-file" accept="application/json" hidden>
-    </div>
-    <p class="status small" id="log-status"></p>
-  </section>
+    <section class="card stack">
+      <h2 class="card-title">GitHub repositories</h2>
+      <p class="note">Before Tuck names a PR or issue from your notes as a step, it checks on GitHub whether it is still open, and leaves it out if it was merged or closed. With one repository listed, "#12" means that one; with several, write "owner/name#12". Only public repositories, and only names, numbers, states and titles are read: no code, diffs or comments. Nothing is asked of GitHub while the list is empty.</p>
+      <div>
+        <label for="github-repos">Repositories (one owner/name per line)</label>
+        <textarea id="github-repos" rows="3" spellcheck="false" placeholder="owner/name"></textarea>
+      </div>
+      <div class="row"><button class="primary" id="save-github">Save repositories</button></div>
+      <p class="status small" id="github-status"></p>
+    </section>
+  </div>
 
+  <div class="panel" data-panel="activity" hidden>
+    <div class="panel-head"><h1>Activity</h1><p>What Tuck looked up, and everything it noticed and decided.</p></div>
+    <section class="card stack">
+      <div class="row between">
+        <h2 class="card-title"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M216,128a88,88,0,1,1-88-88A88,88,0,0,1,216,128Z" opacity="0.2"/><path d="M136,80v43.47l36.12,21.67a8,8,0,0,1-8.24,13.72l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Zm-8-48A95.44,95.44,0,0,0,60.08,60.15C52.81,67.51,46.35,74.59,40,82V64a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H72a8,8,0,0,0,0-16H49c7.15-8.42,14.27-16.35,22.39-24.57a80,80,0,1,1,1.66,114.75,8,8,0,1,0-11,11.64A96,96,0,1,0,128,32Z"/></svg> What Tuck looked at</h2>
+        <button id="refresh-runs">Refresh</button>
+      </div>
+      <p class="small muted">When you set or finish a goal, or say you are stuck, Tuck looks things up before it answers. These are its last lookups: what it searched for and how much it found, never your notes' text.</p>
+      <div class="stack" id="agent-runs"></div>
+    </section>
+
+    <section class="card stack">
+      <h2 class="card-title">Event log</h2>
+      <p class="small muted">Everything the companion noticed and decided: pages (URL and title), judgments, states, nudges and your answers. Page text is never kept, except the name at the top of a conversation. Kept for 7 days on this device.</p>
+      <div class="row">
+        <button id="export-log">Export event log</button>
+        <button id="import-log">Import event log</button>
+        <button id="cancel-import" hidden>Cancel</button>
+        <input type="file" id="import-file" accept="application/json" hidden>
+      </div>
+      <p class="status small" id="log-status"></p>
+    </section>
+  </div>
+  </main>
+</div>
 <script type="module" src="options.js"></script>
 </body>
 </html>

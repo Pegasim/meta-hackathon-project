@@ -133,3 +133,20 @@ test("a sprite skin draws as an svg.tuck with its rest strip", () => {
   assert.match(svg, /^<svg[^>]*class="tuck"[^>]*viewBox="0 0 92 101"[^>]*width="72" height="79"/);
   assert.match(svg, /<image class="tuck__strip" href="u\/rest.png"[^>]*width="552"/);
 });
+
+test("Settings → Theme holds one scheme, or follows the computer", () => {
+  const { themeCss, pageThemeCss } = globalThis.tuckSkins;
+  const kitten = JSON.parse(fs.readFileSync(path.join(skinsDir, "kitten/skin.json"), "utf8"));
+  const system = themeCss(kitten.theme);
+  assert.match(system, /@media \(prefers-color-scheme: dark\)/);
+  assert.ok(system.includes(kitten.theme.light.surface) && system.includes(kitten.theme.dark.surface));
+  for (const scheme of ["light", "dark"]) {
+    const held = themeCss(kitten.theme, scheme);
+    const other = scheme === "light" ? "dark" : "light";
+    assert.doesNotMatch(held, /prefers-color-scheme/);
+    assert.ok(held.includes(kitten.theme[scheme].surface), `${scheme} has its own surface`);
+    assert.ok(!held.includes(kitten.theme[other].surface), `${scheme} has none of ${other}'s`);
+    assert.ok(held.includes(`--tk-page:${kitten.theme[scheme].page}`), "and the page ground");
+  }
+  assert.ok(pageThemeCss(kitten.theme, "dark").startsWith(":root{"), "pages set it on :root");
+});

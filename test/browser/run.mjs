@@ -505,7 +505,7 @@ const own = await page.evaluate(async (files) => {
 // The settings page loads with its new card, and no script error.
 const settings = await ctx.newPage();
 settings.on("pageerror", (e) => errors.push(String(e)));
-await settings.goto(`chrome-extension://${id}/options/options.html`);
+await settings.goto(`chrome-extension://${id}/options/options.html#notes`);
 await settings.waitForSelector("#source-list p, #source-list .row");
 const settingsCard = await settings.evaluate(() => ({
   ask: document.getElementById("ask-text").textContent,
@@ -544,7 +544,7 @@ await ctx.route("http://fake-model.test/**", async (route) => {
 });
 const slow = await ctx.newPage();
 slow.on("pageerror", (e) => errors.push(String(e)));
-await slow.goto(`chrome-extension://${id}/options/options.html`);
+await slow.goto(`chrome-extension://${id}/options/options.html#notes`);
 await slow.evaluate(async () => {
   const { saveModelSettings } = await import("/memory/model.js");
   await saveModelSettings(
@@ -636,7 +636,7 @@ await slow.close();
 // fold below them: the checkboxes are the person's own.
 const split = await ctx.newPage();
 split.on("pageerror", (e) => errors.push(String(e)));
-await split.goto(`chrome-extension://${id}/options/options.html`);
+await split.goto(`chrome-extension://${id}/options/options.html#check`);
 await split.evaluate(async () => {
   const { Memory } = await import("/memory/index.js");
   const { fromMarkdownFolder } = await import("/memory/markdown.js");

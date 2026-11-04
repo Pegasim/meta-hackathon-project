@@ -1,84 +1,136 @@
+/* The popup and Settings. Until the skin's theme is applied (skins.js pageThemeCss), they
+   wear the pastel kitten's colours. Cards have no outline: they sit on tone steps, and
+   every button is solid, in three levels (primary, the rest, quiet). */
 :root {
-  --bg: #ffffff;
-  --surface: #f6f7f9;
-  --border: #e3e6eb;
-  --text: #15181d;
-  --muted: #5d6673;
-  --accent: #2563eb;
+  --bg: #f1ede6;
+  --surface: #f1ede6;
+  --border: #cec6bd;
+  --text: #393238;
+  --muted: #70666b;
+  --accent: #80668e;
   --accent-text: #ffffff;
-  --ok: #15803d;
-  --ok-bg: #e8f5ec;
-  --warn: #b42318;
-  --warn-bg: #fdecea;
-  --neutral-bg: #eef0f3;
-  --radius: 10px;
+  --pink: #b48aa0;
+  --ok: #2f6b45;
+  --ok-bg: #dcefe2;
+  --warn: #a3243b;
+  --warn-bg: #fbe1e6;
+  --page: var(--tk-page, #e5e0db);
+  --card: var(--surface);
+  --raised: color-mix(in srgb, var(--surface) 70%, var(--border));
+  --btn: color-mix(in srgb, var(--border) 75%, var(--surface));
+  --btn-hover: color-mix(in srgb, var(--border) 92%, var(--text));
+  --accent-hover: color-mix(in srgb, var(--accent) 86%, var(--text));
+  --neutral-bg: var(--btn);
+  --radius: 22px;
   color-scheme: light;
 }
+/* Dark: the computer's setting, or Settings → Theme (data-theme on the root). :where() keeps
+   these at :root's weight, so the skin's theme, applied after, still wins. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15171b;
-    --surface: #1d2026;
-    --border: #2c313a;
-    --text: #e8eaee;
-    --muted: #9aa3b0;
-    --accent: #5b8cff;
-    --accent-text: #0b0d10;
-    --ok: #4ade80;
-    --ok-bg: #16281d;
-    --warn: #f87171;
-    --warn-bg: #2d1717;
-    --neutral-bg: #262a31;
+  :root:where(:not([data-theme="light"])) {
+    --bg: #252629;
+    --surface: #252629;
+    --border: #3b3c40;
+    --text: #e7e3de;
+    --muted: #b6b0aa;
+    --accent: #b9a6d4;
+    --accent-text: #191a1c;
+    --pink: #c9a3b6;
+    --ok: #8fdcaa;
+    --ok-bg: #243a2d;
+    --warn: #f5a3b4;
+    --warn-bg: #45242c;
+    --page: var(--tk-page, #191a1c);
+    --raised: color-mix(in srgb, var(--surface) 94%, var(--text));
+    --btn: color-mix(in srgb, var(--border) 90%, var(--text));
+    --btn-hover: color-mix(in srgb, var(--border) 80%, var(--text));
+    --accent-hover: color-mix(in srgb, var(--accent) 88%, white);
     color-scheme: dark;
   }
+}
+:root:where([data-theme="dark"]) {
+  --bg: #252629;
+  --surface: #252629;
+  --border: #3b3c40;
+  --text: #e7e3de;
+  --muted: #b6b0aa;
+  --accent: #b9a6d4;
+  --accent-text: #191a1c;
+  --pink: #c9a3b6;
+  --ok: #8fdcaa;
+  --ok-bg: #243a2d;
+  --warn: #f5a3b4;
+  --warn-bg: #45242c;
+  --page: var(--tk-page, #191a1c);
+  --raised: color-mix(in srgb, var(--surface) 94%, var(--text));
+  --btn: color-mix(in srgb, var(--border) 90%, var(--text));
+  --btn-hover: color-mix(in srgb, var(--border) 80%, var(--text));
+  --accent-hover: color-mix(in srgb, var(--accent) 88%, white);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--page);
   color: var(--text);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 14px/1.5 ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-h1 { font-size: 15px; margin: 0; font-weight: 600; }
-h2 { font-size: 12px; margin: 0 0 6px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+h1 { font-size: 16px; margin: 0; font-weight: 700; }
+h2 { font-size: 12px; margin: 0 0 8px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
 p { margin: 0; }
 .muted { color: var(--muted); }
-.small { font-size: 12px; }
+.small { font-size: 12.5px; }
 
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
-.stack > * + * { margin-top: 10px; }
-.row { display: flex; gap: 8px; align-items: center; }
-.row.between { justify-content: space-between; }
+.card { background: var(--card); border-radius: var(--radius); padding: 16px 18px; }
+.stack > * + * { margin-top: 12px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row.between { justify-content: space-between; flex-wrap: nowrap; }
 
-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
 input[type="text"], input[type="password"], select, textarea {
   width: 100%;
-  padding: 7px 9px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
+  padding: 9px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
   color: var(--text);
   font: inherit;
 }
-input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+select { border-radius: 999px; }
+input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+button:focus-visible, a:focus-visible, summary:focus-visible, input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
 
 button {
-  padding: 7px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--btn);
   color: var(--text);
-  font: inherit;
+  font: 600 13.5px/1.2 inherit;
+  white-space: nowrap;
   cursor: pointer;
 }
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-button:disabled { opacity: .6; cursor: default; }
-a { color: var(--accent); }
+button:hover { background: var(--btn-hover); }
+button.primary { background: var(--accent); color: var(--accent-text); }
+button.primary:hover { background: var(--accent-hover); }
+button.quiet { background: none; color: var(--muted); padding: 0 10px; }
+button.quiet:hover { background: var(--btn); color: var(--text); }
+button:disabled { opacity: .55; cursor: default; }
+button:disabled:hover { background: var(--btn); }
+button.primary:disabled:hover { background: var(--accent); }
+button svg { width: 16px; height: 16px; flex: none; }
+a { color: var(--text); }
 
-.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--neutral-bg); color: var(--muted); }
+.pill { display: inline-block; padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--btn); color: var(--text); }
 .pill.on_track { background: var(--ok-bg); color: var(--ok); }
 .pill.drifting, .pill.error { background: var(--warn-bg); color: var(--warn); }
-.note { font-size: 12px; color: var(--muted); }
+.note { font-size: 12.5px; color: var(--muted); }
 .warn { color: var(--warn); }
-pre.activity { margin: 0; white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+pre.activity { margin: 0; white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); background: var(--raised); border-radius: 14px; padding: 12px 14px; }
 [hidden] { display: none !important; }

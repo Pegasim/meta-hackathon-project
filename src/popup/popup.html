@@ -6,21 +6,32 @@
 <link rel="stylesheet" href="../shared/ui.css">
 <style id="skin-theme"></style>
 <style>
-  body { width: 360px; padding: 12px; }
-  #trigger-text { font-weight: 600; }
-  a { color: var(--text); }
-  .switch { gap: 6px; cursor: pointer; margin: 0; color: var(--text); font-size: 13px; }
-  .switch input { width: 32px; height: 18px; margin: 0; accent-color: var(--accent); }
+  body { width: 360px; padding: 14px; }
+  #trigger-text { font-weight: 700; font-size: 15px; }
+  .card h2 { margin-bottom: 6px; }
+  #intent-title { font-size: 15px; font-weight: 700; }
+  .actions { margin-top: 12px; }
+  .actions button { min-height: 34px; padding: 0 14px; }
+  .switch { gap: 8px; cursor: pointer; margin: 0; color: var(--text); font-size: 13px; font-weight: 600; }
+  .switch input { appearance: none; width: 36px; height: 22px; margin: 0; border-radius: 999px; background: var(--btn); position: relative; cursor: pointer; }
+  .switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform .15s; }
+  .switch input:checked { background: var(--accent); }
+  .switch input:checked::after { transform: translateX(14px); background: var(--accent-text); }
+  .switch input:disabled { opacity: .55; }
   .switch input:disabled + span { color: var(--muted); }
-  .brand { display: flex; align-items: center; gap: 8px; }
-  #tuck-away { border: none; background: none; padding: 7px 4px; color: var(--muted); text-decoration: underline; }
-  #tuck-away:hover { color: var(--text); }
-  .brand .tuck { width: 36px; height: 36px; --tuck-accent: var(--tk-accent, #94BFAE); }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .head-actions { display: flex; gap: 4px; }
+  .head-actions button { min-height: 32px; padding: 0 12px; font-size: 13px; }
+  #setup { background: var(--card); }
+  #setup a { font-weight: 600; }
+  #setup form { flex-wrap: nowrap; }
+  #setup form input { flex: 1; min-width: 0; }
+  .brand .tuck { width: 40px; height: 40px; --tuck-accent: var(--tk-accent, #94BFAE); }
   .sites { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
   .site { min-width: 0; } /* long titles must not widen the row */
   .site-name { font-weight: 600; }
   .site-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-  .bar { height: 4px; border-radius: 2px; margin-top: 4px; background: var(--border);
+  .bar { height: 6px; border-radius: 999px; margin-top: 5px; background: var(--raised);
          background-image: linear-gradient(var(--accent), var(--accent));
          background-size: calc(var(--share) * 100%) 100%; background-repeat: no-repeat; }
 </style>
@@ -28,7 +39,10 @@
 <body class="stack">
   <div class="row between">
     <div class="brand"><span id="tuck-mark" aria-hidden="true"></span><h1>Tuck</h1></div>
-    <a href="#" id="open-settings" class="small">Settings</a>
+    <div class="head-actions">
+      <button class="quiet" id="tuck-away" title="Hide Tuck from your pages">Tuck away</button>
+      <button id="open-settings">Settings</button>
+    </div>
   </div>
 
   <section class="card row between" id="away-card" hidden>
@@ -43,11 +57,10 @@
     <div id="intent-view" hidden>
       <p id="intent-title"></p>
       <p class="small muted" id="intent-next"></p>
-      <div class="row" style="margin-top:10px">
-        <button id="done">Done</button>
+      <div class="row actions">
+        <button class="primary" id="done">Done</button>
         <button id="change">Change</button>
         <button id="stuck">I'm stuck</button>
-        <button id="tuck-away">Tuck away</button>
       </div>
       <div id="stuck-view" hidden style="margin-top:10px">
         <p id="stuck-text" role="status"></p>
@@ -79,10 +92,10 @@
         <span id="focus-label">Focus</span>
       </label>
     </div>
-    <p style="margin-top:8px"><span id="state-pill" class="pill">…</span></p>
+    <p style="margin-top:10px"><span id="state-pill" class="pill">…</span></p>
     <div id="trigger" hidden style="margin-top:10px">
       <p id="trigger-text"></p>
-      <div class="row" style="margin-top:8px; flex-wrap:wrap">
+      <div class="row actions">
         <button class="primary" id="take-me-back">Take me back</button>
         <button id="for-my-task">This is for my task</button>
         <button class="primary" id="got-it" hidden>Got it</button>

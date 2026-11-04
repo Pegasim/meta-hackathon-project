@@ -160,7 +160,8 @@
     .c-msg .text { margin: 0; font-size: 13px; font-weight: 400; }
     .c-msg.from-tuck { align-self: flex-start; }
     .c-msg.from-tuck > .text { background: color-mix(in srgb, var(--tk-surface), white 65%); border: 1px solid var(--tk-outline); border-radius: 11px 11px 11px 3px; padding: 6px 9px; }
-    @media (prefers-color-scheme: dark) { .c-msg.from-tuck > .text { background: transparent; } }
+    @media (prefers-color-scheme: dark) { :host(:not([data-theme="light"])) .c-msg.from-tuck > .text { background: transparent; } }
+    :host([data-theme="dark"]) .c-msg.from-tuck > .text { background: transparent; }
     .c-msg.from-me { align-self: flex-end; width: fit-content; background: var(--tk-accent); color: var(--tk-on-accent);
                 border-radius: 11px 11px 3px 11px; padding: 6px 9px; }
     .c-msg.pending > .text { color: var(--tk-muted); }
@@ -188,6 +189,7 @@
   // Settings → Tuck's motion: "system" follows the computer's reduce-motion setting, "on"
   // always animates, "off" keeps every pose still.
   let motion = "system";
+  let scheme = "system"; // Settings → Theme: "system", "light" or "dark"
   const reducedMotion = () =>
     motion === "off" || (motion !== "on" && matchMedia("(prefers-reduced-motion: reduce)").matches);
   const isSprite = () => skin?.kind === "sprites";
@@ -339,16 +341,19 @@
   // is still installed stays, and this copy does not draw, so two copies never fight;
   // once that copy is gone its host leaves within ORPHAN_CHECK_MS. Returns whether Tuck
   // is ours to draw.
-  function ensureRoot({ manifest, svg, css, item: worn, motion: moves, readAt }) {
+  function ensureRoot({ manifest, svg, css, item: worn, motion: moves, theme = "system", readAt }) {
     // Assets read before the newest look change (a word on its way while the person picked
     // another look) keep the look on screen.
     const stale = root?.isConnected && readAt != null && readAt < lookAt;
+    const recolour = !stale && theme !== scheme;
     if (!stale) {
       item = manifest.items?.includes(worn) ? worn : "none";
       motion = moves ?? "system";
+      scheme = theme;
     }
     if (root?.isConnected) {
-      if (!stale && manifest.id !== skin.id) drawSkin({ manifest, svg, css }); // a new skin, in place: the bubble stays
+      // A new skin or theme, in place: the bubble stays.
+      if (!stale && (manifest.id !== skin.id || recolour)) drawSkin({ manifest, svg, css });
       return true;
     }
     for (const other of document.querySelectorAll(`#${HOST_ID}`)) {
@@ -383,7 +388,9 @@
     clearTimeout(spriteTimer); // a frame of the old skin must not land on the new one
     skin = manifest;
     SIZE = manifest.size;
-    root.querySelector("style").textContent = css + themeCss(manifest.theme) + STYLE;
+    root.querySelector("style").textContent = css + themeCss(manifest.theme, scheme) + STYLE;
+    if (scheme === "system") delete root.host.dataset.theme;
+    else root.host.dataset.theme = scheme;
     const avatar = root.querySelector(".avatar");
     avatar.innerHTML = svg;
     const svgEl = avatar.querySelector("svg");

@@ -959,10 +959,11 @@ async function draftFor(t, s) {
 const tuckAssets = new Map();
 async function assets() {
   const { DEFAULT_SKIN, loadSkin } = globalThis.tuckSkins;
-  const { tuckSkin, tuckItem, tuckMotion } = await chrome.storage.local.get({
+  const { tuckSkin, tuckItem, tuckMotion, tuckTheme } = await chrome.storage.local.get({
     tuckSkin: DEFAULT_SKIN,
     tuckItem: "bandana",
     tuckMotion: "system",
+    tuckTheme: "system",
   });
   const load = async (id) => {
     if (!tuckAssets.has(id)) {
@@ -975,7 +976,7 @@ async function assets() {
   const skin = await load(tuckSkin).catch(() => load(DEFAULT_SKIN));
   // readAt: a page keeps the newest look it was sent; a word drawn with assets read before
   // a look change must not put the old skin back (overlay ensureRoot).
-  return { ...skin, item: tuckItem, motion: tuckMotion, readAt: Date.now() };
+  return { ...skin, item: tuckItem, motion: tuckMotion, theme: tuckTheme, readAt: Date.now() };
 }
 
 // The person picked another look in settings: Tuck on the page changes in place (a word on
@@ -990,7 +991,8 @@ async function lookChanged() {
   await chrome.action.setIcon({ path }).catch(() => {});
 }
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && (changes.tuckSkin || changes.tuckItem || changes.tuckMotion)) lookChanged();
+  if (area === "local" && (changes.tuckSkin || changes.tuckItem || changes.tuckMotion || changes.tuckTheme))
+    lookChanged();
 });
 chrome.runtime.onStartup.addListener(lookChanged);
 chrome.runtime.onInstalled.addListener(lookChanged);
