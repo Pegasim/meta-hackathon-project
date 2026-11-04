@@ -1539,7 +1539,7 @@ assert.ok(loopsAfterSaid.visa01.saidOn, "said once it is on screen");
 assert.ok(loopsAfterDone.visa01.doneAt, "Done is remembered");
 assert.equal(reminderAgain, 0, "and it does not come back");
 assert.equal(driftMaybe.evidence.unsure, true, "Tuck asks on a page it is unsure about");
-assert.equal(askedTasks, 1, "eleven open loops, one call");
+assert.equal(askedTasks, 2, "eleven open loops, two calls of at most 10");
 assert.equal(taskRows, 7, "the first 7 in sight");
 assert.match(showAllLabel, /Show all 9/, "the rest behind Show all");
 assert.match(allTaskText, /Run errand 1\b[\s\S]*Run errand 9/, "the node's titles, newest first");

@@ -16,7 +16,7 @@
 // so a title that still names the step (a PR, a merge, a branch) counts against it. A case
 // with `expect.titleHas` (a regex) checks that the title names what the action is for. A
 // case with `activity` is sent in a batch of its own with that day's browsing, as one run
-// of the extension sends it (#76); the others go in batches of 15 with none.
+// of the extension sends it (#76); the others go in batches of 10 with none.
 import fs from "node:fs";
 import path from "node:path";
 import { modelClient } from "../src/memory/model.js";
@@ -25,7 +25,7 @@ import { judgeBatch } from "../src/agent/tasks.js";
 
 const ACCURACY_MIN = 0.85;
 const DROPPED_MAX = 0.1;
-const BATCH = 15;
+const BATCH = 10; // as src/agent/tasks.js sends them
 const dir = import.meta.dirname;
 const reps = Number(process.env.REPS ?? 3);
 const raw = process.env.REASONING_EFFORT || undefined; // unset: the node's own setting
@@ -54,7 +54,7 @@ const batches = [];
 const plain = cases.filter((c) => !c.activity);
 for (let i = 0; i < plain.length; i += BATCH) batches.push({ cases: plain.slice(i, i + BATCH), activity: null });
 for (const c of cases.filter((c) => c.activity)) batches.push({ cases: [c], activity: c.activity });
-const times = []; // ms per call, for batches of 15
+const times = []; // ms per call, for full batches
 for (let rep = 0; rep < reps; rep++)
   for (const { cases: batch, activity } of batches) {
     const r = await judgeBatch(

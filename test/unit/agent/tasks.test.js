@@ -175,12 +175,16 @@ test("an invalid reply is asked once more; a model that fails leaves the batch u
   assert.equal(down.error, "503");
 });
 
-test("batches of 15; a second run asks only about new or changed entries", async () => {
+test("batches of 10; a second run asks only about new or changed entries", async () => {
   const candidates = Array.from({ length: 20 }, (_, i) => entry(`e${i}`));
   const sample = candidates.map(({ topic, title }) => ({ topic, title }));
   const first = fakeModel();
   const r1 = await extractTasks(first.complete, { candidates, sample });
-  assert.equal(first.calls.length, 2);
+  assert.deepEqual(
+    first.calls.map((m) => (m.at(-1).content.match(/^\d+\. /gm) ?? []).length),
+    [10, 10],
+    "under the worker's 30-second limit (#76)",
+  );
   assert.equal(Object.keys(r1.cache).length, 20);
   assert.equal(r1.judged, 20);
 
@@ -628,16 +632,16 @@ test("refreshTasks sends one summary of the last 24 hours to every batch; a new 
   };
   const model = fakeModel();
   await refreshTasks(model.complete, {
-    memory: memoryWith("- github.com: 80 min", [{ host: "github.com" }]),
+    memory: memoryWith("", [{ host: "github.com", ms: 80 * 60000, titles: ["acme/app"] }]),
     storage,
     today: "2026-11-04",
   });
   assert.deepEqual(asked, [1440], "asked once per run, for 24 hours");
   assert.equal(model.calls.length, 2);
-  assert.ok(model.calls.every((m) => m.at(-1).content.includes("- github.com: 80 min")));
+  assert.ok(model.calls.every((m) => m.at(-1).content.includes('- github.com: 80 min ("acme/app")')));
   const again = fakeModel();
   await refreshTasks(again.complete, {
-    memory: memoryWith("- youtube.com: 3 h", [{ host: "youtube.com" }]),
+    memory: memoryWith("", [{ host: "youtube.com", ms: 180 * 60000, titles: [] }]),
     storage,
     today: "2026-11-04",
   });
@@ -660,4 +664,48 @@ test("refreshTasks sends one summary of the last 24 hours to every batch; a new 
     today: "2026-11-04",
   });
   assert.equal(old.calls.length, 2, "a memory without activity still works");
+});
+
+test("the browsing block leaves out every site the person keeps from being read", async () => {
+  const sites = [
+    { host: "github.com", ms: 90 * 60000, titles: ["acme/app · Pull requests"] },
+    { host: "paypal.com", ms: 10 * 60000, titles: ["Activity · PayPal"] },
+    { host: "online.mybank.example", ms: 8 * 60000, titles: ["Account balance"] },
+    { host: "clinic.example", ms: 5 * 60000, titles: ["Lab results"] },
+    { host: "docs.example.dev", ms: 20 * 60000, titles: ["Storage API"] },
+  ];
+  const memory = {
+    taskQueue: async () => [entry("a")],
+    profileSample: async () => [],
+    activity: async () => ({ summary: { sites }, text: "unused" }),
+  };
+  const run = async (pageReading) => {
+    const model = fakeModel();
+    const stored = pageReading ? { pageReading } : {};
+    await refreshTasks(model.complete, {
+      memory,
+      storage: {
+        get: async (keys) => Object.fromEntries(keys.filter((k) => k in stored).map((k) => [k, stored[k]])),
+        set: async () => {},
+      },
+      today: "2026-11-04",
+    });
+    return model.calls[0].at(-1).content;
+  };
+  const builtIn = await run();
+  assert.match(builtIn, /- github\.com: 90 min \("acme\/app · Pull requests"\)/, "a normal site is there");
+  assert.match(builtIn, /docs\.example\.dev/);
+  assert.doesNotMatch(builtIn, /paypal|PayPal/, "the built-in list");
+  assert.doesNotMatch(builtIn, /mybank|Account balance/, "a host naming a bank");
+  assert.match(builtIn, /clinic\.example/, "not on the built-in list");
+  assert.match(builtIn, /\(115 min active\)/, "the total counts only what is shown");
+  const own = await run({ enabled: false, neverRead: ["clinic.example"] });
+  assert.doesNotMatch(own, /clinic|Lab results/, "the person's own list, with reading off too");
+  assert.doesNotMatch(own, /mybank/, "the word rule holds with any list");
+  assert.match(own, /paypal\.com/, "their list replaces the built-in one, as for excerpts");
+  const none = await run({
+    enabled: true,
+    neverRead: ["github.com", "docs.example.dev", "paypal.com", "clinic.example"],
+  });
+  assert.doesNotMatch(none, /browsing/, "nothing left: no block");
 });

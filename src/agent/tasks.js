@@ -10,8 +10,12 @@ import { extractJsonObject } from "./json.js";
 import { taskKey, pairKey } from "../attention/reminders.js";
 import { writtenBy, ageOf } from "../memory/context.js";
 import { localDate } from "../memory/due.js";
+import { renderSummary } from "../memory/activity.js";
+import { mayRead, readingSettings } from "../attention/reading.js";
 
-const BATCH = 15;
+// Ten, not 15: at 15 the slowest eval batch took 29.7 s (#76), against the worker's
+// 30-second fetch limit, and real notes are longer than the eval's.
+const BATCH = 10;
 const CONCURRENCY = 3;
 const LATER = 6; // later notes on the same topic shown with each entry
 const KIN = 4; // and notes on the topic whose titles share its words
@@ -462,9 +466,16 @@ export async function judgePairs(
 // The last 24 hours of browsing, as memory summarises it (at most 6 sites, 2 titles each),
 // or null when there is none. One block per run, never per entry, and not in a verdict's
 // hash: a verdict is not asked again because the day went on, only when its notes change.
-async function dayOfBrowsing(memory) {
-  const act = await memory.activity?.({ minutes: 24 * 60 }).catch(() => null);
-  return act?.summary?.sites?.length ? act.text : null;
+// A site the person keeps from being read (their never-read list, and any host naming a
+// bank, a vault or passwords) is left out whole, host and titles, whether or not page
+// reading is on. pageReading: chrome.storage.local "pageReading", or nothing.
+const DAY_MIN = 24 * 60;
+async function dayOfBrowsing(memory, pageReading) {
+  const act = await memory.activity?.({ minutes: DAY_MIN }).catch(() => null);
+  const { neverRead } = readingSettings(pageReading);
+  const sites = (act?.summary?.sites ?? []).filter((s) => mayRead(`https://${s.host}/`, { enabled: true, neverRead }));
+  if (!sites.length) return null;
+  return renderSummary({ totalMs: sites.reduce((a, s) => a + s.ms, 0), sites }, DAY_MIN * 60000);
 }
 
 // The whole step, for the settings page and the worker alike. storage: chrome.storage.local
@@ -472,12 +483,17 @@ async function dayOfBrowsing(memory) {
 // (attention/reminders.js). Goals set in the extension and loops already answered are not
 // asked about.
 export async function refreshTasks(complete, { memory, storage, today, clean, onProgress }) {
-  const { taskVerdicts = {}, taskPairs = {}, loops = {} } = await storage.get(["taskVerdicts", "taskPairs", "loops"]);
+  const {
+    taskVerdicts = {},
+    taskPairs = {},
+    loops = {},
+    pageReading,
+  } = await storage.get(["taskVerdicts", "taskPairs", "loops", "pageReading"]);
   const candidates = (await memory.taskQueue({ today, limit: Infinity })).filter(
     (e) => e.source !== "extension" && !loops[e.id]?.doneAt && !loops[e.id]?.notTaskAt,
   );
   const sample = await memory.profileSample({ limit: Infinity });
-  const activity = await dayOfBrowsing(memory);
+  const activity = await dayOfBrowsing(memory, pageReading);
   const r = await extractTasks(complete, {
     candidates,
     sample,
