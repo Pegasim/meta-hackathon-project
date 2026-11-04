@@ -67,6 +67,9 @@ test("Muse's answer on screen comes first: a turn's end waits, an approval does 
   send({ hook_event_name: "UserPromptSubmit" });
   send({ hook_event_name: "PermissionRequest" });
   await wait(900);
+  assert.deepEqual(statuses(), ["working"], "Muse's judge may answer it");
+  send({ hook_event_name: "Notification", notification_type: "permission_prompt" });
+  await wait(900);
   assert.deepEqual(statuses(), ["working", "waiting_for_user"], "the approval is on screen already");
   send({ hook_event_name: "Stop", last_assistant_message: "Done." });
   await wait(900);
@@ -88,7 +91,7 @@ test("a host restarted during a turn still follows that turn", async () => {
   let out = Buffer.alloc(0);
   host.stdout.on("data", (d) => (out = Buffer.concat([out, d])));
   await new Promise((r) => setTimeout(r, 300));
-  send({ hook_event_name: "PermissionRequest" });
+  send({ hook_event_name: "Notification", notification_type: "permission_prompt" });
   await new Promise((r) => setTimeout(r, 900));
   host.stdin.end();
   await new Promise((r) => host.on("exit", r));
