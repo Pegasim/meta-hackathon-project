@@ -39,6 +39,7 @@ import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks } from "../agent/tasks.js";
 import { planFor, stuckStep, nextAfter } from "../agent/moments.js";
+import { recentRuns } from "../agent/loop.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine, templateGreeting, toolKind, whenSaid } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
@@ -1616,11 +1617,7 @@ const HANDLERS = {
   stuck,
   "start-step": startStep,
   // What Tuck looked at, for settings: the last agent runs, newest first.
-  "agent-runs": async () =>
-    (await (await store).eventsSince(Date.now() - 24 * 3600 * 1000))
-      .filter((e) => e.type === "agent")
-      .slice(-5)
-      .reverse(),
+  "agent-runs": async () => recentRuns(await (await store).eventsSince(Date.now() - 24 * 3600 * 1000)),
   "agent-status": agentStatus,
   // What Tuck has learned from answers, for settings. Forgetting one has the page in
   // front judged again.

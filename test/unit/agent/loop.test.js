@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runAgent, MAX_STEPS } from "../../../src/agent/loop.js";
+import { runAgent, MAX_STEPS, recentRuns } from "../../../src/agent/loop.js";
 import { planFor, stuckStep, nextAfter } from "../../../src/agent/moments.js";
 import { generic } from "../../../src/agent/tools.js";
 
@@ -259,4 +259,28 @@ test("after two rounds of looking, only the finishing tool is offered, and a rea
   );
   assert.match(sent[2].messages.at(-1).content, /Finish now with propose_step/);
   assert.ok(sent[3].messages.some((m) => m.role === "tool" && /no more looking up/.test(m.content)));
+});
+
+test("recentRuns keeps only the loop's runs, newest first, at most 5 (#93)", () => {
+  const status = (ts) => ({ type: "agent", ts, status: "working", session: "s1" });
+  const run = (ts) => ({ type: "agent", ts, moment: "plan", source: "agent", steps: 2 });
+  const log = [
+    run(1),
+    status(2),
+    run(3),
+    { type: "visit", ts: 4 },
+    run(5),
+    status(6),
+    run(7),
+    run(8),
+    status(9),
+    run(10),
+    status(11),
+    status(12),
+  ];
+  assert.deepEqual(
+    recentRuns(log).map((e) => e.ts),
+    [10, 8, 7, 5, 3],
+  );
+  assert.deepEqual(recentRuns([status(1), status(2)]), []);
 });
