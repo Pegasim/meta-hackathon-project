@@ -632,6 +632,8 @@ await worker.evaluate(() => {
   const set = chrome.action.setIcon.bind(chrome.action);
   chrome.action.setIcon = (details) => (globalThis.__icons.push(details), set(details));
 });
+// The skins are listed before their change handler is set (options.js): wait for it.
+await settingsPage.waitForFunction(() => document.getElementById("tuck-skin").onchange);
 await settingsPage.selectOption("#tuck-skin", "paper");
 const backButton = onVideo.locator(".bubble button[data-choice=back]");
 await onVideo.locator("svg.tuck[data-state]").waitFor({ timeout: 5000 });
