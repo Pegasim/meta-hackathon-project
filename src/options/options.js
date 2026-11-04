@@ -28,7 +28,7 @@ const memory = await Memory.open();
 const attention = openStore(); // the goal, for the row it came from (#77)
 
 const NAMES = {
-  meta: "Meta · Muse Spark 1.3",
+  meta: "Meta · Muse Wonder 1.0",
   openrouter: "OpenRouter · Muse Glimmer",
   ollama: "Local Ollama · Muse Glimmer",
   together: "Together · Muse Spark Open",
@@ -279,7 +279,7 @@ $("export-file").onchange = async () => {
         ? `${s.chosen.length} are from the last 30 days and name a date or a to-do in your own words, ${dates[0]} to ${dates.at(-1)}.`
         : "None is from the last 30 days with a date or a to-do in your own words.",
       fresh.length < s.chosen.length ? `${s.chosen.length - fresh.length} were read before.` : null,
-      `${fresh.length} will be sent, one at a time: ${chars.toLocaleString()} characters, secrets removed, to Muse Spark 1.3 (not Contributor).`,
+      `${fresh.length} will be sent, one at a time: ${chars.toLocaleString()} characters, secrets removed, to Muse Wonder 1.0 (not Contributor).`,
       `Left out: ${s.tooOld} older, ${s.noCue} with nothing owed` +
         (s.overCap ? `, ${s.overCap} over the limit of 50` : "") +
         ".",
