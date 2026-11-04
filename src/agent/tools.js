@@ -259,13 +259,28 @@ export const nextTools = {
 // The goal chat: the person said what today is about. Their words come first: a note may
 // make the goal concrete, never swap it for another task. A proposed title must keep a word
 // of what they said (by its first 5 letters, as a step's grounding).
+// Tuck's own line in the chat: short, in its voice. Throws with the reason, which the model is told.
+function checkReply(reply, { required = false } = {}) {
+  const text = String(reply ?? "").trim();
+  if (!text) {
+    if (required) throw new Error("write a reply: one short line for the person");
+    return null;
+  }
+  if (!followsVoice(text)) throw new Error(`"${text}" breaks the rules: at most ${MAX_WORDS} words, no "!", no emoji`);
+  return text;
+}
+
 export const goalTools = {
   propose_goal: {
     description:
-      "Finish with the person's goal made concrete by a note about the same thing (keep their subject), and one first step.",
+      "Finish with the person's goal made concrete by a note about the same thing (keep their subject), one first step, and your short reply to them.",
     parameters: {
       type: "object",
-      properties: { title: { type: "string" }, step: { type: "string" } },
+      properties: {
+        title: { type: "string" },
+        step: { type: "string" },
+        reply: { type: "string", description: `What you say to them, at most ${MAX_WORDS} words` },
+      },
       required: ["title"],
     },
     finish: (args, ctx) => {
@@ -277,18 +292,25 @@ export const goalTools = {
       if (!grounded(title, new Set(words(said).map((w) => w.slice(0, 5)))))
         throw new Error(`the goal must keep what the person wrote: "${said}"`);
       const step = String(args?.step ?? "").trim() ? checkStep(args.step, grounds(ctx, [said, title])) : null;
-      return { title, step, kept: false };
+      const reply = checkReply(args?.reply);
+      return { title, step, kept: false, ...(reply && { reply }) };
     },
   },
   keep_goal: {
-    description: "Finish with the person's own words as the goal: no note is about the same thing.",
-    parameters: noArgs,
-    finish: (_args, ctx) => ({
+    description:
+      "Finish with the person's own words as the goal (no note is about the same thing), and your short reply: react to what they said and ask what they will do first.",
+    parameters: {
+      type: "object",
+      properties: { reply: { type: "string", description: `What you say to them, at most ${MAX_WORDS} words` } },
+      required: ["reply"],
+    },
+    finish: (args, ctx) => ({
       title: String(ctx.said ?? "")
         .trim()
         .slice(0, 120),
       step: null,
       kept: true,
+      reply: checkReply(args?.reply, { required: true }),
     }),
   },
 };

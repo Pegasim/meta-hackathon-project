@@ -52,7 +52,9 @@ const GOAL = [
   "same thing. If a note is about the same thing, finish with propose_goal: their goal made",
   "concrete with that note (keep their subject), and one first step. If no note is about",
   "the same thing, or there are no notes, finish with keep_goal. Never swap their goal for",
-  "another task, however urgent it looks.",
+  "another task, however urgent it looks. Your reply talks to them like a friend at the next",
+  "desk: react to what they said in their own words, then one short question (with keep_goal:",
+  "what they will do first). One or two short sentences, no lists, no advice.",
   HISTORY,
   VOICE,
 ].join("\n");

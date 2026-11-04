@@ -57,20 +57,49 @@ test("propose_goal with no step keeps the goal and no step", () => {
   });
 });
 
-test("keep_goal returns the person's words, trimmed", () => {
-  assert.deepEqual(goalTools.keep_goal.finish({}, { said: "  fix the cart  " }), {
-    title: "fix the cart",
-    step: null,
-    kept: true,
-  });
+test("keep_goal returns the person's words, trimmed, and Tuck's own reply", () => {
+  assert.deepEqual(
+    goalTools.keep_goal.finish({ reply: "Nice. What will you touch first?" }, { said: "  fix the cart  " }),
+    {
+      title: "fix the cart",
+      step: null,
+      kept: true,
+      reply: "Nice. What will you touch first?",
+    },
+  );
+});
+
+test("a reply that breaks Tuck's voice, or none, is rejected, so the model writes it again", () => {
+  const ctx = { said: "fix the cart" };
+  assert.throws(
+    () => goalTools.keep_goal.finish({ reply: "Amazing!!! Let's crush it today, you've got this, champion!" }, ctx),
+    /rules/,
+  );
+  assert.throws(() => goalTools.keep_goal.finish({}, ctx), /reply/);
+});
+
+test("propose_goal carries Tuck's reply when the model writes one", () => {
+  const ctx = { said: "fix the cart", notes: [] };
+  const v = goalTools.propose_goal.finish(
+    { title: "Fix the cart total bug", reply: "Your notes say it's the total." },
+    ctx,
+  );
+  assert.equal(v.reply, "Your notes say it's the total.");
 });
 
 test("goalFrom with no notes ends with keep_goal, and the model sees the person's words", async () => {
-  const r = await goalFrom(scripted([["recall_notes", { query: "investor deck" }]], [["keep_goal"]]), deps([]), {
-    said: "the investor deck",
-  });
+  const r = await goalFrom(
+    scripted([["recall_notes", { query: "investor deck" }]], [["keep_goal", { reply: "Got it. Which slide first?" }]]),
+    deps([]),
+    { said: "the investor deck" },
+  );
   assert.equal(r.source, "agent");
-  assert.deepEqual(r.value, { title: "the investor deck", step: null, kept: true });
+  assert.deepEqual(r.value, {
+    title: "the investor deck",
+    step: null,
+    kept: true,
+    reply: "Got it. Which slide first?",
+  });
 });
 
 test("goalFrom offers only notes and tasks to read", async () => {
@@ -80,7 +109,13 @@ test("goalFrom offers only notes and tasks to read", async () => {
     return {
       role: "assistant",
       content: null,
-      tool_calls: [{ id: "c1", type: "function", function: { name: "keep_goal", arguments: "{}" } }],
+      tool_calls: [
+        {
+          id: "c1",
+          type: "function",
+          function: { name: "keep_goal", arguments: '{"reply":"Okay. Where do you start?"}' },
+        },
+      ],
     };
   };
   await goalFrom(chat, deps([]), { said: "the investor deck" });
