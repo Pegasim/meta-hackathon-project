@@ -263,6 +263,20 @@ test("session_start greets the first active page of a day once, only without a g
   assert.deepEqual(kinds([setIntent(morning), ctx(morning, REPO, "related")], morning + 10 * S), []);
 });
 
+// #73: after a restart sessionDay is unset while the goal is restored. Ending the goal
+// is the day already started: its word asks what's next, and a greeting would replace it.
+test("session_start does not follow a finished goal, even after a restart", () => {
+  const cfg = { ...CFG, tzOffsetMin: -180 };
+  const morning = Date.UTC(2026, 10, 1, 6, 0);
+  const restored = { type: "session", ts: morning, kind: "intent_set", payload: { ...intent, restored: true } };
+  const done = { type: "session", ts: morning + 60 * S, kind: "intent_done", payload: { id: intent.id } };
+  const { triggers } = run([restored, ctx(morning, REPO, "related"), done, ctx(morning + 61 * S, REPO)], {
+    until: morning + 70 * S,
+    cfg,
+  });
+  assert.deepEqual(triggers.filter((t) => t.kind === "session_start"), []);
+});
+
 test("one nudge at a time: no fragmentation while a drift is running", () => {
   const cfg = { ...CFG, fragmentation: true };
   const X = ["https://x.com/home", "Home / X"];
