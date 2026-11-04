@@ -1,5 +1,7 @@
 # Tuck v1: skins, a border collie, and a bubble that matches
 
+> Update 2026-11-04 (İrem): the default skin is now `kitten`, İrem's pastel pixel kitten (a sprite skin from her final asset); v1 (the border collie) and paper stay selectable. Sprite-skin fields: `src/tuck/skins/README.md`.
+
 Date: 2026-11-04 · Owner: İrem · Branch: `feat-avatar-redesign`
 Prototype (open in a browser): [`2026-11-04-tuck-v1-prototype.html`](2026-11-04-tuck-v1-prototype.html)
 

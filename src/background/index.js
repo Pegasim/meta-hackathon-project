@@ -730,17 +730,17 @@ async function draftFor(t, s) {
 // The chosen skin (src/tuck/skins/<id>/) and what Tuck wears or carries in it.
 const tuckAssets = new Map();
 async function assets() {
-  const { tuckSkin, tuckItem } = await chrome.storage.local.get({ tuckSkin: "v1", tuckItem: "bandana" });
+  const { DEFAULT_SKIN, loadSkin } = globalThis.tuckSkins;
+  const { tuckSkin, tuckItem } = await chrome.storage.local.get({ tuckSkin: DEFAULT_SKIN, tuckItem: "bandana" });
   const load = async (id) => {
     if (!tuckAssets.has(id)) {
-      const read = async (file) => (await fetch(chrome.runtime.getURL(`tuck/skins/${id}/${file}`))).text();
-      const [manifest, svg, css] = await Promise.all([read("skin.json"), read("tuck.svg"), read("tuck.css")]);
-      tuckAssets.set(id, { manifest: JSON.parse(manifest), svg, css });
+      const url = (file) => chrome.runtime.getURL(`tuck/skins/${id}/${file}`);
+      tuckAssets.set(id, await loadSkin(async (file) => (await fetch(url(file))).text(), url));
     }
     return tuckAssets.get(id);
   };
   // A skin that is no longer there must not keep Tuck off every page.
-  const skin = await load(tuckSkin).catch(() => load("v1"));
+  const skin = await load(tuckSkin).catch(() => load(DEFAULT_SKIN));
   return { ...skin, item: tuckItem };
 }
 

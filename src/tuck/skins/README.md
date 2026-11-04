@@ -19,7 +19,12 @@ src/tuck/skins/<id>/
 - `stateAttr`: optional; an attribute (paper uses `data-state`) that carries the fallback name, so older art keeps working unchanged.
 - `items`: optional accessories; a skin without any lists `["none"]`.
 - `theme`: `light` and `dark`, each with `accent`, `onAccent`, `surface`, `ink`, `muted`, `outline`, `pink`; plus `rim`. They become `--tk-accent`, `--tk-on-accent`, `--tk-surface`, `--tk-ink`, `--tk-muted`, `--tk-outline`, `--tk-pink`, `--tk-rim`.
-- Sprite skins add `frames: { "<pose>": { "count", "fps", "loop" } }`; `loop: true` only for `work`.
+- Sprite skins add `frame {width, height}` (one frame's pixels in the strips; `size` is how big Tuck is on screen) and `frames: { "<strip>": { … } }`, one entry per strip in `frames/<strip>.png` (frames side by side):
+  - `count` frames, played at `fps`; an entrance plays once (`repeat` times) and holds the first frame.
+  - `loop: true` only for `work` (and the `drag-left` / `drag-right` strips, played while the person drags Tuck).
+  - `every`: only `rest`, at least 6000 ms: a calm idle (a breath, a blink) that comes back now and then.
+  - `gaze: true`: once played, Tuck turns to its bubble, using the optional `look` strip (16 frames, clockwise from up in 22.5° steps).
+  - Optional extra strips: `drag-left`, `drag-right`, `look`. The default skin, `kitten`, is the reference (its `source` field says which atlas rows became which strip).
 
 ## The contract with the page
 
@@ -30,7 +35,7 @@ src/tuck/skins/<id>/
 ## Adding an asset
 
 1. Make the folder and `skin.json`; pick `kind`.
-2. Map each canonical pose to the art, or to a fallback.
+2. Map each canonical pose to the art, or to a fallback. A sprite atlas is cut into one strip per pose (crop every cell to the same box so frames line up); keep loops off every pose but `work`.
 3. Export the four icon sizes into `icons/`.
 4. Read the palette off the art and fill `theme`; `ink` on `surface` and `onAccent` on `accent` must pass 4.5:1.
 5. Add the id to `index.json`.

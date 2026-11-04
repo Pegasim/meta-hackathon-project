@@ -129,14 +129,15 @@ setInterval(renderActivity, 15000);
 // Tuck in the header; sleeping while you are on a break or not to be disturbed.
 async function renderMark() {
   // The skin the background draws on pages (background assets()).
-  const stored = await chrome.storage.local.get({ tuckSkin: "v1", tuckItem: "bandana" });
+  const { DEFAULT_SKIN, loadSkin } = globalThis.tuckSkins;
+  const stored = await chrome.storage.local.get({ tuckSkin: DEFAULT_SKIN, tuckItem: "bandana" });
   const { tuckItem } = stored;
-  // An unknown skin falls back to v1, as the background does.
+  // An unknown skin falls back to the default, as the background does.
   const ids = await (await fetch(chrome.runtime.getURL("tuck/skins/index.json"))).json();
-  const tuckSkin = ids.includes(stored.tuckSkin) ? stored.tuckSkin : "v1";
-  $("skin-css").href = `../tuck/skins/${tuckSkin}/tuck.css`;
-  const read = async (file) => (await fetch(chrome.runtime.getURL(`tuck/skins/${tuckSkin}/${file}`))).text();
-  const [svg, manifest] = await Promise.all([read("tuck.svg"), read("skin.json").then(JSON.parse)]);
+  const tuckSkin = ids.includes(stored.tuckSkin) ? stored.tuckSkin : DEFAULT_SKIN;
+  const url = (file) => chrome.runtime.getURL(`tuck/skins/${tuckSkin}/${file}`);
+  const { manifest, svg, css } = await loadSkin(async (file) => (await fetch(url(file))).text(), url);
+  $("skin-theme").before(Object.assign(document.createElement("style"), { textContent: css }));
   $("tuck-mark").innerHTML = svg;
   // The popup wears the skin's colours: its own colour variables follow the theme ones.
   $("skin-theme").textContent =

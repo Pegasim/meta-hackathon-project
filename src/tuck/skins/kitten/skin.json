@@ -1,0 +1,44 @@
+{
+  "id": "kitten",
+  "name": "Pastel kitten",
+  "kind": "sprites",
+  "size": { "width": 72, "height": 79 },
+  "frame": { "width": 92, "height": 101 },
+  "poses": ["rest", "work", "wait", "drift", "happy", "sleep", "hello"],
+  "fallback": {},
+  "items": ["none"],
+  "frames": {
+    "rest": { "count": 6, "fps": 6, "every": 9000 },
+    "work": { "count": 6, "fps": 5, "loop": true },
+    "wait": { "count": 6, "fps": 6, "gaze": true },
+    "drift": { "count": 6, "fps": 6, "gaze": true },
+    "happy": { "count": 5, "fps": 9 },
+    "sleep": { "count": 1 },
+    "hello": { "count": 4, "fps": 5, "repeat": 2 },
+    "drag-right": { "count": 8, "fps": 12, "loop": true },
+    "drag-left": { "count": 8, "fps": 12, "loop": true },
+    "look": { "count": 16 }
+  },
+  "source": "tuck-run final/spritesheet-extended.png (192x208 cells), cropped to the union box and halved: rest=idle, work=running (active work), wait=waiting, drift=review, happy=jumping, sleep=idle frame 4 (eyes closed), hello=waving, drag-*=running-left/right, look=look rows 9-10",
+  "theme": {
+    "light": {
+      "accent": "#C9B3F2",
+      "onAccent": "#35203F",
+      "surface": "#FFF8FC",
+      "ink": "#35203F",
+      "muted": "#6B5872",
+      "outline": "#EADCEB",
+      "pink": "#F2A7C3"
+    },
+    "dark": {
+      "accent": "#C9B3F2",
+      "onAccent": "#35203F",
+      "surface": "#2A2131",
+      "ink": "#F7EFF8",
+      "muted": "#C4B5C9",
+      "outline": "#463A4E",
+      "pink": "#F2A7C3"
+    },
+    "rim": "#FFFFFF"
+  }
+}

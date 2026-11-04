@@ -65,13 +65,14 @@ for (const id of skinIds) {
   $("tuck-skin").append(new Option(skinNames[id].name, id));
 }
 async function showLook(saved) {
-  const id = skinIds.includes(saved.tuckSkin) ? saved.tuckSkin : "v1";
+  const id = skinIds.includes(saved.tuckSkin) ? saved.tuckSkin : globalThis.tuckSkins.DEFAULT_SKIN;
   const manifest = skinNames[id];
   $("tuck-skin").value = id;
   $("tuck-item").replaceChildren(...manifest.items.map((i) => new Option(i, i)));
   $("tuck-item").value = manifest.items.includes(saved.tuckItem) ? saved.tuckItem : "none";
   $("tuck-item-row").hidden = manifest.items.every((i) => i === "none");
-  const [svg, css] = await Promise.all([skinFile(id, "tuck.svg"), skinFile(id, "tuck.css")]);
+  const url = (file) => chrome.runtime.getURL(`tuck/skins/${id}/${file}`);
+  const { svg, css } = await globalThis.tuckSkins.loadSkin((file) => skinFile(id, file), url);
   const shadow = $("tuck-preview").shadowRoot ?? $("tuck-preview").attachShadow({ mode: "open" });
   const style = document.createElement("style");
   style.textContent = css + globalThis.tuckSkins.themeCss(manifest.theme);
@@ -84,7 +85,7 @@ async function showLook(saved) {
   root.dataset.item = $("tuck-item").value;
   shadow.replaceChildren(style, art);
 }
-const savedLook = () => chrome.storage.local.get({ tuckSkin: "v1", tuckItem: "bandana" });
+const savedLook = () => chrome.storage.local.get({ tuckSkin: globalThis.tuckSkins.DEFAULT_SKIN, tuckItem: "bandana" });
 await showLook(await savedLook());
 $("tuck-skin").onchange = async () => {
   await chrome.storage.local.set({ tuckSkin: $("tuck-skin").value });

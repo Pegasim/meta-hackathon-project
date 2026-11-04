@@ -93,3 +93,43 @@ test("contrast follows WCAG", () => {
   assert.ok(contrast("#222222", "#FBF8F2") > 4.5);
   assert.equal(Math.round(contrast("#000000", "#ffffff")), 21);
 });
+
+test("sprite skins: only work loops, only rest repeats now and then", () => {
+  const { checkSkin, POSES } = globalThis.tuckSkins;
+  const theme = JSON.parse(fs.readFileSync(path.join(skinsDir, "kitten/skin.json"))).theme;
+  const frames = Object.fromEntries(POSES.map((p) => [p, { count: 2, fps: 6 }]));
+  const files = Object.fromEntries([
+    ...POSES.map((p) => [`frames/${p}.png`, "x"]),
+    ...[16, 32, 48, 128].map((n) => [`icons/${n}.png`, "x"]),
+  ]);
+  const skin = (extra) => ({
+    id: "s",
+    name: "S",
+    kind: "sprites",
+    size: { width: 72, height: 72 },
+    poses: POSES,
+    fallback: {},
+    items: ["none"],
+    theme,
+    frames: { ...frames, ...extra },
+  });
+  assert.deepEqual(checkSkin(skin({ work: { count: 2, loop: true }, rest: { count: 2, every: 9000 } }), files), []);
+  assert.ok(checkSkin(skin({ wait: { count: 2, loop: true } }), files).includes("pose wait loops; only work may"));
+  assert.ok(
+    checkSkin(skin({ rest: { count: 2, every: 3000 } }), files).some((p) => p.startsWith("strip rest repeats")),
+  );
+  assert.ok(
+    checkSkin(skin({ drift: { count: 2, every: 9000 } }), files).some((p) => p.startsWith("strip drift repeats")),
+  );
+  assert.ok(checkSkin(skin({ happy: undefined }), files).includes("pose happy has no frames entry"));
+});
+
+test("a sprite skin draws as an svg.tuck with its rest strip", () => {
+  const { spriteSvg } = globalThis.tuckSkins;
+  const svg = spriteSvg(
+    { size: { width: 72, height: 79 }, frame: { width: 92, height: 101 }, frames: { rest: { count: 6 } } },
+    (name) => `u/${name}.png`,
+  );
+  assert.match(svg, /^<svg[^>]*class="tuck"[^>]*viewBox="0 0 92 101"[^>]*width="72" height="79"/);
+  assert.match(svg, /<image class="tuck__strip" href="u\/rest.png"[^>]*width="552"/);
+});

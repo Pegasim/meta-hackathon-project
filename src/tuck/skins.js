@@ -5,6 +5,10 @@ globalThis.tuckSkins = (() => {
   const POSES = ["rest", "work", "wait", "drift", "happy", "sleep", "hello"];
   const THEME_TOKENS = ["accent", "onAccent", "surface", "ink", "muted", "outline", "pink"];
   const ICON_SIZES = [16, 32, 48, 128];
+  const DEFAULT_SKIN = "kitten";
+  // Frame strips a sprite skin may add beyond the poses: running while dragged, and the
+  // look directions (16, clockwise from up) Tuck turns to its bubble with.
+  const SPRITE_EXTRAS = ["drag-left", "drag-right", "look"];
 
   // The attributes to set on the skin's root <svg> for a pose.
   function poseAttrs(manifest, pose) {
@@ -62,6 +66,31 @@ globalThis.tuckSkins = (() => {
     return found;
   }
 
+  // A sprite skin as an <svg class="tuck">: one <image> showing one frame of a strip, so
+  // the page, the popup and the tests treat it as any skin. url(name) is a strip's URL.
+  function spriteSvg(manifest, url) {
+    // frame: one frame's pixels in the strips; size: how big Tuck is on screen.
+    const { width: w, height: h } = manifest.frame ?? manifest.size;
+    const n = manifest.frames.rest.count;
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" class="tuck" viewBox="0 0 ${w} ${h}" ` +
+      `width="${manifest.size.width}" height="${manifest.size.height}" ` +
+      `data-pose="rest" data-item="none" style="overflow:hidden">` +
+      `<image class="tuck__strip" href="${url("rest")}" x="0" y="0" width="${w * n}" height="${h}" ` +
+      `preserveAspectRatio="none" style="image-rendering:pixelated"/></svg>`
+    );
+  }
+
+  // Any skin's files for drawing: { manifest, svg, css }. read(file) gives a file's text,
+  // url(file) its URL.
+  async function loadSkin(read, url) {
+    const manifest = JSON.parse(await read("skin.json"));
+    if (manifest.kind === "sprites")
+      return { manifest, svg: spriteSvg(manifest, (name) => url(`frames/${name}.png`)), css: "" };
+    const [svg, css] = await Promise.all([read("tuck.svg"), read("tuck.css")]);
+    return { manifest, svg, css };
+  }
+
   // The problems with a skin, empty when it is fine. files: { "tuck.svg": text, "icons/16.png": … }
   function checkSkin(manifest, files) {
     const problems = [];
@@ -97,10 +126,18 @@ globalThis.tuckSkins = (() => {
       if (!/\[data-motion=["']?off["']?\]/.test(css)) problems.push('tuck.css has no [data-motion="off"] rule');
       for (const name of new Set(loopsOutsideWork(css))) problems.push(`infinite animation outside work: ${name}`);
     } else if (manifest.kind === "sprites") {
-      for (const pose of poses) {
-        if (!has(`frames/${pose}.png`)) problems.push(`frames/${pose}.png is missing`);
-        const loop = manifest.frames?.[pose]?.loop;
-        if (loop && pose !== "work") problems.push(`pose ${pose} loops; only work may`);
+      const strips = Object.keys(manifest.frames ?? {}).filter((name) => manifest.frames[name]);
+      for (const pose of poses) if (!strips.includes(pose)) problems.push(`pose ${pose} has no frames entry`);
+      for (const name of strips) {
+        if (!POSES.includes(name) && !SPRITE_EXTRAS.includes(name)) problems.push(`unknown strip ${name}`);
+        if (!has(`frames/${name}.png`)) problems.push(`frames/${name}.png is missing`);
+        const f = manifest.frames[name];
+        if (!(f.count >= 1)) problems.push(`strip ${name} has no count`);
+        // Only work moves on its own for good; dragging is the person's own motion.
+        if (f.loop && name !== "work" && !name.startsWith("drag-")) problems.push(`pose ${name} loops; only work may`);
+        // A calm idle (a breath and a blink) may come back now and then, at most every 6 s.
+        if (f.every !== undefined && (name !== "rest" || f.every < 6000))
+          problems.push(`strip ${name} repeats every ${f.every} ms; only rest may, at most every 6000`);
       }
     } else {
       problems.push(`unknown kind ${manifest.kind}`);
@@ -125,5 +162,5 @@ globalThis.tuckSkins = (() => {
     return problems;
   }
 
-  return { POSES, THEME_TOKENS, poseAttrs, themeCss, contrast, checkSkin };
+  return { POSES, THEME_TOKENS, DEFAULT_SKIN, poseAttrs, themeCss, contrast, checkSkin, spriteSvg, loadSkin };
 })();

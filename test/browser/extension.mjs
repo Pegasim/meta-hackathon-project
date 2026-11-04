@@ -314,7 +314,9 @@ const tuck = repoTab.locator("#tuck-companion");
 await tuck.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
 const greeting = await tuck.locator(".bubble .text").textContent();
 const greetState = await tuck.locator("svg.tuck").getAttribute("data-pose");
-// The bubble wears the skin's light palette (v1), from the theme variables alone.
+// The default skin is the pastel kitten, a sprite skin: its greeting plays the waving strip.
+const greetStrip = await tuck.locator("svg.tuck image.tuck__strip").getAttribute("href");
+// The bubble wears the skin's light palette (kitten), from the theme variables alone.
 const bubbleLook = await tuck.locator(".bubble").evaluate((b) => {
   const css = getComputedStyle;
   const start = b.querySelector("button.start");
@@ -495,7 +497,7 @@ await popup
   .waitFor({ timeout: 5000 })
   .catch(() => {});
 const popupFallback = await popup.locator("#tuck-mark svg.tuck").count();
-await settingsPage.evaluate(() => chrome.storage.local.set({ tuckSkin: "v1" }));
+await settingsPage.evaluate(() => chrome.storage.local.set({ tuckSkin: "kitten" }));
 await videoTab.bringToFront();
 await onVideo.locator(".bubble button[data-choice=back]").click();
 await popup.waitForTimeout(800);
@@ -1380,8 +1382,13 @@ assert.doesNotMatch(partialRows, /Rent went up/, "with some entries judged, an u
 assert.match(partialStatus, /1 note with a next action/);
 assert.equal(greeting, "Hi. What are we working on today?");
 assert.equal(greetState, "hello");
-assert.equal(bubbleLook.bg, "rgb(251, 248, 242)", "the bubble is the skin's surface");
-assert.equal(bubbleLook.primaryBg, "rgb(148, 191, 174)", "the primary button is the skin's accent");
+assert.match(
+  greetStrip ?? "",
+  /tuck\/skins\/kitten\/frames\/hello\.png$/,
+  "the greeting plays the kitten's waving strip",
+);
+assert.equal(bubbleLook.bg, "rgb(255, 248, 252)", "the bubble is the skin's surface");
+assert.equal(bubbleLook.primaryBg, "rgb(201, 179, 242)", "the primary button is the skin's accent");
 assert.match(ringLook.filter, /drop-shadow\(rgb\(255, 255, 255\) 0px 0px 0\.6px\)/, "the rim shows on the page");
 assert.match(ringLook.filter, /drop-shadow\(rgba\(0, 0, 0, 0\.18\) 0px 2px 6px\)/, "with the soft shadow");
 assert.equal(ringLook.inputFocused, true, "the goal box has focus, so its ring is drawn");

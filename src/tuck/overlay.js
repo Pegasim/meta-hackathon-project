@@ -35,6 +35,7 @@
   function leavePage() {
     clearInterval(orphanCheck);
     cancelAnimationFrame(enterFrame);
+    clearTimeout(spriteTimer);
     timers.forEach(clearTimeout);
     timers = [];
     window.removeEventListener("resize", place);
@@ -103,6 +104,51 @@
 
   const dock = () => root.querySelector(".dock");
   const art = () => root.querySelector("svg.tuck");
+
+  // ---- Sprite skins ---------------------------------------------------------
+  // A sprite skin's pose is a strip of frames (skin.json frames). Entrances play once and
+  // hold; only work loops; rest replays its breath now and then; a pose with gaze turns to
+  // the bubble once it has played. Reduced motion holds the frame and plays nothing.
+  let spriteTimer = null;
+  const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const isSprite = () => skin?.kind === "sprites";
+  function spriteFrame(strip, i) {
+    // Removed or reloaded, the extension leaves this script with no runtime behind it.
+    if (orphaned()) return leavePage();
+    const img = art()?.querySelector(".tuck__strip");
+    const f = skin.frames[strip];
+    if (!img || !f) return;
+    img.setAttribute("href", chrome.runtime.getURL(`tuck/skins/${skin.id}/frames/${strip}.png`));
+    const w = (skin.frame ?? skin.size).width;
+    img.setAttribute("width", w * f.count);
+    img.setAttribute("x", -w * (i % f.count));
+  }
+  // The look frame toward the bubble: the look strip runs clockwise from up in 22.5° steps.
+  function gazeFrame() {
+    const d = dock()?.dataset ?? {};
+    const deg = d.side === "left" ? (d.vertical === "above" ? 315 : 225) : d.vertical === "above" ? 45 : 135;
+    return deg / 22.5;
+  }
+  function holdSprite(strip) {
+    const f = skin.frames[strip];
+    if (f.gaze && current?.bubble && skin.frames.look) spriteFrame("look", gazeFrame());
+    else spriteFrame(strip, 0);
+    if (f.every && !reducedMotion()) spriteTimer = setTimeout(() => playSprite(strip), f.every);
+  }
+  function playSprite(strip) {
+    clearTimeout(spriteTimer);
+    const f = skin.frames[strip];
+    if (!f) return;
+    if (reducedMotion() || f.count === 1) return holdSprite(strip);
+    const total = f.loop ? Infinity : f.count * (f.repeat ?? 1);
+    let i = 0;
+    const tick = () => {
+      if (i >= total) return holdSprite(strip);
+      spriteFrame(strip, i++);
+      spriteTimer = setTimeout(tick, 1000 / (f.fps ?? 6));
+    };
+    tick();
+  }
   const later = (ms, fn) => timers.push(setTimeout(fn, ms));
 
   // ---- Position ------------------------------------------------------------
@@ -146,6 +192,11 @@
       const dx = e.clientX - start.px;
       const dy = e.clientY - start.py;
       if (!dragged && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      if (isSprite() && !reducedMotion()) {
+        const strip = e.clientX >= (start.lastX ?? start.px) ? "drag-right" : "drag-left";
+        if (strip !== start.strip && skin.frames[strip]) playSprite((start.strip = strip));
+      }
+      start.lastX = e.clientX;
       dragged = dragging = true;
       avatar.classList.add("dragging");
       saved = anchor(clamp({ x: start.x + dx, y: start.y + dy }, SIZE, view()), SIZE, view());
@@ -153,6 +204,7 @@
     });
     avatar.addEventListener("pointerup", () => {
       if (!start) return;
+      if (start.strip) setPose(pose); // stop running: back to the pose
       start = null;
       dragging = false;
       avatar.classList.remove("dragging");
@@ -223,6 +275,7 @@
     const svg = art();
     for (const [name, value] of Object.entries(poseAttrs(skin, next))) svg.setAttribute(name, value);
     svg.dataset.item = item;
+    if (isSprite()) return playSprite(svg.dataset.pose);
     // Replay the pose's entrance even when the pose repeats.
     for (const part of svg.querySelectorAll("*"))
       for (const a of part.getAnimations()) if (a.effect?.getTiming().iterations !== Infinity) (a.cancel(), a.play());
