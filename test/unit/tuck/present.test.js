@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { present, nudgeText, comesWhileAway, stuckView } from "../../../src/tuck/present.js";
+import {
+  present,
+  nudgeText,
+  comesWhileAway,
+  stuckView,
+  stuckWanted,
+  STUCK_WAIT,
+  minutesLine,
+} from "../../../src/tuck/present.js";
 import { followsVoice } from "../../../src/tuck/voice.js";
 
 const evidence = {
@@ -264,7 +272,7 @@ test("while the agent looks, Tuck waits with a short line (#61)", () => {
 });
 
 test("the stuck step shows with its minutes, Start this and Another one (#61)", () => {
-  const v = stuckView({ step: "Write the failing test", minutes: 10 });
+  const v = stuckView({ step: "Write the failing test", minutes: 10, intentId: "g1", ask: "a1" });
   assert.equal(v.bubble.kind, "step");
   assert.equal(v.bubble.text, "Write the failing test");
   assert.equal(v.bubble.next, "About 10 min");
@@ -272,11 +280,12 @@ test("the stuck step shows with its minutes, Start this and Another one (#61)", 
   assert.deepEqual(
     v.bubble.buttons.map((b) => [b.label, b.msg]),
     [
-      ["Start this", { type: "start-step", step: "Write the failing test" }],
+      ["Start this", { type: "start-step", step: "Write the failing test", intentId: "g1" }],
       ["Another one", { type: "stuck-tuck", again: true }],
     ],
   );
   assert.equal(v.away, undefined);
+  assert.equal(v.stuck, "a1", "the view names its ask, so closing it cancels that ask");
 });
 
 test("the second step has no Another one: one more ask at most (#61)", () => {
@@ -292,4 +301,32 @@ test("asked for while Tuck is tucked away, the step still shows and is marked to
   const v = stuckView({ step: "Write the failing test", minutes: 10, away: true });
   assert.equal(v.away, true);
   assert.equal(v.bubble.text, "Write the failing test");
+});
+
+test("the popup shares the stuck words with Tuck (#61)", () => {
+  assert.equal(STUCK_WAIT, stuckView({}).bubble.text);
+  assert.equal(minutesLine(10), "About 10 min");
+  assert.equal(minutesLine(undefined), "");
+  assert.equal(stuckView({ ask: "a1" }).stuck, "a1", "the wait names its ask too");
+});
+
+test("a stuck step is wanted only while its ask, its goal and its tab still hold (#61)", () => {
+  const ask = { id: "a1", intentId: "g1", tabId: 7 };
+  const now = { live: ask, intentId: "g1", tabId: 7 };
+  assert.equal(stuckWanted(ask, now), true);
+  assert.equal(stuckWanted(ask, { ...now, live: null }), false, "the person closed the wait or the step");
+  assert.equal(stuckWanted(ask, { ...now, live: { ...ask, id: "a2" } }), false, "a newer ask replaced it");
+  assert.equal(stuckWanted(ask, { ...now, intentId: "g2" }), false, "the goal changed or ended");
+  assert.equal(stuckWanted(ask, { ...now, intentId: undefined }), false, "no goal any more");
+  assert.equal(stuckWanted(ask, { ...now, tabId: 8 }), false, "another tab is in front");
+  assert.equal(stuckWanted(null, now), false);
+  const fromPopup = { id: "a3", intentId: "g1", tabId: null };
+  assert.equal(stuckWanted(fromPopup, { live: fromPopup, intentId: "g1", tabId: 8 }), true, "the popup has no tab");
+});
+
+test("asked while tucked away, the wait and the step both say so, so Tuck leaves on close (#61)", () => {
+  assert.equal(stuckView({ away: true, ask: "a1" }).away, true);
+  const v = stuckView({ step: "Write the failing test", minutes: 10, away: true, ask: "a1", intentId: "g1" });
+  assert.equal(v.away, true);
+  assert.equal(v.stuck, "a1");
 });

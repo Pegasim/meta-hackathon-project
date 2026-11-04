@@ -38,17 +38,31 @@ const goalForm = (text, pickUp = []) => ({ kind: "goal", text, pickUp });
 
 // "I'm stuck" (#61): Tuck waits while the agent looks (up to 20 s), then shows the one step
 // with its minutes. "Another one" asks once more at most: the second step has no such button.
-// Closing it closes it; while Tuck is tucked away, Tuck leaves with it.
-export function stuckView({ step, minutes, again = false, away = false }) {
-  if (!step)
-    return { pose: "wait", bubble: { kind: "note", text: "Let me find one small step…" }, ...(away && { away }) };
-  const buttons = [{ choice: "start", label: "Start this", primary: true, msg: { type: "start-step", step } }];
+// Each view names its ask (`stuck`), so closing it cancels the ask; while Tuck is tucked
+// away, Tuck leaves with it. Start this carries the goal id: a step for a goal that has
+// ended does nothing. The popup shows the same words.
+export const STUCK_WAIT = "Let me find one small step…";
+export const minutesLine = (minutes) => (minutes ? `About ${minutes} min` : "");
+export function stuckView({ step, minutes, intentId, again = false, away = false, ask }) {
+  const marks = { ...(ask && { stuck: ask }), ...(away && { away }) };
+  if (!step) return { pose: "wait", bubble: { kind: "note", text: STUCK_WAIT }, ...marks };
+  const buttons = [
+    { choice: "start", label: "Start this", primary: true, msg: { type: "start-step", step, intentId } },
+  ];
   if (!again) buttons.push({ choice: "another", label: "Another one", msg: { type: "stuck-tuck", again: true } });
   return {
     pose: "hello",
-    bubble: { kind: "step", text: step, next: minutes ? `About ${minutes} min` : "", buttons, dismissable: true },
-    ...(away && { away }),
+    bubble: { kind: "step", text: step, next: minutesLine(minutes), buttons, dismissable: true },
+    ...marks,
   };
+}
+
+// The one check that a stuck ask is still wanted (#61), before its late step is drawn and
+// while a drift word waits behind it: it is still the live ask (the person did not close
+// it, no newer one replaced it), its goal is still the active one, and an ask from a page
+// still has that tab in front. Nothing late is redrawn (DECISIONS, #81).
+export function stuckWanted(ask, { live, intentId, tabId }) {
+  return !!ask && ask.id === live?.id && ask.intentId === intentId && (ask.tabId == null || ask.tabId === tabId);
 }
 
 // input: {trigger, loops} for an engine trigger, or {event, intent, agent} for

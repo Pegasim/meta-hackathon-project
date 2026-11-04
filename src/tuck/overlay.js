@@ -227,6 +227,7 @@
       if (current?.bubble?.kind === "nudge") send({ type: "respond", choice: "dismiss" });
       else if (current?.bubble) {
         if (current.bubble.kind === "goal") send({ type: "goal-form-closed" });
+        closeStuck();
         closeBubble();
         if (current?.away) leave(); // tucked away, Tuck came for this word alone
       } else send({ type: "tuck-click" });
@@ -303,6 +304,11 @@
     // Replay the pose's entrance even when the pose repeats.
     for (const part of svg.querySelectorAll("*"))
       for (const a of part.getAnimations()) if (a.effect?.getTiming().iterations !== Infinity) (a.cancel(), a.play());
+  }
+
+  // Closing an "I'm stuck" wait or step ends that ask: a late step is not drawn (#61).
+  function closeStuck() {
+    if (current?.stuck) send({ type: "stuck-closed", ask: current.stuck });
   }
 
   function closeBubble() {
@@ -424,6 +430,7 @@
             if (b.kind === "nudge") return send({ type: "respond", choice: "dismiss" });
             // Closing the goal form without a goal: Tuck stops offering it on new pages for a while.
             if (b.kind === "goal") send({ type: "goal-form-closed" });
+            closeStuck();
             closeBubble();
             if (current?.away) leave(); // tucked away, Tuck came for this word alone
           },
@@ -469,6 +476,8 @@
   }
 
   chrome.runtime.onMessage.addListener((msg) => {
+    // Meant for one stuck ask's wait (#61): anything else on screen stays.
+    if (msg?.stuck && current?.stuck !== msg.stuck) return;
     if (msg?.type === "tuck-show") show(msg.view, msg.assets);
     else if (msg?.type === "tuck-look" && root?.isConnected) {
       lookAt = Math.max(lookAt, msg.assets.readAt ?? 0);
