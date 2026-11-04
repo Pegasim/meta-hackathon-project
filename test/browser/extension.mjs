@@ -524,7 +524,10 @@ await tuck.locator("input[name=goal]").waitFor({ timeout: 8000 });
 await tuck.locator("input[name=goal]").fill("Fix the checkout bug");
 await tuck.locator("button.start").click();
 // The goal chat (dock-chat design): Tuck proposes the goal with a first step from the notes.
-await tuck.locator(".bubble button", { hasText: "Set as goal" }).click({ timeout: 8000 });
+await tuck.locator(".bubble button", { hasText: "Set as goal" }).waitFor({ timeout: 8000 });
+// What Tuck looked up shows above its answer, from the search words, not the notes' text.
+const goalChatTrail = await tuck.locator(".bubble .c-trail").innerText();
+await tuck.locator(".bubble button", { hasText: "Set as goal" }).click();
 await tuck.locator(".bubble .text", { hasText: "Got it" }).waitFor();
 await tuck.locator(".bubble .close").click();
 // Tuck stays, resting; a click is a hello with the goal card.
@@ -605,9 +608,23 @@ async function stopWorker() {
 }
 const workerIsFresh = () => worker.evaluate(() => globalThis.__beforeStop === undefined);
 
-// Browse: the repo, then the video. The model judges each page once.
+// Browse: the repo, then the video. The model judges each page once. On the repo, a
+// review is typed far down the page, the caret put mid-text (#60). The page grows its
+// fields here: a page that loads with them shows no greeting (seen on main, 2026-11-04).
+const longRepo = () =>
+  repoTab.evaluate(() =>
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `<input id="pin" type="password"><p style="height:3000px"></p><textarea id="review"></textarea><p style="height:3000px"></p>`,
+    ),
+  );
 await repoTab.bringToFront();
 await repoTab.waitForTimeout(1500);
+await longRepo();
+await repoTab.locator("#review").type("looks good");
+await repoTab.locator("#review").evaluate((t) => t.setSelectionRange(5, 5));
+await repoTab.keyboard.press("Shift");
+await repoTab.evaluate(() => (document.activeElement.blur(), scrollTo(0, 0)));
 const videoTab = await ctx.newPage();
 await videoTab.goto(video);
 await videoTab.bringToFront();
@@ -684,13 +701,59 @@ const popupFallback = await popup.locator("#tuck-mark svg.tuck").count();
 await settingsPage.evaluate(() => chrome.storage.local.set({ tuckSkin: "kitten" }));
 await videoTab.bringToFront();
 await onVideo.locator(".bubble button[data-choice=back]").click();
+const spotRing = await repoTab
+  .locator("#tuck-spot")
+  .waitFor({ timeout: 3000 })
+  .then(() => true)
+  .catch(() => false);
+const backAtSpot = await repoTab.evaluate(() => {
+  const t = document.getElementById("review");
+  const r = t.getBoundingClientRect();
+  return {
+    inView: r.top >= 0 && r.bottom <= innerHeight,
+    focused: document.activeElement === t,
+    caret: t.selectionStart,
+  };
+});
 await popup.waitForTimeout(800);
 if (shots) await popup.screenshot({ path: path.join(shots, "popup-trigger.png"), fullPage: true });
 const backTo = await activeUrl();
+await repoTab.waitForTimeout(1700);
+const spotRingGone = (await repoTab.locator("#tuck-spot").count()) === 0;
+
+// #60: on a never-read site nothing is restored: the tab comes to the front as before.
+const reading = await settingsPage.evaluate(async () => (await chrome.storage.local.get("pageReading")).pageReading);
+await settingsPage.evaluate(() => chrome.storage.local.set({ pageReading: { neverRead: ["127.0.0.1"] } }));
+await repoTab.bringToFront();
+await repoTab.waitForTimeout(500);
+await repoTab.evaluate(() => (document.activeElement.blur(), scrollTo(0, 0)));
+await videoTab.bringToFront();
+const driftNever = await waitForNewDrift(drift1.id);
+await clickOnCard("#take-me-back");
+const backNever = await repoTab.evaluate(() => ({ y: scrollY, focus: document.activeElement.tagName }));
+await settingsPage.evaluate((r) => chrome.storage.local.set({ pageReading: r ?? {} }), reading);
+
+// #60: after a reload the field is gone; the scroll position comes back. Typing in a
+// password field keeps nothing, and it is never focused. The reloaded page is short, so
+// Chrome's own scroll restoring cannot reach 1200; it grows again at the top.
+await repoTab.bringToFront();
+await repoTab.waitForTimeout(500);
+await repoTab.evaluate(() => scrollTo(0, 1200));
+await repoTab.waitForTimeout(500);
+await repoTab.reload();
+await repoTab.waitForTimeout(1500);
+await longRepo();
+await repoTab.locator("#pin").type("1234");
+await repoTab.evaluate(() => document.activeElement.blur());
+const reloadedAt = await repoTab.evaluate(() => scrollY);
+await videoTab.bringToFront();
+const driftReload = await waitForNewDrift(driftNever.id);
+await clickOnCard("#take-me-back");
+const backReload = await repoTab.evaluate(() => ({ y: scrollY, focus: document.activeElement.id }));
 
 // The related tab is gone: "Take me back" reopens its page.
 await videoTab.bringToFront();
-const drift2 = await waitForNewDrift(drift1.id);
+const drift2 = await waitForNewDrift(driftReload.id);
 await repoTab.close();
 await clickOnCard("#take-me-back");
 const reopened = await activeUrl();
@@ -1250,6 +1313,11 @@ await awayTab
   .catch(() => {});
 away.here = await settledDockCount(awayTab, 800);
 away.flag = await tuckAwayNow();
+// The toolbar icon says so (#87): "zz" and a tooltip.
+away.mark = await popup.evaluate(async () => ({
+  badge: await chrome.action.getBadgeText({}),
+  title: (await chrome.action.getTitle({})).includes("tucked away"),
+}));
 away.otherWindow = await dockCount(awayWindow.page);
 await closeOtherWindow(awayWindow);
 // Every tab lets Tuck go, not just the one clicked: the older tab shows no Tuck in front.
@@ -1409,6 +1477,10 @@ away.popupWhileAway = {
 await popup.click("#bring-back");
 await popup.waitForTimeout(300);
 away.flagAfterSwitch = await tuckAwayNow();
+away.markAfterBack = await popup.evaluate(async () => ({
+  badge: await chrome.action.getBadgeText({}),
+  title: (await chrome.action.getTitle({})).includes("tucked away"),
+}));
 // Tuck is back at once on the page in front, without a page change.
 away.backInPlace = await awayHeld
   .locator("#tuck-companion .dock.in")
@@ -2226,6 +2298,7 @@ assert.deepEqual(
   "after a reload Tuck is back on the page, resting, once",
 );
 assert.equal(clickState, "hello", "clicking Tuck is a hello");
+assert.match(goalChatTrail, /^Searched your notes: fix the checkout bug · \d+ notes?$/, "the goal chat shows its lookup");
 assert.ok(dragged.x < 100, `dragged to the left: ${dragged.x}`);
 assert.ok(bubbleAfterDrag.x >= dragged.x, "on the left, the bubble opens rightwards");
 assert.ok(formStillOpen, "a drag is not a click");
@@ -2353,6 +2426,12 @@ assert.ok(
   looks.some((m) => /Page title: Top 10 F1 crashes/.test(m.at(-1).content)),
   "the video was looked at before its nudges",
 );
+assert.deepEqual(backAtSpot, { inView: true, focused: true, caret: 5 }, "back at the field, caret where it was (#60)");
+assert.ok(spotRing, "a ring shows around it");
+assert.ok(spotRingGone, "and goes");
+assert.deepEqual(backNever, { y: 0, focus: "BODY" }, "a never-read site: the tab only, as before");
+assert.equal(reloadedAt, 0, "the reload starts at the top");
+assert.deepEqual(backReload, { y: 1200, focus: "" }, "after a reload the scroll comes back; no password focus");
 assert.equal(drift4.kind, "drift", "drift is still caught after a restart");
 assert.equal(backAfterRestart, repo, "Take me back still works after a restart");
 assert.equal(duringWait.id, beforeWait.id, "no nudge while the agent works");
@@ -2468,6 +2547,7 @@ assert.deepEqual(
   {
     parting: "Okay. Click the toolbar icon to bring me back.",
     flag: true,
+    mark: { badge: "zz", title: true },
     here: 0,
     otherWindow: 0,
     olderTab: 0,
@@ -2495,6 +2575,7 @@ assert.deepEqual(
     later: 0,
     popupWhileAway: { card: true, text: "Tuck is tucked away.", awayButton: false },
     flagAfterSwitch: false,
+    markAfterBack: { badge: "", title: false },
     backInPlace: 1,
     popupAfterBack: { card: false, awayButton: true },
     popupAwayFlag: true,

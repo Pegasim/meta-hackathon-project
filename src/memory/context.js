@@ -65,6 +65,21 @@ export function taskQueue(entries, { today = localDate(), limit = 5, staleAfter 
   return [...live, ...undated, ...stale].slice(0, limit);
 }
 
+// Dated plans with no next action (#96): "results on 11 Dec", "the lease ends 2027-01-15".
+// openLoops leaves them out, so they are not in the queue: never a to-do, never said aloud,
+// never read by the task node. Settings shows them in Coming up or Long run with their
+// date. Only what is still ahead of `today`, soonest first.
+export function upcoming(entries, { today = localDate() } = {}) {
+  return entries
+    .filter((e) => !e.next || e.next === "none")
+    .flatMap((e) => {
+      const due = dueOf(e);
+      const left = daysLeft(due, today);
+      return due && left >= 0 ? [{ ...e, due, daysLeft: left, writer: writtenBy(e), upcoming: true }] : [];
+    })
+    .sort((a, b) => a.due.localeCompare(b.due));
+}
+
 // The user's stated intent: the newest todo they set in the extension and have
 // not marked done. Brain todos and distilled todos are open loops, not intents.
 export function latestIntent(entries) {

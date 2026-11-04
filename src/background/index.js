@@ -49,7 +49,7 @@ import { githubLookup, closedRefs } from "../agent/github.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine, templateGreeting, toolKind, whenSaid, PARKED_LINE } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
-import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
+import { watchTyping, returnToSpot, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
 import { present, comesWhileAway, stuckView, stuckWanted, STUCK_WAIT, minutesLine } from "../tuck/present.js";
 import {
   menuView,
@@ -77,7 +77,7 @@ const memory = Memory.open();
 const store = openStore();
 const enqueue = createSerialQueue();
 const OWN_PAGES = chrome.runtime.getURL("");
-const BADGE = { loud: ["!", "#dc2626"], look: ["·", "#64748b"] };
+const BADGE = { loud: ["!", "#dc2626"], look: ["·", "#64748b"], away: ["zz", "#94a3b8"] };
 
 const todayLabel = (d = new Date()) => `${d.toLocaleDateString("en-US", { weekday: "long" })} ${localDate(d)}`;
 
@@ -569,8 +569,8 @@ async function inPage(tabId, func, args = []) {
 // Is the person typing on the page in front (a key within cfg.typingRecentSec, focus
 // in a text field)? The excerpt then starts at that field; otherwise at the middle of
 // the window, so a chat box left focused does not speak for a scrolled feed.
-async function typingOn(tabId) {
-  await inPage(tabId, watchTyping);
+async function typingOn(tabId, url) {
+  await inPage(tabId, watchTyping, [mayRead(url, await readingNow())]);
   return (await inPage(tabId, isComposing, [(await config()).typingRecentSec * 1000])) === true;
 }
 
@@ -578,7 +578,7 @@ async function typingOn(tabId) {
 // Work found tells the engine at once (the detour ends); anything else waits in the
 // cache for the look. Outside the queue.
 function readAhead(need) {
-  typingOn(need.tabId)
+  typingOn(need.tabId, need.url)
     .then((typing) => excerptVerdict(need, typing ? "focus" : "view"))
     .then((v) => ENDS_DETOUR.includes(v.label) && feed({ type: "second_look", ts: Date.now(), key: need.key, ...v }))
     .catch((err) => log({ type: "llm", ts: Date.now(), node: "secondLook", ok: false, error: String(err) }));
@@ -596,7 +596,7 @@ function secondLook(need) {
 }
 
 async function look(need) {
-  const composing = await typingOn(need.tabId);
+  const composing = await typingOn(need.tabId, need.url);
   const verdict = await Promise.race([
     excerptVerdict(need, composing ? "focus" : "view"),
     sleep(LOOK_WAIT_MS).then(() => ({ skipped: "slow" })),
@@ -686,7 +686,9 @@ async function judgeExcerpt(need, from) {
 
 // ---- Interventions -------------------------------------------------------
 
+// With no word to mark, a Tuck tucked away shows "zz" (#87).
 async function setBadge(kind) {
+  kind ??= (await isAway()) ? "away" : null;
   const [text, color] = kind ? BADGE[kind] : ["", "#64748b"];
   await chrome.action.setBadgeText({ text });
   await chrome.action.setBadgeBackgroundColor({ color });
@@ -1056,6 +1058,21 @@ async function noGoalView(s) {
 
 const pageChanged = (prev, s) => prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
 
+// The toolbar icon says Tuck is tucked away: "zz" and its tooltip (#87). A word's badge
+// ("!" or "·") stays until the word is answered; setBadge puts "zz" back then.
+async function awayMarked() {
+  const away = await isAway();
+  const name = chrome.runtime.getManifest().name;
+  await chrome.action.setTitle({ title: away ? `${name}: tucked away. Click to bring Tuck back.` : name });
+  const text = await chrome.action.getBadgeText({});
+  if (text === "" || text === BADGE.away[0]) await setBadge(null);
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.tuckAway) awayMarked();
+});
+chrome.runtime.onStartup.addListener(awayMarked);
+chrome.runtime.onInstalled.addListener(awayMarked);
+
 // Back from tucked away (Bring Tuck back in the popup): Tuck is on the page in front at
 // once, as presence would draw it there.
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -1077,7 +1094,8 @@ async function presence(prev, s, input) {
   const reloaded = !changed && view && (await inPage(input.tabId, tuckThere)) === false;
   if (!changed && !reloaded) return;
   // Typing is noted from the start of the page (its time only), for the second look.
-  if (view && s.state !== "break") await inPage(input.tabId, watchTyping);
+  // With it, on pages Tuck may read, the spot "Take me back" returns to (#60).
+  if (view && s.state !== "break") await inPage(input.tabId, watchTyping, [mayRead(s.current.url, await readingNow())]);
   if (view?.greet) await greet(input.tabId);
   else if (view) await showTuck(input.tabId, { ...view, ...(reloaded && { instant: true }) });
   else if (s.state === "paused") await chrome.tabs.sendMessage(input.tabId, { type: "tuck-hide" }).catch(() => {});
@@ -1194,7 +1212,7 @@ async function agentResumed(ts) {
   });
 }
 
-// Focus the last related tab, or reopen its page.
+// Focus the last related tab, at the spot the person left (#60), or reopen its page.
 async function takeMeBack(last) {
   if (!last) return;
   const tab = await chrome.tabs.get(last.tabId).catch(() => null);
@@ -1202,6 +1220,7 @@ async function takeMeBack(last) {
   if (tab && sameDocument(tab.url, last.url)) {
     await chrome.tabs.update(tab.id, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
+    if (mayRead(tab.url, await readingNow())) await inPage(tab.id, returnToSpot, [2000]);
   } else {
     await chrome.tabs.create({ url: last.url, active: true });
   }
@@ -1811,11 +1830,12 @@ async function chatSay({ text, stuck: fromRow }, sender) {
   let t = threads.get(tabId);
   if (!t || (t.mode === "step") !== !!intent) t = newThread({ intent, opener: intent ? STEP_OPENER : OPENER });
   t = say(t, said);
-  // A lookup line as it happens, while the chat is still open.
+  // A lookup line as it happens, added to the thread as it is now (not a copy), while the
+  // chat is still open.
   const live = (line) => {
-    if (!line || !threads.has(tabId)) return;
-    t = addTrail(t, line);
-    drawThread(tabId, t);
+    const now = threads.get(tabId);
+    if (!line || !now) return;
+    drawThread(tabId, addTrail(now, line));
   };
   if (!intent) return goalChat(tabId, t, said, sender, live);
   t = pending(t, STUCK_WAIT);
@@ -1823,7 +1843,7 @@ async function chatSay({ text, stuck: fromRow }, sender) {
   const r = await stuck(null, sender, { tabId, said: fromRow ? null : said, onStep: (e) => live(trailLine(e)) });
   if (!threads.has(tabId)) return r;
   t = resolve(
-    t,
+    threads.get(tabId),
     r.ok
       ? {
           text: r.step,
@@ -1860,6 +1880,7 @@ async function goalChat(tabId, t, said, sender, live) {
   );
   await logRun("goal", r, agent.model, r.value?.title);
   if (!threads.has(tabId)) return r;
+  t = threads.get(tabId); // with the lookup lines live() added
   // Their words stand: kept, or no answer.
   if (!r.value || r.value.kept) {
     // Tuck's reply is the model's own (keep_goal asks what comes first); the fallback asks too.

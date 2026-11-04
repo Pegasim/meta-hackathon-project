@@ -63,6 +63,7 @@ await memory.recall("query", { limit });        // [{ ref, title, score, item }]
 await memory.openLoops();                       // entries with a next action
 await memory.latestIntent();                    // newest todo
 await memory.taskQueue({ today, limit, staleAfter, distilledFor }); // open loops by time left; each has due, daysLeft and writer
+await memory.upcoming({ today });              // dated plans with no next action, still ahead, soonest first; never a task
 await memory.profileSample({ limit });         // newest entries as { topic, title, next, date, result }, for the profile and task calls
 await memory.profile();                        // { summary, topics, workHosts }, or null before the first read
 await memory.setProfile(profile);              // stored in IndexedDB meta
@@ -133,11 +134,16 @@ One format for everything. An entry is the second-brain record (`Date · Context
 
 **Deadlines.** There is no due field, on purpose: `brain consolidate` rewrites an entry's frontmatter with a fixed set of keys, so a `due:` written here would be dropped on the next nightly run. `due.js` derives the date from the text instead, so notes written before Tuck existed already carry one.
 
-- It looks in `next`, `result`, `title` and `context`, for an ISO date (`2026-11-09`).
-- A date counts only with a cue beside it: `due`, `deadline`, `closes`, `expires`, `last day`, `son başvuru`, `son tarih` or `teslim`, up to 32 characters before the date or 16 after. A cue never reaches across another date, so in "runs 2026-11-13 to 2027-01-05; deadline is 2026-12-01" only the last date is a deadline.
+- It looks in `next` first, then in `result`, `title` and `context`. A deadline in the next action is that action's; only without one does the rest of the note count.
+- Dates: ISO (`2026-11-09`), and day and month in English or Turkish, with or without a year: "8 Nov", "Nov 8", "November 8th, 2026", "8 Kasım", "11 Aralık 2026", also typed without Turkish letters ("Kasim") or with a suffix ("Kasım'a"). In a range ("Dec 8-11") the last day counts. A date with no year is the occurrence nearest the entry's own date, so "8 Nov" in a note of 10 November is two days past, not next year.
+- A time with a zone after the date is read on the user's local day: "2026-11-02 20:00 PT" is 3 November in Turkey. Zones: `UTC`, `GMT`, `Z`, `UTC+3`/`GMT-5`, `+03:00`, `TRT`, `CET`/`CEST`, and the US names (`PT`, `ET`, `CT`, `MT` follow daylight saving; `PST`, `EDT` and the like are fixed). Without a zone the date stands.
+- A date counts only with a cue beside it: `due`, `deadline`, `closes`, `expires`, `last day`, `son başvuru`, `son tarih` or `teslim`, up to 32 characters before the date or 16 after. The short ones `by`, `before`, `until`, `close`, `closing`, `ends` and `ending` count only as the word right before the date ("by 8 Nov", "ends on 2027-01-15"), and Turkish `-e kadar`/`-a kadar` (and `tarihine kadar`) only right after it, because "approved by Mira on 2026-11-06" is not a deadline. A cue never reaches across another date, so in "runs 2026-11-13 to 2027-01-05; deadline is 2026-12-01" only the last date is a deadline.
+- A cue followed by `passed`, `missed`, `geçti` or `kaçırıldı` is not a deadline: "the deadline passed 2026-11-03".
 - A date earlier than the entry's own date is ignored, and the earliest remaining date wins.
 - No cue, no deadline. A deadline read wrongly is worse than none.
-- Dates in plain words ("closes today") are not parsed.
+- Dates in plain words ("closes today", "the 8th"), and ranges across months ("Nov 28 - Dec 2"), are not parsed.
+
+**Upcoming.** `upcoming()` returns entries with no next action whose deadline (read as above) is still ahead of `today`: "results are announced by 18 Nov", "the lease ends 2027-02-28". They are not open loops, so they are not in the task queue: Tuck never says one aloud and the task node never reads one. Settings shows them with their date in Coming up (within 60 days) or Long run, each with Hide (#96).
 
 **Task queue.** `taskQueue()` orders open loops by time left, as plain arithmetic with no model call: dated loops soonest first, then undated ones newest first, then loops whose deadline passed more than `staleAfter` days ago (14 by default), because nothing marks a loop done and an old note would otherwise sit at the top forever. Days are counted on the user's local date, not UTC (`localDate()`).
 
