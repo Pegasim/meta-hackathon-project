@@ -201,6 +201,21 @@ test("Settings splits the list into Today, Missed, Coming up and the rest (#77, 
   assert.deepEqual(ids(splitTasks(list).comingUp), ["soon", "later", "goal"]);
 });
 
+test("an upcoming date is shown in Coming up or Long run, never as Today's or a missed task (#96)", () => {
+  const plan = (id, daysLeft) => ({ ...task(id, daysLeft), upcoming: true, writer: "agent" });
+  const list = [
+    { ...task("own", 5), writer: "own" },
+    { ...task("undated", null), writer: "own" },
+  ];
+  const ids = (rows) => rows.map((e) => e.id);
+  const views = splitTasks(list, { upcoming: [plan("tomorrow", 1), plan("soon", 4), plan("far", 90)] });
+  assert.deepEqual(ids(views.today), []);
+  assert.deepEqual(ids(views.missed), []);
+  assert.deepEqual(ids(views.comingUp), ["tomorrow", "soon", "own"], "within 60 days, by date, with the tasks");
+  assert.deepEqual(ids(views.rest), ["undated", "far"], "further off, after the tasks");
+  assert.deepEqual(ids(views.suggested), [], "not a task, so not a suggested one either");
+});
+
 test("Today holds at most 5 rows; what does not fit stays in the list, not lost", () => {
   const close = ["a", "b", "c", "d", "e", "f"].map((id, i) => task(id, i % 2));
   const { today, comingUp, rest } = splitTasks([...close, task("goal", null)], { goalFrom: "goal" });

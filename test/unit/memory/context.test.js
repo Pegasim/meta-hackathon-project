@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { taskQueue, contextPack, renderPack, writtenBy } from "../../../src/memory/context.js";
+import { taskQueue, contextPack, renderPack, writtenBy, upcoming } from "../../../src/memory/context.js";
 import { buildIndex, entryDoc } from "../../../src/memory/recall.js";
 
 const TODAY = "2026-11-01";
@@ -165,4 +165,27 @@ test("the person's own loops come before an agent's and distilled ones, deadline
     "a sooner deadline still leads; who wrote it decides within a deadline and among the undated",
   );
   assert.equal(q[0].writer, "distilled");
+});
+
+// #96: "Results by 18 Nov" with no next action is a date to show, not a task.
+test("a dated plan with no next action is upcoming, and never in the queue", () => {
+  const plans = [
+    ...entries,
+    entry({ id: "results", title: "Exam results", result: "Results are announced by 2026-11-18.", next: "none" }),
+    entry({ id: "lease", title: "Lease", result: "The lease ends 2027-02-28.", next: "none" }),
+    entry({ id: "gone", title: "Old sale", result: "Tickets sold until 2026-10-31.", next: "none" }),
+    entry({ id: "plain", title: "A trip", result: "The trip is on 2026-12-20.", next: "none" }),
+  ];
+  const ahead = upcoming(plans, { today: TODAY });
+  assert.deepEqual(
+    ahead.map((e) => [e.id, e.due, e.daysLeft]),
+    [
+      ["results", "2026-11-18", 17],
+      ["lease", "2027-02-28", 119],
+    ],
+    "only what is still ahead, with a cue, soonest first",
+  );
+  assert.ok(ahead.every((e) => e.upcoming));
+  const queued = taskQueue(plans, { today: TODAY, limit: Infinity }).map((e) => e.id);
+  assert.ok(!queued.includes("results") && !queued.includes("lease"), "so Tuck never says one aloud");
 });

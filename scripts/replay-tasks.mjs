@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadBrain } from "../src/memory/brain.js";
 import { entryId } from "../src/memory/consolidate.js";
-import { taskQueue } from "../src/memory/context.js";
+import { taskQueue, upcoming } from "../src/memory/context.js";
 import { BRAIN } from "../src/memory/sources.js";
 import { localDate } from "../src/memory/due.js";
 import { stillOpen, taskList, taskKey, splitTasks } from "../src/attention/reminders.js";
@@ -63,7 +63,10 @@ const open = stillOpen(
 ).filter((e) => e.source !== "extension");
 const tasks = open.filter((e) => taskVerdicts[taskKey(e)] || taskByConstruction(e));
 const ownKeys = new Set(queue.filter((e) => e.writer === "own" && e.source !== "extension").map(taskKey));
-const { today: due, missed, comingUp, rest, suggested } = splitTasks(tasks, { ownKeys });
+const dates = taskList(upcoming(entries, { today }), { hidePersonal: !!taskSettings.hidePersonal, loops }).filter(
+  (e) => e.source !== "extension",
+);
+const { today: due, missed, comingUp, rest, suggested } = splitTasks(tasks, { ownKeys, upcoming: dates });
 
 console.log(
   JSON.stringify(
@@ -71,8 +74,10 @@ console.log(
       today,
       entries: entries.length,
       queue: queue.length,
+      dated: queue.filter((e) => e.due).length,
       listed: tasks.length,
       waiting: open.length - tasks.length,
+      upcoming: dates.length,
       views: {
         Today: due.length,
         Missed: missed.length,
