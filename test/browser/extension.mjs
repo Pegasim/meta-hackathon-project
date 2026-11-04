@@ -26,6 +26,8 @@ const greetCalls = [];
 const agentCalls = [];
 const taskCalls = [];
 const pairCalls = []; // which open loops are one commitment (#47)
+const loopCalls = []; // the agent loop's requests, with their tools (#81)
+let loopSlowMs = 0; // how long the fake model takes to answer the agent loop
 let tasksCut = false; // the task node's replies are cut at the token limit (#43)
 // Typed into a reply box, then left: form values are never read, so it must never
 // reach the model. Not secret-shaped, so redaction alone would not hide it.
@@ -173,8 +175,13 @@ const server = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", () => {
-    const { messages } = JSON.parse(body);
+    const { messages, tools } = JSON.parse(body);
     res.setHeader("Content-Type", "application/json");
+    // The agent loop (#81): it reads first, then finishes with the moment's tool.
+    if (tools?.length) {
+      loopCalls.push({ messages, tools: tools.map((t) => t.function.name) });
+      return setTimeout(() => res.end(JSON.stringify(agentReply(messages))), loopSlowMs);
+    }
     // Tuck's words (agent/nudge.js).
     if (/You are Tuck/.test(messages[0].content)) {
       // The greeting after a goal (#46) takes a while, so a greeting right at a restart
@@ -288,6 +295,56 @@ const server = http.createServer((req, res) => {
     );
   });
 });
+// The fake model's turn in the agent loop: one tool call per reply, by the moment's prompt.
+function agentReply(messages) {
+  const system = messages[0].content;
+  const results = messages.filter((m) => m.role === "tool").map((m) => JSON.parse(m.content));
+  const goal = (messages[1].content.match(/^[^:\n]+: (.*)$/m)?.[1] ?? "").toLowerCase();
+  const call = (name, args = {}) => ({
+    choices: [
+      {
+        message: {
+          content: null,
+          tool_calls: [
+            { id: `t${messages.length}`, type: "function", function: { name, arguments: JSON.stringify(args) } },
+          ],
+        },
+        finish_reason: "tool_calls",
+      },
+    ],
+  });
+  if (/just set a goal/.test(system)) {
+    if (!results.length) return call("recall_notes", { query: goal });
+    const notes = results.flatMap((r) => r.notes ?? []);
+    if (!notes.length) return call("no_plan", { reason: "nothing in the notes" });
+    const rules = notes.some((n) => /Demo video rules/.test(n.title));
+    return call("make_plan", {
+      steps: rules
+        ? [
+            { step: "Write a 3-minute demo script", minutes: 30 },
+            { step: "Record the demo video in one take", minutes: 30 },
+            { step: "Check no API key is on screen", minutes: 10 },
+          ]
+        : [
+            { step: `Open the notes on ${goal}`, minutes: 10 },
+            { step: `Do the first part of ${goal}`, minutes: 30 },
+            { step: `Check ${goal} works`, minutes: 15 },
+          ],
+      ...(rules && { watch_out: "Never show the API key on screen" }),
+    });
+  }
+  if (/stuck on their goal/.test(system)) {
+    if (!results.length) return call("goal");
+    if (results.length === 1) return call("recent_activity");
+    return call("propose_step", {
+      step: `Write the first lines of the ${goal.split(" ").slice(-2).join(" ")}`,
+      minutes: 10,
+    });
+  }
+  if (!results.length) return call("list_tasks");
+  return call("suggest_next", { message: "Nice work. On to the next thing?" });
+}
+
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;
 const repo = `http://127.0.0.1:${port}/repo`;
@@ -1184,6 +1241,69 @@ const nextMorning = await greetAfterRestart();
 const launchEntriesLater = await dayEntries("Plan the launch");
 const checkoutEntries = await dayEntries("Fix the checkout bug");
 
+// #81, #78: setting a goal starts the agent. It reads the person's notes and makes a plan;
+// its first step becomes the goal's step, so the next drift word is written with it.
+// "I'm stuck" gets one step, and Settings lists the tools the agent called.
+await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  await (
+    await Memory.open()
+  ).add({
+    kind: "fact",
+    topic: "demo",
+    title: "Demo video rules",
+    context: "The hackathon wants a demo video.",
+    result: "The demo video is at most 3 minutes. Never show the API key on screen.",
+    next: "none",
+  });
+  await chrome.runtime.sendMessage({ type: "memory-changed" });
+});
+// A slow model first: neither setting the goal nor finishing it waits for the loop.
+loopSlowMs = 8000;
+const slowStart = Date.now();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Record the demo video" }));
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+const slowMs = Date.now() - slowStart;
+loopSlowMs = 0;
+const loopsBefore = loopCalls.length;
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Record the demo video" }));
+const demoTab = await ctx.newPage();
+await demoTab.goto(repo);
+await demoTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+const planned = await popup.evaluate(async () => {
+  for (let i = 0; i < 100; i++) {
+    const { intent } = await chrome.runtime.sendMessage({ type: "get-status" });
+    if (intent?.plan) return intent;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+});
+const planCalls = loopCalls.slice(loopsBefore).filter((c) => /just set a goal/.test(c.messages[0].content));
+await demoTab.locator("#tuck-companion .avatar").click();
+const demoCard = demoTab.locator("#tuck-companion .bubble");
+await demoCard.locator(".plan").waitFor({ timeout: 5000 });
+const demoCardText = await demoCard.innerText();
+const beforeDemoDrift = await lastTrigger();
+const demoVideo = await ctx.newPage();
+await demoVideo.goto(video);
+await demoVideo.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await waitForNewDrift(beforeDemoDrift?.id);
+const demoWord = nudgeCalls.findLast((m) => /Their task: Record the demo video/.test(m[1].content));
+await demoTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+const stuckReply = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "stuck" }));
+await popup.evaluate((step) => chrome.runtime.sendMessage({ type: "start-step", step }), stuckReply.step);
+const afterStart = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).intent;
+await settingsPage.bringToFront();
+await settingsPage.reload();
+await settingsPage.locator("#agent-runs .agent-run").first().waitFor({ timeout: 5000 });
+const trailText = await settingsPage.locator("#agent-runs").innerText();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+await demoVideo.close();
+await demoTab.close();
+
 // The exported event log.
 await settingsPage.bringToFront();
 const log = await settingsPage.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }));
@@ -1196,6 +1316,29 @@ if (shots) {
 
 await ctx.close();
 server.close();
+
+// The agent loop (#81, #78).
+assert.ok(slowMs < 3000, `setting and finishing a goal never wait for the agent (${slowMs} ms)`);
+assert.ok(planCalls.length >= 2, "the plan took a lookup, then a finish");
+assert.ok(planCalls[0].tools.includes("recall_notes") && planCalls[0].tools.includes("make_plan"));
+assert.match(planCalls[1].messages.find((m) => m.role === "tool").content, /Demo video rules/, "the notes are read");
+assert.deepEqual(
+  planned?.plan?.steps.map((x) => x.step),
+  ["Write a 3-minute demo script", "Record the demo video in one take", "Check no API key is on screen"],
+);
+assert.equal(planned.steps[0], "Write a 3-minute demo script", "the plan's first step is the goal's step");
+assert.match(demoCardText, /Record the demo video in one take/, "the plan is on Tuck's card");
+assert.match(demoCardText, /Watch out: Never show the API key on screen/);
+assert.match(demoWord?.[1].content ?? "", /Next step: Write a 3-minute demo script/, "the drift word has the step");
+assert.equal(stuckReply.source, "agent");
+assert.equal(stuckReply.step, "Write the first lines of the demo video");
+assert.equal(afterStart.steps[0], stuckReply.step, "Start this makes it the next step");
+assert.match(trailText, /Planned the goal/);
+assert.match(trailText, /recall_notes "record the demo video" → \d+ notes?/);
+assert.match(trailText, /You were stuck/);
+assert.match(trailText, /recent_activity → \d+ pages?/);
+assert.doesNotMatch(trailText, /at most 3 minutes/, "the trail never shows a note's text");
+assert.ok(types.has("agent"), "agent runs are in the event log");
 fs.rmSync(profile, { recursive: true, force: true });
 
 assert.deepEqual(errors, []);

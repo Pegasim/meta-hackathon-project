@@ -111,8 +111,17 @@ export function present({ trigger, loops = [], event, intent }) {
       // Tuck rests on every page while there is a goal; quiet: no entrance if already there.
       return { tuck: "resting", bubble: null, quiet: true };
     case "card":
+      // The plan the agent made from the person's notes (#78), when it made one.
       return intent
-        ? { tuck: "checkin", bubble: { kind: "card", text: intent.title, next: intent.steps?.[0] ?? "" } }
+        ? {
+            tuck: "checkin",
+            bubble: {
+              kind: "card",
+              text: intent.title,
+              next: intent.steps?.[0] ?? "",
+              ...(intent.plan && { plan: intent.plan.steps.map((s) => s.step), watchOut: intent.plan.watchOut }),
+            },
+          }
         : { tuck: "checkin", bubble: goalForm("What are we working on?") };
     default:
       return null;

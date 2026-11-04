@@ -6,6 +6,9 @@
 
 ## Decided
 
+**At the moments the engine or the person picks, a tool loop decides what Tuck says and offers (2026-11-04, issues #81, #78).**
+Each model call was a fixed step chosen in code, so nothing in Tuck looked anything up. At a goal set, a goal done and "I'm stuck", the model now calls read tools (memory's search, the to-do list, the last 30 minutes of pages, the last work page's excerpt, the goal) and ends with one finishing tool whose arguments are checked in code: in Tuck's voice, not generic, and built from the goal or what was read. When Tuck speaks stays deterministic: the loop runs only at those moments, never per page, since a per-page loop would be slow and Chrome may stop a worker's fetch at 30 s. It has 5 model calls and 20 s at most, and runs outside the input queue, which #67 showed holds every other input back. So no moment waits for it: a plan lands on the goal when it comes, the goal-done line is written while the goal runs and used only if ready, and nothing is redrawn later, since that would wipe a goal being typed. Finishing tools only propose; acting takes the person's tap. #78 asked for a single call with no tools. The plan is that loop's first moment instead, so #61 and #78 share one node. A plan needs notes the loop actually read: with none, there is no plan rather than a generic one.
+
 **The to-do list holds the person's commitments, not a coding agent's steps, and an old distilled loop is not offered (2026-11-04, issues #75, #76).**
 On a real brain the list read like a git log ("Merge PR #39", "Run npm run eval"): most open loops there are notes coding agents wrote at the end of a session, and the old prompt kept any action someone "or their team" had to do. The node now keeps what a person would write on their own list, and a step that is the only trace of something larger is listed as that larger thing ("Ship the Linux bridge"), with one match key so the steps fold into one row (#47). It is told each entry's age and who wrote it: the person, a coding agent (a brain `source` other than `manual`) or a distill job (`brain-distill`, the extension's `distill`). Code ranks the person's own first within a deadline and among the undated, and leaves out a distilled loop older than 14 days unless its deadline is live, because the distill job restates work that comes up again; 14 is the queue's existing `staleAfter`, and on the brain measured, 66 of its 71 distilled loops were 14 days old or less. An agent's own note is not cut by age, because it can hold a real commitment ("email the deck by the 8th"); the node judges it. Verdicts are asked again when the rules change or an entry ages past a week and a month.
 
@@ -63,6 +66,7 @@ A note restated on a later day, or the same task in the brain, a notes folder an
 
 ## Superseded
 
+- ~~Every model call is one structured-output node with no tool calls (INTENT, design §6)~~ — 2026-11-04, replaced by the tool loop at goal set, goal done and "I'm stuck" (#81): a fixed step per call could not look anything up. Per-page judging stays one call.
 - ~~Relevance from URL + title only (v1, under test)~~ — 2026-11-01, replaced by the second look: the hypothesis failed on mixed sites (issue #5).
 - ~~{{old decision}}~~ — {{YYYY-MM-DD}}, replaced by {{new}}: {{why it changed}}
 

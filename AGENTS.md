@@ -14,7 +14,7 @@ short, redacted excerpt of the page (settings; never kept).
 **Stack:** JavaScript (plain ES modules, no build step), Chrome MV3, IndexedDB + `chrome.storage`, Meta Model API (OpenAI-compatible); Node 24 + npm for tests
 **Layout:** `src/` is the extension (Load unpacked → `src/`): `background/` service worker ·
 `attention/` deterministic engine, no Chrome dependency · `agent/` LLM nodes, structured
-output, no tool calls · `tuck/` Tuck on the page · `popup/`, `options/`, `shared/` ·
+output; at a goal set, a goal done and "I'm stuck", a tool loop (`loop.js`, #81) · `tuck/` Tuck on the page · `popup/`, `options/`, `shared/` ·
 `memory/` Safa's, used through the `Memory` API. `test/unit/` mirrors `src/` · `evals/` JS eval ·
 `docs/` intent, decisions, design, guides, specs
 
