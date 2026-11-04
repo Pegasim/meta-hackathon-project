@@ -453,7 +453,9 @@ await greetingShown(tuck);
 const greeting = await tuck.locator(".bubble .text").textContent();
 const greetState = await tuck.locator("svg.tuck").getAttribute("data-pose");
 // The default skin is the pastel kitten, a sprite skin: its greeting plays the waving strip.
-const greetStrip = await tuck.locator("svg.tuck image.tuck__strip").getAttribute("href");
+// The strip drawn, and from where: a blob: URL of the page, not chrome-extension:// (YouTube refuses that).
+const greetStrip = await tuck.locator("svg.tuck").getAttribute("data-strip");
+const greetHref = await tuck.locator("svg.tuck image.tuck__strip").getAttribute("href");
 // The bubble wears the skin's light palette (kitten), from the theme variables alone.
 const bubbleLook = await tuck.locator(".bubble").evaluate((b) => {
   const css = getComputedStyle;
@@ -2273,11 +2275,8 @@ assert.doesNotMatch(partialRows, /Rent went up/, "with some entries judged, an u
 assert.match(partialStatus, /1 note with a next action/);
 assert.equal(greeting, "Hi. What are we working on today?");
 assert.equal(greetState, "hello");
-assert.match(
-  greetStrip ?? "",
-  /tuck\/skins\/kitten\/frames\/hello\.png$/,
-  "the greeting plays the kitten's waving strip",
-);
+assert.equal(greetStrip, "hello", "the greeting plays the kitten's waving strip");
+assert.match(greetHref ?? "", /^blob:/, "the frame is drawn from a blob: URL of the page");
 assert.equal(bubbleLook.bg, "rgb(255, 248, 252)", "the bubble is the skin's surface");
 assert.ok(motion.always > 1, `"Always animate" plays the strip under reduce motion: ${motion.always} frames`);
 assert.equal(motion.follow, 1, "following the computer's reduce motion holds one frame");

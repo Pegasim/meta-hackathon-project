@@ -191,13 +191,37 @@
   const reducedMotion = () =>
     motion === "off" || (motion !== "on" && matchMedia("(prefers-reduced-motion: reduce)").matches);
   const isSprite = () => skin?.kind === "sprites";
+  // The frames are read once from the extension and drawn from blob: URLs of this page.
+  // Some sites (YouTube) refuse an SVG image straight from chrome-extension:// ("Unsafe
+  // attempt to load URL"); a blob made here is the page's own.
+  const strips = new Map(); // "skin/strip" → blob: URL, or a promise while it loads
+  function stripUrl(strip) {
+    const key = `${skin.id}/${strip}`;
+    const known = strips.get(key);
+    if (typeof known === "string") return known;
+    if (!known)
+      strips.set(
+        key,
+        fetch(chrome.runtime.getURL(`tuck/skins/${skin.id}/frames/${strip}.png`))
+          .then((r) => r.blob())
+          .then((b) => {
+            strips.set(key, URL.createObjectURL(b));
+            if (skin && `${skin.id}/${art()?.dataset.strip}` === key) setPose(pose); // the frame it waited for
+          })
+          .catch(() => strips.delete(key)),
+      );
+    return null;
+  }
   function spriteFrame(strip, i) {
     // Removed or reloaded, the extension leaves this script with no runtime behind it.
     if (orphaned()) return leavePage();
     const img = art()?.querySelector(".tuck__strip");
     const f = skin.frames[strip];
     if (!img || !f) return;
-    img.setAttribute("href", chrome.runtime.getURL(`tuck/skins/${skin.id}/frames/${strip}.png`));
+    art().dataset.strip = strip;
+    const url = stripUrl(strip);
+    if (!url) return; // drawn once it has loaded
+    img.setAttribute("href", url);
     const w = (skin.frame ?? skin.size).width;
     img.setAttribute("width", w * f.count);
     img.setAttribute("x", -w * (i % f.count));
@@ -366,6 +390,10 @@
     svgEl.setAttribute("aria-hidden", "true");
     svgEl.removeAttribute("role");
     svgEl.removeAttribute("aria-label");
+    if (manifest.kind === "sprites") {
+      svgEl.querySelector(".tuck__strip")?.removeAttribute("href"); // drawn from a blob: URL (stripUrl)
+      for (const strip of Object.keys(manifest.frames)) stripUrl(strip);
+    }
     dock().style.setProperty("--tk-w", `${SIZE.width}px`);
     dock().style.setProperty("--tk-h", `${SIZE.height}px`);
     setPose(pose);
