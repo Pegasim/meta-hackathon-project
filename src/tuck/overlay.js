@@ -227,7 +227,9 @@
       if (current?.bubble?.kind === "nudge") send({ type: "respond", choice: "dismiss" });
       else if (current?.bubble) {
         if (current.bubble.kind === "goal") send({ type: "goal-form-closed" });
+        closeStuck();
         closeBubble();
+        if (current?.away) leave(); // tucked away, Tuck came for this word alone
       } else send({ type: "tuck-click" });
     });
   }
@@ -304,6 +306,11 @@
       for (const a of part.getAnimations()) if (a.effect?.getTiming().iterations !== Infinity) (a.cancel(), a.play());
   }
 
+  // Closing an "I'm stuck" wait or step ends that ask: a late step is not drawn (#61).
+  function closeStuck() {
+    if (current?.stuck) send({ type: "stuck-closed", ask: current.stuck });
+  }
+
   function closeBubble() {
     root.querySelector(".bubble").hidden = true;
     if (current) current = { ...current, bubble: null };
@@ -351,13 +358,16 @@
       );
       box.append(part);
     }
-    if (b.kind === "nudge") {
+    // A stuck step (#61): its minutes under it.
+    if (b.kind === "step" && b.next) box.append(el("p", { className: "next", textContent: b.next }));
+    if (b.buttons) {
       const row = el("div", { className: "row" });
       for (const btn of b.buttons) {
         const button = el("button", {
           className: `b${btn.primary ? " primary" : ""}`,
           textContent: btn.label,
-          onclick: () => send({ type: "respond", choice: btn.choice }),
+          // A nudge's answer, or the message the button names ("I'm stuck", "Start this").
+          onclick: () => send(btn.msg ?? { type: "respond", choice: btn.choice }),
         });
         button.dataset.choice = btn.choice;
         row.append(button);
@@ -420,7 +430,9 @@
             if (b.kind === "nudge") return send({ type: "respond", choice: "dismiss" });
             // Closing the goal form without a goal: Tuck stops offering it on new pages for a while.
             if (b.kind === "goal") send({ type: "goal-form-closed" });
+            closeStuck();
             closeBubble();
+            if (current?.away) leave(); // tucked away, Tuck came for this word alone
           },
         }),
       );
@@ -464,6 +476,8 @@
   }
 
   chrome.runtime.onMessage.addListener((msg) => {
+    // Meant for one stuck ask's wait (#61): anything else on screen stays.
+    if (msg?.stuck && current?.stuck !== msg.stuck) return;
     if (msg?.type === "tuck-show") show(msg.view, msg.assets);
     else if (msg?.type === "tuck-look" && root?.isConnected) {
       lookAt = Math.max(lookAt, msg.assets.readAt ?? 0);

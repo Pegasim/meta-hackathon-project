@@ -44,7 +44,16 @@
       <div class="row" style="margin-top:10px">
         <button id="done">Done</button>
         <button id="change">Change</button>
+        <button id="stuck">I'm stuck</button>
         <button id="tuck-away">Tuck away</button>
+      </div>
+      <div id="stuck-view" hidden style="margin-top:10px">
+        <p id="stuck-text" role="status"></p>
+        <p class="small muted" id="stuck-min"></p>
+        <div class="row" id="stuck-answers" style="margin-top:8px" hidden>
+          <button class="primary" id="start-step">Start this</button>
+          <button id="another-step">Another one</button>
+        </div>
       </div>
     </div>
     <form id="intent-form" class="stack">
