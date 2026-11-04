@@ -1791,6 +1791,11 @@ async function maintain() {
 // stored or logged. Every change redraws the chat in place (overlay keeps the draft).
 const threads = new Map(); // tabId → thread (tuck/chat.js), with `at`: when it last changed
 const CHAT_HOLD_MS = 3 * 60 * 1000; // an open chat holds drift words, if it is still in use
+// A new page in the tab (a reload, or a URL change in a single-page site), or the tab
+// closed, ends the chat there: its thread goes
+// with it. A thread left behind would hold every drift word on that tab (#115).
+chrome.tabs.onUpdated.addListener((tabId, info) => (info.status === "loading" || info.url) && threads.delete(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => threads.delete(tabId));
 
 const chatOpenOn = (tabId) => {
   const t = threads.get(tabId);
@@ -1965,11 +1970,13 @@ async function stepDoneOnCard(_msg, sender) {
 // Does the person have notes Tuck can read: a brain folder or any other memory source.
 async function hasNotes() {
   const m = await memory;
-  const [brain, sources] = await Promise.all([
+  const [brain, sources, stats] = await Promise.all([
     m.brainState().catch(() => ({ connected: false })),
     m.sources().catch(() => []),
+    m.stats().catch(() => ({ notes: 0 })),
   ]);
-  return !!brain.connected || sources.length > 0;
+  // A connected folder or source, or notes imported without one.
+  return !!brain.connected || sources.length > 0 || stats.notes > 0;
 }
 
 // The notes question comes once, after the key, and only to someone with no notes yet.
