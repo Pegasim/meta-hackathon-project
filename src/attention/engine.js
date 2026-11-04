@@ -221,7 +221,7 @@ function applyRelevance(s, input) {
   rememberRelated(s, input.ts);
 }
 
-function applySession(s, input) {
+function applySession(s, input, cfg) {
   if (input.kind === "intent_set") {
     s.intent = input.payload;
     s.budgetSec = 0;
@@ -229,6 +229,9 @@ function applySession(s, input) {
     s.policy = initialPolicy();
   } else if (input.kind === "intent_done") {
     s.intent = null;
+    // The day has started: the goal_done word asks what's next, and a greeting would
+    // replace it. Matters after a restart, which wipes sessionDay but not the goal (#73).
+    s.sessionDay = dayKey(input.ts, cfg);
     s.budgetSec = 0;
     s.waited = {};
     s.policy.episode = null;
@@ -385,7 +388,7 @@ export function step(prev, input, cfg = DEFAULTS) {
   // 2. The input itself.
   if (input.type === "context") out.push(...applyContext(s, input, candidates, cfg));
   else if (input.type === "relevance") applyRelevance(s, input);
-  else if (input.type === "session") applySession(s, input);
+  else if (input.type === "session") applySession(s, input, cfg);
   else if (input.type === "response") applyResponse(s, input, cfg);
   else if (input.type === "second_look") applySecondLook(s, input, cfg);
   else if (input.type === "agent") out.push(...applyAgent(s, input, candidates, cfg));
