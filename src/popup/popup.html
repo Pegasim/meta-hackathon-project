@@ -5,12 +5,14 @@
 <title>Tuck</title>
 <link rel="stylesheet" href="../shared/ui.css">
 <link rel="stylesheet" id="skin-css" href="../tuck/skins/v1/tuck.css">
+<style id="skin-theme"></style>
 <style>
   body { width: 360px; padding: 12px; }
   #trigger-text { font-weight: 600; }
+  a { color: var(--text); }
   #mode { width: auto; }
   .brand { display: flex; align-items: center; gap: 8px; }
-  .brand .tuck { width: 36px; height: 36px; --tuck-accent: #94BFAE; }
+  .brand .tuck { width: 36px; height: 36px; --tuck-accent: var(--tk-accent, #94BFAE); }
   .sites { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
   .site { min-width: 0; } /* long titles must not widen the row */
   .site-name { font-weight: 600; }

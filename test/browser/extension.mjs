@@ -314,6 +314,16 @@ const tuck = repoTab.locator("#tuck-companion");
 await tuck.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
 const greeting = await tuck.locator(".bubble .text").textContent();
 const greetState = await tuck.locator("svg.tuck").getAttribute("data-pose");
+// The bubble wears the skin's light palette (v1), from the theme variables alone.
+const bubbleLook = await tuck.locator(".bubble").evaluate((b) => {
+  const css = getComputedStyle;
+  const start = b.querySelector("button.start");
+  return {
+    bg: css(b).backgroundColor,
+    primaryBg: css(start).backgroundColor,
+    styleText: b.getRootNode().querySelector("style").textContent,
+  };
+});
 if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-greeting.png") });
 // Drag Tuck to the left: the bubble then opens rightwards.
 await repoTab.waitForTimeout(600); // the slide-in
@@ -1207,6 +1217,13 @@ assert.doesNotMatch(partialRows, /Rent went up/, "with some entries judged, an u
 assert.match(partialStatus, /1 note with a next action/);
 assert.equal(greeting, "Hi. What are we working on today?");
 assert.equal(greetState, "hello");
+assert.equal(bubbleLook.bg, "rgb(251, 248, 242)", "the bubble is the skin's surface");
+assert.equal(bubbleLook.primaryBg, "rgb(148, 191, 174)", "the primary button is the skin's accent");
+assert.doesNotMatch(
+  bubbleLook.styleText.slice(bubbleLook.styleText.indexOf(":host { all: initial; }")),
+  /#[0-9a-f]{3,6}\b/i,
+  "the bubble CSS has no literal colours",
+);
 assert.equal(restState, "rest", "Tuck rests on the page once the goal is set");
 assert.deepEqual(
   afterReload,

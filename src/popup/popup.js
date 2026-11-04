@@ -134,6 +134,11 @@ async function renderMark() {
   const read = async (file) => (await fetch(chrome.runtime.getURL(`tuck/skins/${tuckSkin}/${file}`))).text();
   const [svg, manifest] = await Promise.all([read("tuck.svg"), read("skin.json").then(JSON.parse)]);
   $("tuck-mark").innerHTML = svg;
+  // The popup wears the skin's colours: its own colour variables follow the theme ones.
+  $("skin-theme").textContent =
+    globalThis.tuckSkins.themeCss(manifest.theme).replaceAll(":host", ":root") +
+    ":root{--bg:var(--tk-surface);--surface:var(--tk-surface);--border:var(--tk-outline);--text:var(--tk-ink);" +
+    "--muted:var(--tk-muted);--accent:var(--tk-accent);--accent-text:var(--tk-on-accent)}";
   const { engine } = await send("get-status");
   const pose = ["break", "paused"].includes(engine.state) ? "sleep" : "rest";
   const root = $("tuck-mark").querySelector("svg");

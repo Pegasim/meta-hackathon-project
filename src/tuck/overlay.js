@@ -50,42 +50,45 @@
   const STYLE = `
     :host { all: initial; }
     .dock { position: fixed; z-index: 2147483647; width: var(--tk-w); height: var(--tk-h);
-            font: 14px/1.4 system-ui, -apple-system, sans-serif; color: #24262d;
+            font: 13px/1.4 ui-rounded, system-ui, -apple-system, sans-serif; color: var(--tk-ink);
             opacity: 0; transform: scale(.6); transition: opacity .35s ease, transform .45s cubic-bezier(.2,.8,.2,1);
             pointer-events: none; }
     .dock.in { opacity: 1; transform: none; }
     .avatar { all: unset; cursor: grab; pointer-events: auto; border-radius: 16px; touch-action: none; display: block; }
     .avatar.dragging { cursor: grabbing; }
-    .avatar:focus-visible { outline: 2px solid #94BFAE; outline-offset: 2px; }
-    .tuck { --tuck-accent: #94BFAE; width: var(--tk-w); height: var(--tk-h); filter: drop-shadow(0 2px 6px rgba(0,0,0,.18)); }
-    .bubble { pointer-events: auto; position: absolute; width: 260px; background: #fff; border: 1px solid #dfe3e8;
-              border-radius: 14px; padding: 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.14); }
+    .avatar:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 2px; }
+    .tuck { --tuck-accent: var(--tk-accent); width: var(--tk-w); height: var(--tk-h); filter: drop-shadow(0 2px 6px rgba(0,0,0,.18)); }
+    .bubble { pointer-events: auto; position: absolute; width: 260px; background: var(--tk-surface); color: var(--tk-ink);
+              border: 1px solid var(--tk-outline); border-radius: 16px; padding: 12px 14px; font-weight: 400;
+              box-shadow: 0 8px 24px rgba(0,0,0,.14); }
+    .bubble::before { content: ""; position: absolute; width: 10px; height: 10px; background: var(--tk-surface);
+                      border: 1px solid var(--tk-outline); border-width: 1px 0 0 1px; }
     .bubble[hidden] { display: none; }
     .dock[data-side="left"] .bubble { right: 0; }
     .dock[data-side="right"] .bubble { left: 0; }
+    .dock[data-side="left"] .bubble::before { right: calc(var(--tk-w) / 2 - 5px); }
+    .dock[data-side="right"] .bubble::before { left: calc(var(--tk-w) / 2 - 5px); }
     .dock[data-vertical="below"] .bubble { top: calc(var(--tk-h) + 8px); }
+    .dock[data-vertical="below"] .bubble::before { top: -6px; transform: rotate(45deg); }
     .dock[data-vertical="above"] .bubble { bottom: calc(var(--tk-h) + 8px); }
-    .text { margin: 0 18px 10px 0; font-weight: 600; }
-    .next { margin: -6px 0 10px; color: #65616d; font-size: 13px; }
+    .dock[data-vertical="above"] .bubble::before { bottom: -6px; transform: rotate(225deg); }
+    .text { margin: 0 18px 10px 0; font-size: 14px; font-weight: 600; }
+    .next { margin: -6px 0 10px; color: var(--tk-muted); font-size: 13px; }
     .row { display: flex; flex-wrap: wrap; gap: 6px; }
-    button.b { all: unset; cursor: pointer; border: 1px solid #cfd5dc; border-radius: 999px; padding: 5px 12px;
-               font-size: 13px; color: #24262d; background: #fff; }
-    button.b.primary { background: #94BFAE; border-color: #94BFAE; font-weight: 600; color: #1f2a26; }
-    button.b:hover { border-color: #94BFAE; }
-    button.b:focus-visible { outline: 2px solid #94BFAE; outline-offset: 1px; }
-    .close { all: unset; cursor: pointer; position: absolute; top: 6px; right: 10px; color: #8a8f98; font-size: 16px; }
+    button.b { all: unset; cursor: pointer; border: 1px solid var(--tk-outline); border-radius: 999px; padding: 5px 12px;
+               font-size: 13px; color: var(--tk-ink); background: var(--tk-surface); }
+    button.b.primary { background: var(--tk-accent); border-color: var(--tk-accent); font-weight: 600; color: var(--tk-on-accent); }
+    button.b:hover { border-color: var(--tk-accent); }
+    button.b:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
+    .close { all: unset; cursor: pointer; position: absolute; top: 6px; right: 10px; color: var(--tk-muted); font-size: 16px; }
+    .close:hover { color: var(--tk-ink); }
+    .close:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; border-radius: 4px; }
     form { display: grid; gap: 6px; margin: 0; }
-    input { all: unset; border: 1px solid #cfd5dc; border-radius: 8px; padding: 6px 8px; font-size: 13px;
-            background: #fff; color: #24262d; }
-    input:focus { border-color: #94BFAE; }
-    .pick { margin-bottom: 8px; display: grid; gap: 6px; }
-    @media (prefers-color-scheme: dark) {
-      .bubble { background: #24262d; border-color: #3a3d46; color: #eceef1; }
-      .dock { color: #eceef1; }
-      button.b, input { background: #2d3038; border-color: #464a54; color: #eceef1; }
-      button.b.primary { color: #1f2a26; }
-      .next { color: #a9adb6; }
-    }`;
+    input { all: unset; border: 1px solid var(--tk-outline); border-radius: 8px; padding: 6px 8px; font-size: 13px;
+            background: var(--tk-surface); color: var(--tk-ink); }
+    input:focus { border-color: var(--tk-accent); }
+    input:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
+    .pick { margin-bottom: 8px; display: grid; gap: 6px; }`;
 
   function el(tag, props = {}, ...children) {
     const e = Object.assign(document.createElement(tag), props);
