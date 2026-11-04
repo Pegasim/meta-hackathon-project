@@ -232,9 +232,31 @@ Each step ends with something working that can be checked by eye:
 
 Tests: node unit tests for attention/ and for agent schema/parse functions; replay tests; live model tests and evals (`MODEL_API_KEY`). The existing `npm test` stays green.
 
-## 8. Demo script (draft)
+## 8. Demo script (revised 2026-11-04)
 
-Extension opens → avatar: "Yesterday you stopped at the demo video edit. Pick it back up?" → goal set → work → drift to YouTube; after ~45 s the avatar looks, then speaks → *Take me back* returns to the right tab → on another site *This is for my task* → next time it stays quiet (learning) → rapid tab hopping → fragmentation nudge → today's summary in the side panel.
+The first draft ended on the fragmentation nudge, off by default since #30, and on a side panel that was never built; it also came before the plan from notes (#78), the tool loop (#81), reminders (#10) and the Muse Code bridge. The video has 3 minutes:
+
+| Time | Beat | Shows |
+|---|---|---|
+| 0:00–0:15 | "A buddy, not a blocker." The first page of the day: Tuck greets with yesterday's recap ("Yesterday: 40 minutes on …") and a deadline from the notes ("Due tomorrow. Still on your list?"). | memory, reminders |
+| 0:15–0:45 | Set a goal → "Got it. Let's go." → click Tuck → the card with the plan from the notes and its *Watch out:* line; 3 s of Settings → "What Tuck looked at". | the tool loop, grounded in notes |
+| 0:45–1:10 | A YouTube tutorial for the goal: Tuck stays quiet. | relevance per goal, not per site |
+| 1:10–1:45 | An F1 video or a feed: Tuck slides in with the model's line → *Take me back* lands on the right tab. | the core loop |
+| 1:45–2:15 | A side site → *This is for my task* → back on it later: silence. | one-click correction, learning |
+| 2:15–2:40 | Optional: Muse asks for approval while the person browses ("Muse wants your OK to run a command in …") → *Got it*. | the coding agent bridge |
+| 2:40–3:00 | *Done* → "Nice work" and what's next → close on privacy: notes redacted, never sent to Contributor. | goal done, privacy |
+
+Short on time: cut Muse first, then the greeting. Left out on purpose: a settings tour, imports, the GitHub check, the event log, tab hopping.
+
+Before recording:
+
+- "I'm stuck" has no button: only the e2e test sends `stuck` (#61). Leave it out, or give it a button first; it can take the Muse slot.
+- The waits (45 s to a drift word, 30 s to the next level, 2 min of cooldown) can be cut in the edit, or shortened in the service worker's console with `chrome.storage.local.set({ attentionConfig: { toleranceSec: 10, escalateAfterSec: 10, cooldownSec: 20 } })`; `chrome.storage.local.remove("attentionConfig")` undoes it.
+- A deadline is said once a day per task, so a rehearsal uses it up for that day.
+- The plan takes up to 20 s and is `no_plan` when the notes say nothing about the goal: pick a goal the brain has notes on, and wait before clicking Tuck.
+- Each new page waits for a relevance call (typical 5.3 s, slow case 14 s in `evals/baseline.json`): open it a few seconds ahead of its beat.
+- The recap needs an earlier goal that ran at least 60 s, finished or expired.
+- Muse: `node bridge/install.mjs <project folder>`, then reload Tuck (Google Chrome, macOS or Linux).
 
 ## 9. Decisions made during design (Claude's call — İrem to check)
 
