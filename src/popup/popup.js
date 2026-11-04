@@ -151,6 +151,12 @@ async function renderMark() {
     root.setAttribute(name, value);
   }
   root.dataset.item = manifest.items?.includes(tuckItem) ? tuckItem : "none";
+  // A sprite skin shows its pose's first frame (asleep on a break).
+  const strip = root.querySelector(".tuck__strip");
+  if (strip && manifest.frames?.[pose]) {
+    strip.setAttribute("href", url(`frames/${pose}.png`));
+    strip.setAttribute("width", (manifest.frame ?? manifest.size).width * manifest.frames[pose].count);
+  }
 }
 
 // Tuck away, from here or Tuck's card; while away, the card at the top brings it back

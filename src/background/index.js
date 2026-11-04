@@ -807,7 +807,13 @@ function restingView(s) {
 const GOAL_FORM_SNOOZE_MS = 10 * 60 * 1000;
 async function noGoalView(s) {
   if (s.intent || s.state === "paused") return null;
-  const { goalFormClosedAt, greeted } = await chrome.storage.session.get(["goalFormClosedAt", "greeted"]);
+  const { goalFormClosedAt, greeted, pendingGreeting } = await chrome.storage.session.get([
+    "goalFormClosedAt",
+    "greeted",
+    "pendingGreeting",
+  ]);
+  // The day's greeting is waiting for this page (greet runs right after): it is the form.
+  if (pendingGreeting) return null;
   // The day's greeting was just drawn on this page: it is the goal form already.
   if (greeted?.tabId === s.current?.tabId && Date.now() - greeted.at < 5000) return null;
   if (goalFormClosedAt && Date.now() - goalFormClosedAt < GOAL_FORM_SNOOZE_MS)

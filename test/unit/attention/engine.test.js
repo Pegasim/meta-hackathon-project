@@ -704,6 +704,23 @@ test("the turn's end is news even after an approval with the same status (Muse 2
   );
 });
 
+test("idle in front of an unrelated page still counts as time away from work", () => {
+  // Reading a feed or a muted video without touching anything is still the detour.
+  const X = ["https://x.com/home", "Home / X"];
+  const { triggers } = run(
+    [
+      setIntent(t0),
+      ctx(t0, REPO, "related"),
+      ctx(t0 + 10 * S, VIDEO, "unrelated"),
+      ctx(t0 + 20 * S, VIDEO, "unrelated", { idleState: "idle" }),
+      ctx(t0 + 200 * S, X, "unrelated"),
+    ],
+    { until: t0 + 240 * S },
+  );
+  const drift = triggers.filter((t) => t.kind === "drift").at(-1);
+  assert.equal(drift.evidence.awaySec, Math.round((drift.ts - t0 - 10 * S) / S));
+});
+
 test("after Muse's turn ends, drift on a page counts again (İrem, 2026-11-04)", () => {
   // Her second recorded turn: an approval, another, then the turn ends on a question.
   // Then she browses an unrelated page: Tuck must notice, as with no agent at all.

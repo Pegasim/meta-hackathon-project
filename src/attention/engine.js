@@ -23,6 +23,7 @@ export function initialState() {
     timeline: [],
     away: false,
     awaySince: null,
+    awayOutside: false, // that away time is outside the browser (not idle in front of a page)
     breakUntil: null,
     sessionDay: null,
     asked: {},
@@ -137,14 +138,17 @@ function applyContext(s, input, candidates, cfg) {
   const away = input.browserFocused === false || (input.idleState !== "active" && !input.audible);
   if (away) {
     if (!s.away) s.awaySince = input.ts;
+    // Outside the browser (another app) or idle in front of a page (reading, a muted video)?
+    s.awayOutside = s.away ? s.awayOutside || input.browserFocused === false : input.browserFocused === false;
     s.away = true;
     return [];
   }
   if (s.away && s.awaySince != null && s.intent && input.ts - s.awaySince >= cfg.returnAwaySec * S)
     candidates.push("return");
   // Time outside the browser (the terminal, another app, sleep) is not time away from work:
-  // the count of minutes away picks up where it stopped.
-  if (s.away && s.awaySince != null && s.offTaskSince != null)
+  // the count of minutes away picks up where it stopped. Idle in front of the page is
+  // still time on it (reading a feed, a muted video), so it keeps counting.
+  if (s.away && s.awayOutside && s.awaySince != null && s.offTaskSince != null)
     s.offTaskSince += input.ts - Math.max(s.awaySince, s.offTaskSince);
   s.away = false;
   s.awaySince = null;
@@ -384,6 +388,7 @@ export function step(prev, input, cfg = DEFAULTS) {
       // Sleep or a crash: the silence is time away, never time on the page.
       if (!s.away) s.awaySince = s.lastTs;
       s.away = true;
+      s.awayOutside = true;
     } else {
       advance(s, dt, cfg);
     }

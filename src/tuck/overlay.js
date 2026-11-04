@@ -137,9 +137,11 @@
     const f = skin.frames[strip];
     if (f.gaze && current?.bubble && skin.frames.look) spriteFrame("look", gazeFrame());
     // An entrance settles on the resting frame, so the face does not jump between poses.
-    else if (f.count > 1 && strip !== "work" && skin.frames.rest) spriteFrame("rest", 0);
+    else if (f.count > 1 && strip !== "work" && skin.frames.rest) strip = (spriteFrame("rest", 0), "rest");
     else spriteFrame(strip, 0);
-    if (f.every && !reducedMotion()) spriteTimer = setTimeout(() => playSprite(strip), f.every);
+    // Settled on rest (its own or after an entrance): the idle breath comes back now and then.
+    const every = skin.frames[strip].every;
+    if (every && !reducedMotion()) spriteTimer = setTimeout(() => playSprite(strip), every);
   }
   function playSprite(strip) {
     clearTimeout(spriteTimer);
@@ -221,8 +223,10 @@
       if (dragged) return ((dragged = false), e.preventDefault());
       // A nudge is answered, as × answers it (Tuck tucked away then leaves with it).
       if (current?.bubble?.kind === "nudge") send({ type: "respond", choice: "dismiss" });
-      else if (current?.bubble) closeBubble();
-      else send({ type: "tuck-click" });
+      else if (current?.bubble) {
+        if (current.bubble.kind === "goal") send({ type: "goal-form-closed" });
+        closeBubble();
+      } else send({ type: "tuck-click" });
     });
   }
 
@@ -262,6 +266,7 @@
 
   // The skin's art, its theme and size; the pose on screen carries over.
   function drawSkin({ manifest, svg, css }) {
+    clearTimeout(spriteTimer); // a frame of the old skin must not land on the new one
     skin = manifest;
     SIZE = manifest.size;
     root.querySelector("style").textContent = css + themeCss(manifest.theme) + STYLE;
@@ -279,7 +284,11 @@
 
   function setPose(next) {
     pose = next;
+    clearTimeout(spriteTimer);
     const svg = art();
+    // "Keep Tuck still" for SVG skins too (their CSS stops on data-motion="off").
+    if (motion === "off") svg.dataset.motion = "off";
+    else delete svg.dataset.motion;
     for (const [name, value] of Object.entries(poseAttrs(skin, next))) svg.setAttribute(name, value);
     svg.dataset.item = item;
     if (isSprite()) return playSprite(svg.dataset.pose);
@@ -296,6 +305,7 @@
 
   function leave() {
     cancelAnimationFrame(enterFrame); // a show still waiting for its frame must not bring Tuck back
+    clearTimeout(spriteTimer); // a hidden Tuck plays nothing
     dock().classList.remove("in");
     current = null;
   }
