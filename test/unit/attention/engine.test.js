@@ -704,6 +704,27 @@ test("the turn's end is news even after an approval with the same status (Muse 2
   );
 });
 
+test("after Muse's turn ends, drift on a page counts again (İrem, 2026-11-04)", () => {
+  // Her second recorded turn: an approval, another, then the turn ends on a question.
+  // Then she browses an unrelated page: Tuck must notice, as with no agent at all.
+  const cfg = withOverrides({ secondLook: false, decide: stubDecide });
+  const { out } = run(
+    [
+      setIntent(t0),
+      ctx(t0, REPO, "related"),
+      agent(t0, "working"),
+      agent(t0 + 4 * S, "waiting_for_user"),
+      agent(t0 + 18 * S, "waiting_for_user"),
+      { ...agent(t0 + 51 * S, "waiting_for_user"), turnEnd: true },
+      ctx(t0 + 60 * S, VIDEO, "unrelated"),
+    ],
+    { until: t0 + 200 * S, cfg },
+  );
+  const drift = out.find((o) => o.type === "trigger" && o.kind === "drift");
+  assert.ok(drift, "a drift word after the turn ended");
+  assert.ok(drift.ts - t0 <= 60 * S + cfg.toleranceSec * S + 2 * S, `drift at ${(drift.ts - t0) / S}s`);
+});
+
 test("a finished turn is never followed by 'still waiting' (İrem, 2026-11-04)", () => {
   // The turn ended with a question; the person reads it in the terminal. Asking again
   // whether Muse still waits is for an approval in the middle of a turn, not for this.
