@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dayKey, makeIntent, isExpired } from "../../../src/attention/intents.js";
+import { dayKey, makeIntent, isExpired, syncFocus, focusMinutes, stepDone } from "../../../src/attention/intents.js";
 import { DEFAULTS } from "../../../src/attention/config.js";
 
 const IST = -180; // Istanbul, UTC+3, as getTimezoneOffset() reports it
@@ -45,10 +45,41 @@ test("makeIntent fills the shadow record", () => {
     expiredAt: null,
     memoryEntryId: null,
     fromLoopId: null,
+    focusMs: 0,
+    focusSince: null,
+    stepIndex: 0,
   });
   assert.equal(
     makeIntent({ title: "SUT kural motorundaki kırık testleri düzelt" }, created).topic,
     "sut-kural-motorundaki-kirik-testleri-duz",
   );
   assert.equal(typeof makeIntent({ title: "x y z" }, created).id, "string");
+});
+
+test("focus time counts only while active", () => {
+  let i = makeIntent({ title: "Fix the cart" }, 0);
+  i = syncFocus(i, true, 1000);
+  i = syncFocus(i, false, 1000 + 10 * 60e3);
+  i = syncFocus(i, false, 1000 + 15 * 60e3);
+  i = syncFocus(i, true, 1000 + 20 * 60e3);
+  assert.equal(focusMinutes(i, 1000 + 28 * 60e3), 18);
+});
+
+test("syncFocus returns the same intent when nothing flips; an old intent reads as 0", () => {
+  const i = syncFocus(makeIntent({ title: "Fix the cart" }, 0), true, 5);
+  assert.equal(syncFocus(i, true, 99), i);
+  assert.equal(focusMinutes({ title: "old" }, 1e9), 0);
+});
+
+test("stepDone moves to the next plan step; the last step and no plan stay", () => {
+  const i = {
+    ...makeIntent({ title: "Deck", steps: ["A"] }, 0),
+    plan: { steps: [{ step: "A" }, { step: "B" }, { step: "C" }] },
+  };
+  const n = stepDone(i);
+  assert.equal(n.stepIndex, 1);
+  assert.deepEqual(n.steps, ["B"]);
+  assert.equal(stepDone({ ...n, stepIndex: 2 }).stepIndex, 2);
+  const none = makeIntent({ title: "No plan" }, 0);
+  assert.equal(stepDone(none), none);
 });
