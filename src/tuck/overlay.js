@@ -140,13 +140,28 @@
               color: var(--tk-muted); }
     .c-head .c-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .c-head .c-change { all: unset; cursor: pointer; font-weight: 400; text-decoration: underline; }
-    .c-msgs { display: flex; flex-direction: column; gap: 7px; max-height: 300px; overflow-y: auto; }
-    .c-msg { max-width: 250px; font-size: 13px; line-height: 1.4; }
+    /* As tall as its messages, up to a limit, then it scrolls with the newest in view. */
+    .c-msgs { display: flex; flex-direction: column; gap: 8px; max-height: min(320px, 50vh); overflow-y: auto;
+              padding: 2px 4px 6px 0; scroll-padding-bottom: 6px; overscroll-behavior: contain; }
+    /* Tuck's first question: a small speech bubble, no header; clicking or typing opens the chat. */
+    .bubble.chat.compact { width: 260px; cursor: text; }
+    .bubble.chat.compact .c-head .c-title, .bubble.chat.compact .c-head .c-change { visibility: hidden; }
+    .bubble.chat.compact .c-head { height: 0; margin: 0; }
+    .bubble.chat.compact .c-msg.from-tuck > .text { background: none; border: 0; padding: 0; font-size: 14px; font-weight: 600; }
+    .bubble.chat.compact .c-form input { padding: 5px 8px; }
+    .bubble.chat.compact .c-form .start { padding: 4px 10px; }
+    .bubble.setup .s-foot { margin: 8px 0 0; font-size: 12px; }
+    .bubble.setup .s-error { margin: 0 0 6px; color: var(--tk-ink); font-weight: 600; }
+    .bubble.setup .c-change { all: unset; cursor: pointer; text-decoration: underline; }
+    .bubble.chat.growing { overflow: hidden; transition: height .22s cubic-bezier(.2,.8,.2,1); }
+    @media (prefers-reduced-motion: reduce) { .bubble.chat.growing { transition: none; } }
+    .c-msg { box-sizing: border-box; max-width: 260px; font-size: 13px; line-height: 1.4; flex: none; }
+    .c-msg.from-tuck { width: 100%; }
     .c-msg .text { margin: 0; font-size: 13px; font-weight: 400; }
-    .c-msg.tuck { align-self: flex-start; }
-    .c-msg.tuck > .text { background: #fff; border: 1px solid var(--tk-outline); border-radius: 11px 11px 11px 3px; padding: 6px 9px; }
-    @media (prefers-color-scheme: dark) { .c-msg.tuck > .text { background: transparent; } }
-    .c-msg.me { align-self: flex-end; background: var(--tk-accent); color: var(--tk-on-accent);
+    .c-msg.from-tuck { align-self: flex-start; }
+    .c-msg.from-tuck > .text { background: color-mix(in srgb, var(--tk-surface), white 65%); border: 1px solid var(--tk-outline); border-radius: 11px 11px 11px 3px; padding: 6px 9px; }
+    @media (prefers-color-scheme: dark) { .c-msg.from-tuck > .text { background: transparent; } }
+    .c-msg.from-me { align-self: flex-end; width: fit-content; background: var(--tk-accent); color: var(--tk-on-accent);
                 border-radius: 11px 11px 3px 11px; padding: 6px 9px; }
     .c-msg.pending > .text { color: var(--tk-muted); }
     .c-trail { font-size: 11.5px; color: var(--tk-muted); border-left: 2px solid var(--tk-pink); padding: 1px 0 1px 8px;
@@ -324,7 +339,12 @@
     // Site shortcuts (YouTube's k, Gmail's c) must not fire while typing to Tuck.
     for (const type of ["keydown", "keyup", "keypress"]) bubble.addEventListener(type, (e) => e.stopPropagation());
     // Esc closes the bubble as × does (#59).
-    bubble.addEventListener("keydown", (e) => e.key === "Escape" && bubble.querySelector(".close")?.click());
+    bubble.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      const close = bubble.querySelector(".close");
+      if (close) close.click();
+      else if (current?.bubble?.kind === "menu") closeBubble(); // the icon row has no ×
+    });
     shadow.append(el("style"), el("div", { className: "dock" }, avatar, bubble));
     document.documentElement.append(host);
     root = shadow;
@@ -459,10 +479,11 @@
       );
     const list = el("div", { className: "c-msgs" });
     for (const m of b.messages) {
-      const msg = el("div", { className: `c-msg ${m.from}${m.pending ? " pending" : ""}` });
+      const msg = el("div", { className: `c-msg from-${m.from}${m.pending ? " pending" : ""}` });
       if (m.trail?.length)
         msg.append(el("div", { className: "c-trail" }, ...m.trail.map((t) => el("span", { textContent: t }))));
-      msg.append(el("p", { className: "text", textContent: m.text }));
+      if (m.reminder) msg.append(reminderPart(m.reminder));
+      if (m.text) msg.append(el("p", { className: "text", textContent: m.text }));
       if (m.next) msg.append(el("p", { className: "next", textContent: m.next }));
       if (m.chips?.length) {
         const pick = el("div", { className: "pick" });
@@ -504,11 +525,115 @@
       const text = input.value.trim();
       if (text.length < 2) return;
       input.value = "";
+      // The person's line shows at once; Tuck's answer redraws the thread after it.
+      list.append(el("div", { className: "c-msg from-me" }, el("p", { className: "text", textContent: text })));
+      list.scrollTop = list.scrollHeight;
       send({ type: "chat-say", text });
     };
     box.append(head, list, form, close);
+    if (b.compact) {
+      box.classList.add("compact");
+      // Clicking the bubble or typing opens the chat, growing from the small bubble.
+      const open = () => {
+        if (!box.classList.contains("compact")) return;
+        grow(box, () => box.classList.remove("compact"));
+        send({ type: "chat-expand" });
+      };
+      box.addEventListener("click", (e) => !e.target.closest("button") && open());
+      input.addEventListener("input", open, { once: true });
+    }
+    list.scrollTop = list.scrollHeight;
     requestAnimationFrame(() => (list.scrollTop = list.scrollHeight));
     return input;
+  }
+
+  // First run, no API key: one field for it. The key goes to the background, never the page.
+  function drawSetup(box, b) {
+    box.classList.add("chat", "compact", "setup");
+    const key = el("input", {
+      name: "api-key",
+      type: "password",
+      placeholder: "Paste your Meta API key",
+      autocomplete: "off",
+    });
+    const save = el("button", { className: "b primary start", type: "submit", textContent: "Save" });
+    const form = el("form", { className: "c-form" }, key, save);
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const value = key.value.trim();
+      if (value.length < 8) return;
+      save.disabled = true;
+      save.textContent = "Checking…";
+      send({ type: "save-key", key: value });
+    };
+    box.append(
+      el("p", { className: "text", textContent: b.text }),
+      ...(b.error ? [el("p", { className: "next s-error", textContent: b.error })] : []),
+      form,
+      el(
+        "p",
+        { className: "next s-foot" },
+        el("span", { textContent: "Saved on this device. " }),
+        el("button", {
+          className: "c-change",
+          textContent: "Other providers",
+          onclick: () => send({ type: "open-settings" }),
+        }),
+      ),
+      el("button", {
+        className: "close",
+        ariaLabel: "Close",
+        textContent: "×",
+        onclick: () => (send({ type: "goal-form-closed" }), closeBubble()),
+      }),
+    );
+    setTimeout(() => key.isConnected && key.focus(), 50);
+  }
+
+  // The chat's height changes (a message, the small bubble opening) as a short ease, not a jump.
+  function grow(box, change, from = box.offsetHeight) {
+    change();
+    const to = box.scrollHeight;
+    if (!from || from === to || reducedMotion()) return;
+    box.classList.add("growing");
+    box.style.height = `${from}px`;
+    box.offsetHeight; // the start height is laid out before the change
+    box.style.height = `${to + 2}px`;
+    const done = () => {
+      box.classList.remove("growing");
+      box.style.height = "";
+    };
+    box.addEventListener("transitionend", done, { once: true });
+    setTimeout(done, 400);
+  }
+
+  // A reminder riding on a word (#10): its title, its line and three answers.
+  function reminderPart({ id, title, line }) {
+    const part = el("div", { className: "reminder" });
+    const answer = (choice, label) => {
+      const button = el("button", {
+        className: "b",
+        textContent: label,
+        onclick: () => {
+          part.remove();
+          send({ type: "reminder-answer", id, title, choice });
+        },
+      });
+      button.dataset.reminder = choice;
+      return button;
+    };
+    part.append(
+      el("p", { className: "text", textContent: title }),
+      el("p", { className: "next", textContent: line }),
+      el(
+        "div",
+        { className: "row" },
+        answer("on_it", "On it"),
+        answer("switch", "Switch to this"),
+        answer("done", "Done"),
+      ),
+    );
+    return part;
   }
 
   // Closing the chat ends its thread; with no goal it also snoozes the chat on new pages.
@@ -521,46 +646,23 @@
 
   function drawBubble(b) {
     const box = root.querySelector(".bubble");
+    // A chat already on screen grows or shrinks from its height now (grow), not from zero.
+    const wasChat = !box.hidden && box.classList.contains("chat") ? box.offsetHeight : 0;
     box.replaceChildren();
     box.className = "bubble";
     if (!b) return (box.hidden = true);
     box.hidden = false;
+    if (b.kind === "setup") return drawSetup(box, b);
     if (b.kind === "menu" || b.kind === "chat") {
       box.classList.add(b.kind);
       if (b.kind === "menu") return drawMenu(box, b);
-      const input = drawChat(box, b);
+      let input;
+      grow(box, () => (input = drawChat(box, b)), wasChat);
       setTimeout(() => input.isConnected && input.focus(), 50);
       return;
     }
     box.append(el("p", { className: "text", textContent: b.text }));
-    if (b.reminder) {
-      const { id, title, line } = b.reminder;
-      const part = el("div", { className: "reminder" });
-      const answer = (choice, label) => {
-        const button = el("button", {
-          className: "b",
-          textContent: label,
-          onclick: () => {
-            part.remove();
-            send({ type: "reminder-answer", id, title, choice });
-          },
-        });
-        button.dataset.reminder = choice;
-        return button;
-      };
-      part.append(
-        el("p", { className: "text", textContent: title }),
-        el("p", { className: "next", textContent: line }),
-        el(
-          "div",
-          { className: "row" },
-          answer("on_it", "On it"),
-          answer("switch", "Switch to this"),
-          answer("done", "Done"),
-        ),
-      );
-      box.append(part);
-    }
+    if (b.reminder) box.append(reminderPart(b.reminder));
     // A stuck step (#61): its minutes under it.
     if (b.kind === "step" && b.next) box.append(el("p", { className: "next", textContent: b.next }));
     if (b.buttons) {

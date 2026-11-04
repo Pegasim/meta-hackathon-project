@@ -9,6 +9,13 @@ import {
   pending,
   addTrail,
   resolve,
+  toStep,
+  dropPending,
+  setupView,
+  needsKey,
+  SETUP_ASK,
+  SETUP_BAD,
+  SETUP_THANKS,
   chatView,
   OPENER,
   LOOKING,
@@ -81,6 +88,7 @@ test("trail lines say what Tuck looked at, never note text", () => {
 test("a pending reply collects trail lines and resolves in place", () => {
   let t = newThread({ intent: null, opener: OPENER, chips: ["Send the grant form"] });
   assert.equal(t.mode, "goal");
+  assert.equal(t.messages[0].chips[0], "Send the grant form");
   t = pending(say(t, "the investor deck"), LOOKING);
   t = addTrail(t, "Searched your notes: investor deck · 2 notes");
   t = resolve(t, { from: "tuck", text: "Finish slides 6 to 9 of the investor deck?" });
@@ -90,7 +98,6 @@ test("a pending reply collects trail lines and resolves in place", () => {
   );
   assert.deepEqual(t.messages[2].trail, ["Searched your notes: investor deck · 2 notes"]);
   assert.equal(t.messages[2].pending, undefined);
-  assert.equal(t.messages[0].chips[0], "Send the grant form");
   const v = chatView(t);
   assert.equal(v.bubble.kind, "chat");
   assert.equal(v.bubble.field.name, "goal");
@@ -116,4 +123,47 @@ test("the thread keeps the last 12 messages", () => {
 
 test("every fixed line in the chat follows Tuck's voice", () => {
   for (const line of [OPENER, LOOKING, PLANNING, STEP_OPENER]) assert.ok(followsVoice(line), line);
+});
+
+test("only the newest message offers buttons and chips: an answered one is just words", () => {
+  let t = newThread({ intent: null, opener: OPENER, chips: ["Send the grant form"] });
+  t = say(t, "the investor deck");
+  assert.equal(t.messages[0].chips, undefined, "the chips go once the person answers");
+  t = resolve(pending(t, LOOKING), { text: "Finish slides 6 to 9?", buttons: [{ label: "Set as goal" }] });
+  t = tuckSays(toStep(t, { title: "Finish slides 6 to 9" }), { text: "Got it." });
+  assert.equal(t.messages.at(-2).buttons, undefined, "the proposal's buttons go once the goal is set");
+  assert.equal(t.messages.at(-2).text, "Finish slides 6 to 9?");
+});
+
+test("a pending line with nothing to say goes away, its lookups with it", () => {
+  let t = pending(say(newThread({ intent: null, opener: OPENER }), "the deck"), PLANNING);
+  t = dropPending(addTrail(t, "Searched your notes: deck · 0 notes"));
+  assert.deepEqual(
+    t.messages.map((m) => m.from),
+    ["tuck", "me"],
+  );
+  assert.equal(dropPending(t), t, "nothing pending: unchanged");
+});
+
+test("Tuck's first question is a small bubble; the chat opens once there is more than the question", () => {
+  const t = newThread({ intent: null, opener: OPENER, chips: ["Send the grant form"] });
+  assert.equal(chatView(t).bubble.compact, true, "only Tuck's question: a small bubble");
+  assert.equal(chatView({ ...t, expanded: true }).bubble.compact, false, "opened from the row: the chat");
+  assert.equal(chatView(say(t, "the deck")).bubble.compact, false, "the person answered: the chat");
+});
+
+test("with no API key, Tuck asks for one first, in a small bubble; a bad key says so", () => {
+  const v = setupView();
+  assert.equal(v.bubble.kind, "setup");
+  assert.equal(v.bubble.text, SETUP_ASK);
+  assert.equal(v.bubble.error, null);
+  assert.equal(setupView({ error: true }).bubble.error, SETUP_BAD);
+  for (const line of [SETUP_ASK, SETUP_BAD, SETUP_THANKS]) assert.ok(followsVoice(line), line);
+});
+
+test("needsKey: no key needs one, except Ollama", () => {
+  assert.equal(needsKey(undefined), true);
+  assert.equal(needsKey({ provider: "meta", apiKey: "" }), true);
+  assert.equal(needsKey({ provider: "meta", apiKey: "k" }), false);
+  assert.equal(needsKey({ provider: "ollama" }), false);
 });

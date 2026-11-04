@@ -83,6 +83,22 @@ async function renderSetup() {
     ? `Set up: ${missing.join(", ")} in <a href="#" id="setup-link">Settings</a>.`
     : "";
   $("setup-link")?.addEventListener("click", openSettings);
+  // First run: the key can go in right here, as in Tuck's setup bubble.
+  if (missing[0] === "add a model API key") {
+    const form = document.createElement("form");
+    form.className = "row";
+    form.style.marginTop = "8px";
+    form.innerHTML = `<input id="setup-key" type="password" placeholder="Paste your Meta API key" autocomplete="off"><button class="primary" type="submit">Save</button>`;
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const key = $("setup-key").value.trim();
+      if (key.length < 8) return;
+      const r = await send("save-key", { key });
+      if (r?.ok) renderSetup();
+      else (($("setup-key").value = ""), ($("setup-key").placeholder = "That key didn't work. Try again."));
+    };
+    $("setup").append(form);
+  }
 }
 
 function openSettings(e) {

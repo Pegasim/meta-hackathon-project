@@ -3,7 +3,7 @@
 // chrome.storage.session (the worker can stop at any moment); every input and
 // output goes to the event log; unknown pages are judged by the model (LLM#1).
 import { Memory, redact, entryKey } from "../memory/index.js";
-import { modelClient, toolClient, loadModelSettings } from "../memory/model.js";
+import { modelClient, toolClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
 import { withOverrides } from "../attention/config.js";
 import {
   hostOf,
@@ -61,7 +61,11 @@ import {
   addTrail,
   resolve,
   toStep,
+  dropPending,
   chatView,
+  setupView,
+  needsKey,
+  SETUP_THANKS,
   OPENER,
   LOOKING,
   PLANNING,
@@ -992,7 +996,9 @@ async function showTuck(tabId, view) {
   if (tabId == null || !view) return false;
   // The goal form is the chat now (dock-chat design): its words open the thread, its
   // Pick up chips under them, and a reminder riding on it as a message of its own.
-  if (view.bubble?.kind === "goal") {
+  // No API key yet: Tuck asks for one before any chat (first run).
+  if (view.bubble?.kind === "goal" && needsKey(await loadModelSettings())) view = { ...view, ...setupView() };
+  else if (view.bubble?.kind === "goal") {
     const t = chatFromGoal(view.bubble);
     threads.set(tabId, { ...t, at: Date.now() });
     view = { ...view, ...chatView(t), pose: view.pose };
@@ -1655,7 +1661,7 @@ async function goalDoneView(intent) {
 
 // ---- Goals and modes -----------------------------------------------------
 
-async function setIntent({ title, next, from, fromLoopId }, sender) {
+async function setIntent({ title, next, from, fromLoopId, quiet }, sender) {
   const intent = await enqueue(async () => {
     const st = await store;
     const previous = await st.activeIntent();
@@ -1678,7 +1684,7 @@ async function setIntent({ title, next, from, fromLoopId }, sender) {
     await chrome.storage.session.set({ pendingGreeting: false });
     for (const tab of threads.keys()) if (from !== "chat" || tab !== sender?.tab?.id) threads.delete(tab);
     // Set from the chat: the chat stays and the plan is written in it, below.
-    if (from === "chat") await chatGoalSet(sender?.tab?.id, intent);
+    if (from === "chat") await chatGoalSet(sender?.tab?.id, intent, { ack: !quiet });
     // The greeting's goal form can come while Tuck is away; the "Got it" note does not.
     else if (from === "tuck" && (await isAway())) await hideTuck();
     else if (from === "tuck")
@@ -1770,24 +1776,11 @@ async function drawThread(tabId, t) {
   return showTuck(tabId, chatView(t));
 }
 
-// A goal form's words and chips as the chat's first message; a reminder riding on it, its own.
+// A goal form's words and chips as the chat's first message.
 function chatFromGoal(bubble) {
   let t = newThread({ intent: null, opener: bubble.text || OPENER, chips: bubble.pickUp ?? [] });
-  const r = bubble.reminder;
-  if (r)
-    t = tuckSays(t, {
-      text: r.title,
-      next: r.line,
-      buttons: [
-        ["on_it", "On it"],
-        ["switch", "Switch to this"],
-        ["done", "Done"],
-      ].map(([choice, label]) => ({
-        choice,
-        label,
-        msg: { type: "reminder-answer", id: r.id, title: r.title, choice },
-      })),
-    });
+  // A reminder riding on it (#10): drawn in the chat as on any word, its answers and all.
+  if (bubble.reminder) t = tuckSays(t, { reminder: bubble.reminder });
   return t;
 }
 
@@ -1796,13 +1789,14 @@ const openLoopTitles = async () => stillOpen(await toDo(), await loadLoops()).ma
 // The row's chat icon: the thread on this tab, or a new one.
 async function chatOpen(_msg, sender) {
   const tabId = sender?.tab?.id;
+  if (needsKey(await loadModelSettings())) return showTuck(tabId, setupView());
   const intent = await (await store).activeIntent();
   let t = threads.get(tabId);
   if (!t || (t.mode === "step") !== !!intent)
     t = intent
       ? newThread({ intent, opener: STEP_OPENER, chips: [{ label: "Park a thought", msg: { type: "chat-park" } }] })
       : newThread({ intent: null, opener: OPENER, chips: (await openLoopTitles()).slice(0, 2) });
-  return drawThread(tabId, t);
+  return drawThread(tabId, { ...t, expanded: true }); // asked for from the row: the chat, open
 }
 
 // The person wrote in the chat (or pressed the row's I'm stuck): with no goal, their words
@@ -1868,12 +1862,15 @@ async function goalChat(tabId, t, said, sender, live) {
   if (!threads.has(tabId)) return r;
   // Their words stand: kept, or no answer.
   if (!r.value || r.value.kept) {
-    threads.set(tabId, { ...resolve(t, { text: "Okay." }), at: Date.now() });
-    return setIntent({ title: r.value?.title || said, from: "chat" }, sender);
+    // Tuck's reply is the model's own (keep_goal asks what comes first); the fallback asks too.
+    threads.set(tabId, { ...resolve(t, { text: r.value?.reply || "What will you do first?" }), at: Date.now() });
+    return setIntent({ title: r.value?.title || said, from: "chat", quiet: true }, sender);
   }
   t = resolve(t, {
-    text: `${r.value.title}?`,
-    ...(r.value.step && { next: `First: ${r.value.step}` }),
+    text: r.value.reply || `${r.value.title}?`,
+    next: [r.value.reply ? r.value.title : null, r.value.step ? `First: ${r.value.step}` : null]
+      .filter(Boolean)
+      .join("\n"),
     buttons: [
       {
         choice: "set",
@@ -1888,10 +1885,12 @@ async function goalChat(tabId, t, said, sender, live) {
 }
 
 // Set from the chat: the thread becomes the goal's, and its plan is written there.
-async function chatGoalSet(tabId, intent) {
+async function chatGoalSet(tabId, intent, { ack = true } = {}) {
   if (tabId == null) return;
-  let t = threads.get(tabId) ?? newThread({ intent: null, opener: OPENER });
-  t = pending(tuckSays(toStep(t, intent), { text: "Got it." }), PLANNING);
+  let t = toStep(threads.get(tabId) ?? newThread({ intent: null, opener: OPENER }), intent);
+  // A button pressed (Set as goal, Keep mine, a chip) gets a short yes; Tuck's reply already said it otherwise.
+  if (ack) t = tuckSays(t, { text: "Got it." });
+  t = pending(t, PLANNING);
   await drawThread(tabId, t);
 }
 
@@ -1904,13 +1903,14 @@ async function chatPlan(tabId, intent) {
   nextAhead(intent);
   const t = threads.get(tabId);
   if (!t) return;
+  // No plan: the planning line goes; the chat stays on what Tuck last said.
   await drawThread(
     tabId,
-    resolve(
+    (plan ? resolve : (x) => dropPending(x))(
       t,
       plan
-        ? { text: "Here's the plan.", next: plan.steps.map((p, i) => `${i + 1}. ${p.step}`).join("\n") }
-        : { text: "Let's go." },
+        ? { text: "Here's a plan from your notes.", next: plan.steps.map((p, i) => `${i + 1}. ${p.step}`).join("\n") }
+        : null,
     ),
   );
 }
@@ -1926,6 +1926,35 @@ async function stepDoneOnCard(_msg, sender) {
     return next;
   });
   return showTuck(sender?.tab?.id, menuView({ intent, now: Date.now() }));
+}
+
+// First run: the key from Tuck's setup bubble (or the popup). One small call checks it; only a
+// rejected key (401/403) is turned away, since a slow or empty reply says nothing about the key.
+// Saved on this device (the person was told so), never logged. Then the goal question.
+async function saveKey({ key }, sender) {
+  const apiKey = String(key ?? "").trim();
+  if (apiKey.length < 8) return { ok: false };
+  const settings = {
+    ...((await loadModelSettings()) ?? {}),
+    provider: (await loadModelSettings())?.provider ?? "meta",
+    apiKey,
+  };
+  try {
+    await modelClient(privateSettings(settings))([{ role: "user", content: "Reply with: ok" }], { maxTokens: 200 });
+  } catch (err) {
+    if (/HTTP (401|403)/.test(String(err?.message))) {
+      if (sender?.tab?.id != null) await showTuck(sender.tab.id, setupView({ error: true }));
+      return { ok: false, reason: "rejected" };
+    }
+  }
+  await saveModelSettings(settings, { remember: true });
+  await memoryChanged().catch(() => {});
+  if (sender?.tab?.id != null) {
+    const loops = (await openLoopTitles()).slice(0, 2);
+    const t = newThread({ intent: null, opener: SETUP_THANKS, chips: loops });
+    await drawThread(sender.tab.id, t);
+  }
+  return { ok: true };
 }
 
 // ---- Messages from the popup and settings pages --------------------------
@@ -1946,13 +1975,24 @@ const HANDLERS = {
       ? chrome.tabs.sendMessage(sender?.tab?.id, { type: "tuck-hide" }).catch(() => {})
       : showTuck(sender?.tab?.id, menuView({ intent: await (await store).activeIntent(), now: Date.now() })),
   "chat-open": chatOpen,
+  "save-key": saveKey,
+  "open-settings": () => chrome.runtime.openOptionsPage(),
   "chat-say": chatSay,
   "chat-chip": ({ title }, sender) => setIntent({ title, from: "chat" }, sender),
   "chat-park": async (_msg, sender) => {
     threads.delete(sender?.tab?.id);
     return showTuck(sender?.tab?.id, present({ event: "summon", intent: await (await store).activeIntent() }));
   },
-  "chat-closed": (_msg, sender) => void threads.delete(sender?.tab?.id),
+  // Closed: the thread ends, and Tuck settles as it rests now (working while the agent does).
+  // The small first bubble was opened: later redraws keep the chat open.
+  "chat-expand": (_msg, sender) => {
+    const t = threads.get(sender?.tab?.id);
+    if (t) threads.set(sender.tab.id, { ...t, expanded: true });
+  },
+  "chat-closed": async (_msg, sender) => {
+    threads.delete(sender?.tab?.id);
+    if (!(await isAway())) await showTuck(sender?.tab?.id, restingView(await loadEngine()));
+  },
   "step-done": stepDoneOnCard,
   // Every tab lets Tuck go, not just the one in front. From the card, Tuck says how to
   // bring it back and then leaves that page too (the popup's button has its own way back).

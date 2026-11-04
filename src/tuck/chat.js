@@ -54,7 +54,12 @@ export function trailLine({ tool, args = {}, result } = {}) {
 }
 
 const keep = (messages) => messages.slice(-MAX_MESSAGES);
-const withMessages = (thread, messages) => ({ ...thread, messages: keep(messages) });
+// Only the newest message can be answered: what came before keeps its words, not its buttons.
+const answered = ({ buttons, chips, ...m }) => m;
+const withMessages = (thread, messages) => ({
+  ...thread,
+  messages: keep(messages.map((m, i) => (i < messages.length - 1 ? answered(m) : m))),
+});
 
 // mode "goal": no goal yet, the person says what today is about. "step": a goal runs.
 export function newThread({ intent, opener, chips = [] }) {
@@ -88,7 +93,19 @@ export function resolve(thread, msg) {
   return { ...thread, messages };
 }
 
-export const toStep = (thread, intent) => ({ ...thread, mode: "step", title: intent.title });
+// A pending line that came to nothing (no plan): it goes, with what was looked up for it.
+export function dropPending(thread) {
+  const i = thread.messages.findLastIndex((m) => m.pending);
+  if (i < 0) return thread;
+  return { ...thread, messages: thread.messages.filter((_, j) => j !== i) };
+}
+
+export const toStep = (thread, intent) => ({
+  ...thread,
+  mode: "step",
+  title: intent.title,
+  messages: thread.messages.map(answered),
+});
 
 export function chatView(thread) {
   const goal = thread.mode === "goal";
@@ -100,7 +117,23 @@ export function chatView(thread) {
       messages: thread.messages,
       field: { name: goal ? "goal" : "say", placeholder: goal ? "Today I want to…" : "Talk to Tuck" },
       change: !goal,
+      // Only Tuck's question so far, and not opened from the row: a small speech bubble
+      // that grows into the chat when the person clicks or types.
+      compact:
+        !thread.expanded &&
+        thread.messages.every((m) => m.from === "tuck" && !m.pending) &&
+        thread.messages.length === 1,
     },
     update: true,
   };
 }
+
+// First run: with no API key the chat cannot think, so Tuck asks for the key first.
+export const SETUP_ASK = "Hi, I'm Tuck. I need a Meta API key to think.";
+export const SETUP_BAD = "That key didn't work. Check it and try again.";
+export const SETUP_THANKS = "Thanks. What are we working on?";
+export const needsKey = (settings) => !settings?.apiKey && settings?.provider !== "ollama";
+export const setupView = ({ error = false } = {}) => ({
+  pose: "hello",
+  bubble: { kind: "setup", text: SETUP_ASK, error: error ? SETUP_BAD : null },
+});
