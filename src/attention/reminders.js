@@ -105,6 +105,23 @@ export function pickReminder(queue, { goalTitle, loops = {}, today }) {
   return sayable(queue, loops, today).find((e) => e.id && e.title !== goalTitle) ?? null;
 }
 
+// Settings' views of the one list (#77). Today: the row the current goal came from, then
+// what is close (missed within a week, due today or tomorrow), at most 5. Coming up: dated
+// after tomorrow, within 60 days, soonest first. The rest keeps the list's order: undated,
+// further off, missed longer ago, and what did not fit in Today. goalFrom is the goal's
+// fromLoopId, which may name a row or one of its members.
+const TODAY_MAX = 5;
+const AHEAD_DAYS = 60;
+export function splitTasks(list, { goalFrom = null } = {}) {
+  const isGoal = (e) => goalFrom != null && (e.id === goalFrom || !!e.members?.includes(goalFrom));
+  const today = [...list.filter(isGoal), ...list.filter((e) => !isGoal(e) && isClose(e))].slice(0, TODAY_MAX);
+  const comingUp = list
+    .filter((e) => !today.includes(e) && e.daysLeft > 1 && e.daysLeft <= AHEAD_DAYS)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+  const rest = list.filter((e) => !today.includes(e) && !comingUp.includes(e));
+  return { today, comingUp, rest };
+}
+
 export const markSaid = (loops, id, today) => ({ ...loops, [id]: { ...loops[id], saidOn: today } });
 export const markDone = (loops, id, ts) => ({ ...loops, [id]: { ...loops[id], doneAt: ts } });
 export const markNotTask = (loops, id, ts) => ({ ...loops, [id]: { ...loops[id], notTaskAt: ts } });

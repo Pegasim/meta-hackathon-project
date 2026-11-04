@@ -1,4 +1,5 @@
-import { stillOpen, taskList, taskKey } from "../attention/reminders.js";
+import { stillOpen, taskList, taskKey, splitTasks } from "../attention/reminders.js";
+import { openStore } from "../attention/store.js";
 import {
   Memory,
   redact,
@@ -22,6 +23,7 @@ import { wrongBrainFolder } from "./brain-folder.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
+const attention = openStore(); // the goal, for the row it came from (#77)
 
 const NAMES = {
   meta: "Meta · Muse Spark 1.3",
@@ -452,9 +454,10 @@ function listRow(text, label, onclick) {
   return row;
 }
 
-// The first few tasks; the rest behind Show all.
+// Today and Coming up in full (#77); of the rest, the first few, then Show all.
 const FIRST_TASKS = 7;
 let allTasks = false;
+const heading = (text) => Object.assign(document.createElement("p"), { className: "small muted", textContent: text });
 
 // The tasks the node kept, in memory's order (deadline, then recency). Nothing in the
 // notes marks a task done, so one stays until it is marked here or answered in Tuck's
@@ -481,6 +484,7 @@ async function showTasks(queue, note) {
     "taskProblem",
   ]);
   const model = await loadModelSettings();
+  const goal = await attention.then((st) => st.activeIntent()).catch(() => null);
   if (draw !== taskDraws) return;
   $("hide-personal").checked = !!taskSettings.hidePersonal;
   // Goals set here are not tasks from the notes: they end with Done on the goal itself.
@@ -500,19 +504,28 @@ async function showTasks(queue, note) {
     await chrome.runtime.sendMessage({ type: "reminder-answer", id: e.id, title: e.title, choice });
     await showProfile();
   };
+  const taskRow = (e) => {
+    const row = listRow(
+      `${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}${e.members ? ` (${e.sources})` : ""}`,
+      "Done",
+      answer(e, "done"),
+    );
+    row.append(button("Not a task", answer(e, "not_task")));
+    if (e.members) row.append(button("Not the same", answer(e, "not_same")));
+    return row;
+  };
+  // A view with nothing in it is left out; with only undated tasks, the list reads as before.
+  const view = (name, rows) => (rows.length ? [...(name ? [heading(name)] : []), ...rows.map(taskRow)] : []);
+  const { today, comingUp, rest } = splitTasks(tasks, { goalFrom: goal?.fromLoopId });
   $("task-list").replaceChildren(
-    ...tasks.slice(0, allTasks ? tasks.length : FIRST_TASKS).map((e) => {
-      const row = listRow(
-        `${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}${e.members ? ` (${e.sources})` : ""}`,
-        "Done",
-        answer(e, "done"),
-      );
-      row.append(button("Not a task", answer(e, "not_task")));
-      if (e.members) row.append(button("Not the same", answer(e, "not_same")));
-      return row;
-    }),
+    ...view("Today", today),
+    ...view("Coming up", comingUp),
+    ...view(
+      today.length || comingUp.length ? "Everything else" : null,
+      rest.slice(0, allTasks ? rest.length : FIRST_TASKS),
+    ),
   );
-  $("all-tasks").hidden = tasks.length <= FIRST_TASKS;
+  $("all-tasks").hidden = rest.length <= FIRST_TASKS;
   $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${tasks.length}`;
   const notes = waiting === 1 ? "1 note" : `${waiting} notes`;
   // A run's own problem first; with none, only a missing model is a reason (#68).
