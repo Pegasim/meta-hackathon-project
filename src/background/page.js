@@ -5,14 +5,82 @@
 // page's life. Covered by the extension e2e.
 
 // Notes when a key was last pressed or a field last changed on this page: a time,
-// never which key or what text. Installs once per page.
-export function watchTyping() {
-  if (window.__tuckTyping) return true;
-  window.__tuckTyping = { last: 0 };
-  const mark = () => (window.__tuckTyping.last = Date.now());
+// never which key or what text. With keep (a page Tuck may read), also the spot to take
+// the person back to (#60): the last field typed in, as an element, its caret (a number)
+// and the scroll position, saved per URL in session storage for a reload. Never a
+// password field. Installs once per page; keep is set on every call.
+export function watchTyping(keep = false) {
+  if (window.__tuckTyping) return ((window.__tuckTyping.keep = keep), true);
+  window.__tuckTyping = { last: 0, keep, spot: null };
+  const state = window.__tuckTyping;
+  const mark = (event) => {
+    state.last = Date.now();
+    if (!state.keep) return;
+    const el = event.composedPath().find((n) => n.nodeType === 1);
+    if (!el || el.closest?.("#tuck-companion")) return;
+    const field =
+      el.isContentEditable ||
+      el.tagName === "TEXTAREA" ||
+      (el.tagName === "INPUT" && /^(text|search|url|email|tel|number)?$/i.test(el.type));
+    if (!field) return;
+    let caret = null;
+    try {
+      caret = typeof el.selectionEnd === "number" ? el.selectionEnd : null;
+    } catch {} // some inputs (number, email) throw on selection
+    state.spot = { el, caret };
+  };
   addEventListener("keydown", mark, { capture: true, passive: true });
   addEventListener("input", mark, { capture: true, passive: true });
+  let timer = 0;
+  addEventListener(
+    "scroll",
+    () => {
+      if (!state.keep) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        try {
+          sessionStorage.setItem(`tuck-scroll|${location.href}`, String(Math.round(scrollY)));
+        } catch {} // storage blocked
+      }, 200);
+    },
+    { capture: true, passive: true },
+  );
   return true;
+}
+
+// "Take me back" (#60): scroll to the field last typed in, put the focus and caret back,
+// and ring it for about 2 s (no ring under reduced motion). After a reload the field is
+// gone: the scroll position saved for this URL comes back instead. Reads no text.
+// Returns "field", "scroll" or null (nothing kept: the tab in front, as before).
+export function returnToSpot(ringMs) {
+  const spot = window.__tuckTyping?.spot;
+  const el = spot?.el;
+  if (el?.isConnected && el.type !== "password") {
+    el.scrollIntoView({ block: "center" });
+    el.focus({ preventScroll: true });
+    if (spot.caret != null)
+      try {
+        el.setSelectionRange(spot.caret, spot.caret);
+      } catch {}
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const r = el.getBoundingClientRect();
+      const ring = document.createElement("div");
+      ring.id = "tuck-spot";
+      ring.style.cssText =
+        `position:fixed;left:${r.left - 4}px;top:${r.top - 4}px;width:${r.width + 8}px;height:${r.height + 8}px;` +
+        "border:2px solid #1b1b1f;outline:2px solid #fff;border-radius:6px;pointer-events:none;z-index:2147483646";
+      document.documentElement.append(ring);
+      setTimeout(() => ring.remove(), ringMs);
+    }
+    return "field";
+  }
+  let y = null;
+  try {
+    y = sessionStorage.getItem(`tuck-scroll|${location.href}`);
+  } catch {}
+  if (y == null) return null;
+  scrollTo(0, Number(y));
+  return "scroll";
 }
 
 // Is Tuck on this page? A reload keeps the tab and URL but wipes what was injected.
