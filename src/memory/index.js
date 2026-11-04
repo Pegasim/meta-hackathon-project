@@ -3,7 +3,7 @@ import { makeEntry, validate } from "./entry.js";
 import { loadBrain, openLoops } from "./brain.js";
 import { consolidate, entryId, entryKey, isRemoved } from "./consolidate.js";
 import { buildIndex, search, entryDoc, noteDoc } from "./recall.js";
-import { contextPack, renderPack, latestIntent, taskQueue } from "./context.js";
+import { contextPack, renderPack, latestIntent, taskQueue, upcoming } from "./context.js";
 import { IDLE_GAP, toSpans, clipSpans, summarize, renderSummary } from "./activity.js";
 import { distillMessages, parseEntries } from "./distill.js";
 import * as db from "./db.js";
@@ -384,6 +384,12 @@ export class Memory {
   async taskQueue(opts) {
     await this.#load();
     return taskQueue(this.#entries, opts);
+  }
+
+  // Dated plans with no next action, soonest first: shown with their date, never a task.
+  async upcoming(opts) {
+    await this.#load();
+    return upcoming(this.#entries, opts);
   }
 
   // ---- Profile -----------------------------------------------------------

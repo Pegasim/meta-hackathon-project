@@ -116,9 +116,11 @@ export function pickReminder(queue, { goalTitle, loops = {}, today }) {
 // suggested instead, in the list's order; with none, suggested is empty. A row grouped
 // from several entries is the person's if any of them is: ownKeys holds those entries'
 // taskKeys. goalFrom is the goal's fromLoopId, which may name a row or one of its members.
+// upcoming: memory's dated plans with no next action (#96). Not tasks, so never in Today,
+// Missed or suggested: within 60 days in Coming up, further off at the end of Long run.
 const TODAY_MAX = 5;
 const AHEAD_DAYS = 60;
-export function splitTasks(list, { goalFrom = null, ownKeys = new Set() } = {}) {
+export function splitTasks(list, { goalFrom = null, ownKeys = new Set(), upcoming = [] } = {}) {
   const isGoal = (e) => goalFrom != null && (e.id === goalFrom || !!e.members?.includes(goalFrom));
   const isOwn = (e) => e.writer === "own" || !!e.members?.some((k) => ownKeys.has(k));
   const suggested = list.some(isOwn) ? list.filter((e) => !isOwn(e) && !isGoal(e)) : [];
@@ -126,10 +128,14 @@ export function splitTasks(list, { goalFrom = null, ownKeys = new Set() } = {}) 
   const close = (e) => !isGoal(e) && isClose(e);
   const today = [...shown.filter(isGoal), ...shown.filter((e) => close(e) && e.daysLeft >= 0)].slice(0, TODAY_MAX);
   const missed = shown.filter((e) => close(e) && e.daysLeft < 0);
+  const soon = upcoming.filter((e) => e.daysLeft <= AHEAD_DAYS);
   const comingUp = shown
     .filter((e) => !today.includes(e) && e.daysLeft > 1 && e.daysLeft <= AHEAD_DAYS)
+    .concat(soon)
     .sort((a, b) => a.daysLeft - b.daysLeft);
-  const rest = shown.filter((e) => !today.includes(e) && !missed.includes(e) && !comingUp.includes(e));
+  const rest = shown
+    .filter((e) => !today.includes(e) && !missed.includes(e) && !comingUp.includes(e))
+    .concat(upcoming.filter((e) => !soon.includes(e)));
   return { today, missed, comingUp, rest, suggested };
 }
 

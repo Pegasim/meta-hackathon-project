@@ -529,8 +529,11 @@ async function showTasks(queue, note) {
     "taskSplits",
     "taskProblem",
   ]);
-  const model = await loadModelSettings();
-  const goal = await attention.then((st) => st.activeIntent()).catch(() => null);
+  const [model, goal, ahead] = await Promise.all([
+    loadModelSettings(),
+    attention.then((st) => st.activeIntent()).catch(() => null),
+    memory.upcoming({ today: localDate() }),
+  ]);
   if (draw !== taskDraws) return;
   $("hide-personal").checked = !!taskSettings.hidePersonal;
   // Goals set here are not tasks from the notes: they end with Done on the goal itself.
@@ -546,11 +549,16 @@ async function showTasks(queue, note) {
   ).filter((e) => e.source !== "extension");
   const tasks = open.filter((e) => taskVerdicts[taskKey(e)] || taskByConstruction(e));
   const waiting = open.length - tasks.length;
+  // Dated plans with no next action (#96): never judged, so no verdicts. Hide takes one out.
+  const dates = taskList(ahead, { hidePersonal: !!taskSettings.hidePersonal, loops }).filter(
+    (e) => e.source !== "extension",
+  );
   const answer = (e, choice) => async () => {
     await chrome.runtime.sendMessage({ type: "reminder-answer", id: e.id, title: e.title, choice });
     await showProfile();
   };
   const taskRow = (e) => {
+    if (e.upcoming) return listRow(`${e.title}: ${e.due} (${dueLabel(e.daysLeft)})`, "Hide", answer(e, "not_task"));
     const passed = isClose(e) && e.daysLeft < 0;
     const when = passed
       ? `: deadline passed ${dueLabel(e.daysLeft)}`
@@ -565,7 +573,11 @@ async function showTasks(queue, note) {
   // A view with nothing in it is left out; with only undated tasks, the list reads as before.
   const view = (name, rows) => (rows.length ? [...(name ? [heading(name)] : []), ...rows.map(taskRow)] : []);
   const ownKeys = new Set(queue.filter((e) => e.writer === "own" && e.source !== "extension").map(taskKey));
-  const { today, missed, comingUp, rest, suggested } = splitTasks(tasks, { goalFrom: goal?.fromLoopId, ownKeys });
+  const { today, missed, comingUp, rest, suggested } = splitTasks(tasks, {
+    goalFrom: goal?.fromLoopId,
+    ownKeys,
+    upcoming: dates,
+  });
   $("task-list").replaceChildren(
     ...view("Today", today),
     ...view("Missed", missed),
@@ -576,7 +588,7 @@ async function showTasks(queue, note) {
     ),
   );
   $("all-tasks").hidden = rest.length <= FIRST_TASKS;
-  $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${tasks.length - suggested.length}`;
+  $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${tasks.length - suggested.length + dates.length}`;
   // Rows a coding agent or the distill wrote, once the person has their own (#92): closed,
   // and kept closed or open across redraws, as the person left it.
   const fold = $("task-suggested");
