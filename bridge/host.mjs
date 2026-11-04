@@ -10,8 +10,8 @@ import { follow, latestPromptSession, settle, settled } from "./status.mjs";
 const file = path.join(os.homedir(), ".tuck", "agent.jsonl");
 const POLL_MS = 500;
 
-function send({ status, session, ts }) {
-  const body = Buffer.from(JSON.stringify({ status, session, ts }));
+function send({ status, session, ts, turnEnd }) {
+  const body = Buffer.from(JSON.stringify({ status, session, ts, ...(turnEnd && { turnEnd: true }) }));
   const size = Buffer.alloc(4);
   size.writeUInt32LE(body.length);
   process.stdout.write(Buffer.concat([size, body]));

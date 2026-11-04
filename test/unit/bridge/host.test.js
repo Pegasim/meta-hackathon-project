@@ -42,6 +42,11 @@ test("a hook's status reaches the host's output, framed for Chrome, with no text
     ["working", "waiting_for_user"],
     "what came before the host started and the subagent are left out",
   );
+  assert.deepEqual(
+    messages.map((m) => !!m.turnEnd),
+    [false, true],
+    "the turn's end says so, so the same status twice is still news to Tuck",
+  );
   assert.doesNotMatch(out.toString(), /hunter2/);
   assert.doesNotMatch(fs.readFileSync(path.join(home, ".tuck/agent.jsonl"), "utf8"), /hunter2/);
   fs.rmSync(home, { recursive: true, force: true });

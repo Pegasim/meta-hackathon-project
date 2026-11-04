@@ -188,8 +188,10 @@ const tick = () => feed({ type: "tick", ts: Date.now() });
 
 // A coding agent's status, from the local bridge (bridge/host.mjs), when one is installed.
 const AGENT_STATUS = ["working", "waiting_for_user", "completed", "failed", "unknown"];
-const agentStatus = ({ status, session }) =>
-  AGENT_STATUS.includes(status) ? feed({ type: "agent", ts: Date.now(), status, session }) : null;
+const agentStatus = ({ status, session, turnEnd }) =>
+  AGENT_STATUS.includes(status)
+    ? feed({ type: "agent", ts: Date.now(), status, session, ...(turnEnd && { turnEnd: true }) })
+    : null;
 let bridge = null;
 function connectBridge() {
   if (bridge) return;

@@ -662,6 +662,29 @@ test("when it stops, Tuck says so once, and drift counts again", () => {
   assert.ok(state.budgetSec > 20);
 });
 
+test("the turn's end is news even after an approval with the same status (Muse 2026-11-04)", () => {
+  // Recorded: Muse asked for approval, ran the command under another session id (so the
+  // person's session never said working again), then ended the turn with a question.
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, agentAskAgainSec: 600, decide: stubDecide });
+  const { out } = run(
+    [
+      setIntent(t0),
+      agent(t0, "working"),
+      agent(t0 + 4 * S, "waiting_for_user"), // PermissionRequest
+      agent(t0 + 24 * S, "waiting_for_user"), // the second command's approval
+      { ...agent(t0 + 66 * S, "waiting_for_user"), turnEnd: true }, // Stop: "Want me to fix cart.js?"
+    ],
+    { until: t0 + 70 * S, cfg },
+  );
+  assert.deepEqual(
+    words(out).map((t) => [t.evidence.agent, t.ts - t0]),
+    [
+      ["waiting_for_user", 4 * S],
+      ["waiting_for_user", 66 * S],
+    ],
+  );
+});
+
 test("a word comes for each stop, once work has started again", () => {
   const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, decide: stubDecide });
   const { out } = run(

@@ -267,7 +267,10 @@ function applyResponse(s, input, cfg) {
 function applyAgent(s, input, candidates, cfg) {
   const before = s.agent?.status;
   s.agent = { status: input.status, ts: input.ts, session: input.session ?? null };
-  if (before === input.status) return; // the same news: a word still waiting keeps waiting
+  // The same news: a word still waiting keeps waiting. A turn's end is always news: after
+  // an approval, Muse may run the command under another session, so the person's session
+  // never says working again before the turn ends with the same waiting_for_user.
+  if (before === input.status && !input.turnEnd) return;
   s.agentPending = false;
   s.agentAsk =
     input.status === "waiting_for_user" ? { afterSec: cfg.agentAskAgainSec, inBrowserSec: 0, again: false } : null;
