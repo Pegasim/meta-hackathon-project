@@ -92,6 +92,53 @@ test("each entry goes in with its fields and later notes, through clean", () => 
   assert.doesNotMatch(user.content.split("2. [shop]")[1], /Other notes/, "no later notes, no line");
 });
 
+// #75, #76: a coding agent's steps are not the person's tasks, and the node knows who
+// wrote each entry and when.
+test("each entry says how long ago it was written and by whom", () => {
+  const brain = (id, source, date) => entry(id, { source, date, path: `notes/log/2026/${id}.md` });
+  const [, user] = taskMessages(
+    [
+      { entry: brain("a", "claude-code", "2026-10-15"), later: [] },
+      { entry: brain("b", "manual", "2026-11-03"), later: [] },
+      { entry: brain("c", "brain-distill", "2026-11-04"), later: [] },
+      { entry: entry("d", { source: "markdown", origin: "md:Notes" }), later: [] },
+    ],
+    { today: "2026-11-04" },
+  );
+  assert.match(user.content, /^1\. .*\n {3}Written 20 days ago, by a coding agent, at the end of a session$/m);
+  assert.match(user.content, /^ {3}Written yesterday, by them$/m);
+  assert.match(user.content, /^ {3}Written today, by a summary job, from a conversation$/m);
+  assert.match(user.content, /^4\. \[shop\] todo, 2026-10-20: Task d\n {3}Written 15 days ago, by them$/m);
+});
+
+test("the rules: commitments, not an agent's steps, and a lifted step names the larger thing", () => {
+  const [system] = taskMessages([{ entry: entry("a"), later: [] }]);
+  assert.match(system.content, /commitment they would write on their own to-do/);
+  assert.match(system.content, /merge or review a pull request, run\s+tests or evals, rebase/);
+  assert.match(system.content, /"Ship the Linux bridge", not "Merge PR #45"/);
+  assert.match(system.content, /Steps of the same larger thing get the same match/);
+});
+
+test("a verdict is asked again when the entry ages into the next band, not every day", () => {
+  const e = entry("a", { date: "2026-10-30" });
+  assert.equal(taskHash(e, [], "2026-11-01"), taskHash(e, [], "2026-11-06"), "2 and 7 days: the same week");
+  assert.notEqual(taskHash(e, [], "2026-11-06"), taskHash(e, [], "2026-11-07"), "past a week");
+  assert.equal(taskHash(e, [], "2026-11-07"), taskHash(e, [], "2026-11-29"), "8 and 30 days: the same month");
+  assert.notEqual(taskHash(e, [], "2026-11-29"), taskHash(e, [], "2026-11-30"), "past a month");
+});
+
+test("extractTasks asks again about an entry that aged past a week, and only that one", async () => {
+  const candidates = [entry("old", { date: "2026-10-28" }), entry("new", { date: "2026-11-03" })];
+  const sample = candidates.map(({ topic, title }) => ({ topic, title }));
+  const first = fakeModel();
+  const r1 = await extractTasks(first.complete, { candidates, sample, today: "2026-11-04" });
+  const second = fakeModel();
+  await extractTasks(second.complete, { candidates, sample, cache: r1.cache, today: "2026-11-05" });
+  assert.equal(second.calls.length, 1);
+  assert.match(second.calls[0].at(-1).content, /Task old/);
+  assert.doesNotMatch(second.calls[0].at(-1).content, /Task new/);
+});
+
 test("a reply is parsed item by item; a bad item is left out, a bad reply throws", () => {
   const items = parseTasks(
     JSON.stringify({

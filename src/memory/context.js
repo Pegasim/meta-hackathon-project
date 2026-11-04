@@ -4,28 +4,59 @@
 import { topicSearch, hostWords } from "./recall.js";
 import { openLoops } from "./brain.js";
 import { dueOf, daysLeft, dueLabel, localDate } from "./due.js";
+import { BRAIN, originOf } from "./sources.js";
 
 const isOpenLoop = (doc) => doc.ref.type === "entry" && doc.item.next && doc.item.next !== "none";
 
 const keyOf = (e) => e.id ?? `${e.date}|${e.title}`;
 
+// Who wrote an entry's next action (#76): "own" (the person: a notes folder, a goal set in
+// the extension, pasted memory, an export, `brain add` run by hand), "agent" (a coding
+// agent's session note in a second brain) or "distilled" (written by a distill job from
+// conversations or activity). A second brain's `brain add` writes "manual" when the person
+// runs it and the harness's name otherwise (claude-code, codex, opencode); its nightly
+// run writes "brain-distill". An entry with no source is taken as the person's own.
+const OWN_SOURCES = new Set(["manual", "meta-hackathon-project"]);
+export function writtenBy(e) {
+  if (/distill/.test(e.source ?? "")) return "distilled";
+  if (originOf(e) === BRAIN && e.source && !OWN_SOURCES.has(e.source)) return "agent";
+  return "own";
+}
+const RANK = { own: 0, agent: 1, distilled: 2 };
+
+// Whole days since an entry was written, or null without a date.
+export const ageOf = (e, today) => (e.date ? -daysLeft(e.date.slice(0, 10), today) : null);
+
 // Open loops ordered by how little time is left, soonest first, then the undated ones
 // newest first. Plain arithmetic on purpose: what is urgent is never a model
-// judgement (docs/INTENT.md, "Facts and timing are deterministic").
+// judgement (docs/INTENT.md, "Facts and timing are deterministic"). Within a deadline,
+// and among the undated, the person's own come first, then an agent's, then distilled.
 //
 // A deadline long past is not a live task: nothing in the brain marks a loop done,
 // so without `staleAfter` a note from last year would hold the top of the queue
 // forever. Those sink below the undated ones instead of being dropped, because a
 // missed deadline is still worth seeing.
-export function taskQueue(entries, { today = localDate(), limit = 5, staleAfter = 14 } = {}) {
-  const loops = openLoops(entries).map((e) => {
+//
+// A distilled next action is the state of one session, and the distill job writes a new
+// one whenever the work comes up again, so one not restated within `distilledFor` days is
+// not offered at all (#76), unless it names a deadline still live.
+export function taskQueue(entries, { today = localDate(), limit = 5, staleAfter = 14, distilledFor = 14 } = {}) {
+  const loops = openLoops(entries).flatMap((e) => {
     const due = dueOf(e);
-    return { ...e, due, daysLeft: daysLeft(due, today) };
+    const left = daysLeft(due, today);
+    const writer = writtenBy(e);
+    const live = due && left >= -staleAfter;
+    if (writer === "distilled" && !live && ageOf(e, today) > distilledFor) return [];
+    return [{ ...e, due, daysLeft: left, writer }];
   });
-  const byDue = (a, b) => a.due.localeCompare(b.due);
-  const live = loops.filter((e) => e.due && e.daysLeft >= -staleAfter).sort(byDue);
-  const undated = loops.filter((e) => !e.due).sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
-  const stale = loops.filter((e) => e.due && e.daysLeft < -staleAfter).sort((a, b) => byDue(b, a));
+  const rank = (a, b) => RANK[a.writer] - RANK[b.writer];
+  const live = loops
+    .filter((e) => e.due && e.daysLeft >= -staleAfter)
+    .sort((a, b) => a.due.localeCompare(b.due) || rank(a, b));
+  const undated = loops.filter((e) => !e.due).sort((a, b) => rank(a, b) || (b.date ?? "").localeCompare(a.date ?? ""));
+  const stale = loops
+    .filter((e) => e.due && e.daysLeft < -staleAfter)
+    .sort((a, b) => b.due.localeCompare(a.due) || rank(a, b));
   return [...live, ...undated, ...stale].slice(0, limit);
 }
 

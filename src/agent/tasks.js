@@ -8,6 +8,8 @@
 // (docs/INTENT.md, "Facts and timing are deterministic").
 import { extractJsonObject } from "./json.js";
 import { taskKey, pairKey } from "../attention/reminders.js";
+import { writtenBy, ageOf } from "../memory/context.js";
+import { localDate } from "../memory/due.js";
 
 const BATCH = 15;
 const CONCURRENCY = 3;
@@ -26,21 +28,35 @@ const EFFORT = "low";
 // one run; the rest are asked at the next import.
 const PAIRS_PER_CALL = 20;
 const PAIRS_MAX = 60;
+// In every verdict's hash: a change to the rules below asks about every entry again.
+const RULES = 2; // 2: commitments, not a coding agent's steps (#75)
 
 const SYSTEM = [
   "You read entries from someone's own notes. Each one names a next action. Say for each",
   "whether it is a task this person still has to do, so a focus companion can keep a",
   "short to-do list for them.",
-  "- is_task: true only when the next action is something they (or their team) have to",
-  "  do: send, write, build, fix, book, ask, decide, buy, apply. False for a reminder to",
-  "  keep watching something, a rule or fact to remember, or a note with no action.",
+  "- is_task: true only when it is a commitment they would write on their own to-do",
+  "  list: an outcome with something to deliver, a person or a date (send the report,",
+  "  book the dentist, pay the bill, fix the bug users reported, review a colleague's",
+  "  doc). An action on a set date is one too, even a check (look up the results when",
+  "  they are announced). False for a reminder to keep watching something with no date,",
+  "  a rule or fact to remember, or a note with no action.",
+  "- Many entries are notes a coding agent wrote at the end of a session, and their next",
+  "  action is the agent's next step inside the work: merge or review a pull request, run",
+  "  tests or evals, rebase, commit or push, delete a branch, change a setting in the",
+  "  code, open or close an issue. Such a step is not a task (is_task false), unless it is",
+  "  the only trace of a larger commitment still open (a release, a feature someone was",
+  "  promised, a submission, a deliverable for a person). Then is_task is true and task",
+  '  names that larger thing: "Ship the Linux bridge", not "Merge PR #45".',
+  "- Each entry says how long ago it was written and by whom. A coding agent's step from",
+  "  weeks ago that no later note mentions is most likely done: still_open false.",
   "- still_open: false when the entry or another note on the same topic shows it was",
   "  done, submitted, merged, sent, cancelled or replaced. True when nothing shows that.",
   "- task: the action in at most 10 words, as an instruction, in the note's language. No",
   "  dates: the deadline is read separately.",
   "- match: the same action in 2 to 6 plain English words, lowercase, whatever language",
   "  the note is in. It is never shown: it only finds the same task written in another",
-  "  language.",
+  "  language. Steps of the same larger thing get the same match.",
   "- who: the person it is with or for, when the note names one; else null.",
   "- personal: true for health, body, dating, family, money or home; false for work,",
   "  study and projects.",
@@ -81,9 +97,13 @@ export function laterOnTopic(entry, sample, { later = LATER, kin = KIN } = {}) {
   return [...after, ...near].map((s) => s.title);
 }
 
-// FNV-1a: a verdict holds while the entry and its later notes are unchanged.
-export function taskHash(entry, later) {
+// FNV-1a: a verdict holds while the entry and its later notes are unchanged, the rules are
+// the same, and the entry's age is in the same band (a week, a month, older), since the
+// node reads an old agent step as likely done.
+export function taskHash(entry, later, today) {
   const text = JSON.stringify([
+    RULES,
+    today ? ageBand(ageOf(entry, today)) : null,
     entry.kind,
     entry.topic,
     entry.date,
@@ -98,17 +118,34 @@ export function taskHash(entry, later) {
   return (h >>> 0).toString(16);
 }
 
+const ageBand = (days) => (days == null ? null : days <= 7 ? 0 : days <= 30 ? 1 : 2);
+
+const WRITERS = {
+  own: "by them",
+  agent: "by a coding agent, at the end of a session",
+  distilled: "by a summary job, from a conversation",
+};
+// "Written 17 days ago, by a coding agent, at the end of a session" (#76).
+function written(e, today) {
+  const age = ageOf(e, today);
+  const when =
+    age == null ? "Written" : age <= 0 ? "Written today" : age === 1 ? "Written yesterday" : `Written ${age} days ago`;
+  return `${when}, ${WRITERS[e.writer ?? writtenBy(e)]}`;
+}
+
 const cut = (s, n = FIELD_CHARS) =>
   String(s ?? "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, n);
 
-// items: [{ entry, later }]. clean: what each text goes through first (redact).
-export function taskMessages(items, { clean = (s) => s } = {}) {
+// items: [{ entry, later }]. clean: what each text goes through first (redact). today: the
+// date each entry's age is counted from.
+export function taskMessages(items, { clean = (s) => s, today = localDate() } = {}) {
   const blocks = items.map(({ entry: e, later }, i) =>
     [
       `${i + 1}. [${e.topic}] ${e.kind}, ${e.date}: ${clean(cut(e.title, 120))}`,
+      `   ${written(e, today)}`,
       `   Context: ${clean(cut(e.context))}`,
       `   Result: ${clean(cut(e.result))}`,
       `   Next action: ${clean(cut(e.next))}`,
@@ -156,9 +193,9 @@ export function parseTasks(text, count) {
 
 // One call for one batch. Returns {verdicts: Map | null, source, latencyMs, error?, cut?}.
 // cut: the reply hit the token limit, so a smaller batch may fit.
-export async function judgeBatch(complete, items, { clean, now = Date.now, effort = EFFORT } = {}) {
+export async function judgeBatch(complete, items, { clean, today, now = Date.now, effort = EFFORT } = {}) {
   const started = now();
-  const messages = taskMessages(items, { clean });
+  const messages = taskMessages(items, { clean, today });
   const opts = { maxTokens: MAX_TOKENS, temperature: 0, reasoningEffort: effort, whole: true };
   try {
     const first = await complete(messages, opts);
@@ -195,14 +232,24 @@ export const taskByConstruction = (e) => e.source === "markdown" && e.kind === "
 // cache, so they are asked again next time. Returns { cache, judged, failed, calls, errors }.
 export async function extractTasks(
   complete,
-  { candidates, sample, cache = {}, clean, now = Date.now, batch = BATCH, concurrency = CONCURRENCY, onProgress },
+  {
+    candidates,
+    sample,
+    cache = {},
+    clean,
+    today = localDate(),
+    now = Date.now,
+    batch = BATCH,
+    concurrency = CONCURRENCY,
+    onProgress,
+  },
 ) {
   const next = {};
   const todo = [];
   for (const entry of candidates) {
     if (taskByConstruction(entry)) continue;
     const later = laterOnTopic(entry, sample);
-    const hash = taskHash(entry, later);
+    const hash = taskHash(entry, later, today);
     const key = taskKey(entry);
     if (cache[key]?.hash === hash) next[key] = cache[key];
     else todo.push({ entry, later, hash, key });
@@ -216,7 +263,7 @@ export async function extractTasks(
   const run = async () => {
     while (batches.length) {
       const items = batches.shift();
-      const r = await judgeBatch(complete, items, { clean, now });
+      const r = await judgeBatch(complete, items, { clean, today, now });
       calls += 1;
       // Cut at the limit: ask again in two halves, down to one entry, so that one long
       // batch does not leave all of its entries unread.
@@ -404,7 +451,7 @@ export async function refreshTasks(complete, { memory, storage, today, clean, on
     (e) => e.source !== "extension" && !loops[e.id]?.doneAt && !loops[e.id]?.notTaskAt,
   );
   const sample = await memory.profileSample({ limit: Infinity });
-  const r = await extractTasks(complete, { candidates, sample, cache: taskVerdicts, clean, onProgress });
+  const r = await extractTasks(complete, { candidates, sample, cache: taskVerdicts, clean, today, onProgress });
   // Then which of the tasks it kept are one commitment (#47). A pair that fails is not
   // grouped, and the list still works, so it is not a problem to report.
   const kept = candidates.flatMap((entry) => {
