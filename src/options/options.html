@@ -61,7 +61,7 @@
     <div id="tuck-preview" aria-hidden="true"></div>
   </section>
 
-  <section class="card stack">
+  <section class="card stack" id="brain-section">
     <h2>Brain</h2>
     <p class="small muted">Connect your second-brain folder. It is read in the browser; new memory entries are written into its <code>inbox/</code>.</p>
     <div class="row">
@@ -71,7 +71,7 @@
     <p class="status small" id="brain-status"></p>
   </section>
 
-  <section class="card stack">
+  <section class="card stack" id="other-section">
     <h2>Other memory</h2>
     <p class="small muted">Notes that live somewhere else. A notes folder (Obsidian or plain Markdown) is read in the browser and never written to; its unchecked <code>- [ ]</code> items become tasks. A pasted memory is sent once, with secrets removed, to Muse Spark 1.3 (not Contributor) and turned into entries. An export file (Claude's <code>conversations.json</code>, or Gemini's <code>MyActivity.json</code> from Google Takeout) is read in the browser; only conversations from the last 30 days in which you name a date or a to-do are sent, at most 50, after you see how many.</p>
     <div class="stack" id="source-list"></div>

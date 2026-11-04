@@ -346,9 +346,14 @@ function agentReply(messages) {
   }
   // The goal chat: the checkout bug is made concrete with a first step; anything else is kept.
   if (/just told you what they want/.test(system)) {
-    if (!/checkout bug/.test(goal)) return call("keep_goal", { reply: "Okay. What will you do first?" });
+    if (/They have no notes/.test(system) || !/checkout bug/.test(goal))
+      return call("keep_goal", { reply: "Okay. What will you do first?" });
     if (!results.length) return call("recall_notes", { query: goal });
     return call("propose_goal", { title: "Fix the checkout bug", step: "Write the failing checkout test" });
+  }
+  if (/just wrote\s+to you/.test(system)) {
+    const wrote = messages[1].content.match(/They wrote: (.*)$/m)?.[1] ?? "";
+    return call("propose_step", { step: wrote, minutes: 10 });
   }
   if (/stuck on their goal/.test(system)) {
     if (!results.length) return call("goal");
@@ -401,7 +406,9 @@ await settingsPage.evaluate(async (baseUrl) => {
   const { saveModelSettings } = await import("/memory/model.js");
   // Remembered, so the key survives the restart below and the second look can call the model.
   await saveModelSettings({ provider: "meta", baseUrl, model: "fake", apiKey: "test-key" }, { remember: true });
+  // The first-run notes question (asked once after the key) is not what this test drives.
   await chrome.storage.local.set({
+    notesAsked: true,
     attentionConfig: {
       toleranceSec: 3,
       escalateAfterSec: 4,
@@ -523,13 +530,14 @@ await repoTab.bringToFront();
 await tuck.locator("input[name=goal]").waitFor({ timeout: 8000 });
 await tuck.locator("input[name=goal]").fill("Fix the checkout bug");
 await tuck.locator("button.start").click();
-// The goal chat (dock-chat design): Tuck proposes the goal with a first step from the notes.
-await tuck.locator(".bubble button", { hasText: "Set as goal" }).waitFor({ timeout: 8000 });
-// What Tuck looked up shows above its answer, from the search words, not the notes' text.
-const goalChatTrail = await tuck.locator(".bubble .c-trail").innerText();
-await tuck.locator(".bubble button", { hasText: "Set as goal" }).click();
-await tuck.locator(".bubble .text", { hasText: "Got it" }).waitFor();
-await tuck.locator(".bubble .close").click();
+// The goal chat with no notes yet: the person's words are the goal, nothing is looked up,
+// and Tuck's own reply asks what comes first. The first step answered in the chat becomes
+// a step (chatStep, from their words), and Start this makes it the goal's.
+await tuck.locator(".bubble .text", { hasText: "What will you do first?" }).waitFor({ timeout: 8000 });
+const goalChatTrails = await tuck.locator(".bubble .c-trail").count();
+await tuck.locator("input[name=say]").fill("Write the failing checkout test");
+await tuck.locator("button.start").click();
+await tuck.locator(".bubble button", { hasText: "Start this" }).click({ timeout: 8000 });
 // Tuck stays, resting; a click is a hello with the goal card.
 await repoTab.waitForTimeout(2500);
 const restState = await tuck.locator("svg.tuck").getAttribute("data-pose");
@@ -2298,7 +2306,7 @@ assert.deepEqual(
   "after a reload Tuck is back on the page, resting, once",
 );
 assert.equal(clickState, "hello", "clicking Tuck is a hello");
-assert.match(goalChatTrail, /^Searched your notes: fix the checkout bug · \d+ notes?$/, "the goal chat shows its lookup");
+assert.equal(goalChatTrails, 0, "with no notes, the goal chat looks nothing up");
 assert.ok(dragged.x < 100, `dragged to the left: ${dragged.x}`);
 assert.ok(bubbleAfterDrag.x >= dragged.x, "on the left, the bubble opens rightwards");
 assert.ok(formStillOpen, "a drag is not a click");

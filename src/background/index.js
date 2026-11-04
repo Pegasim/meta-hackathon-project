@@ -42,7 +42,7 @@ import { classifyRelevance, privateSettings } from "../agent/relevance.js";
 import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks } from "../agent/tasks.js";
-import { planFor, stuckStep, nextAfter, goalFrom } from "../agent/moments.js";
+import { planFor, stuckStep, nextAfter, goalFrom, chatStep } from "../agent/moments.js";
 import { recentRuns } from "../agent/loop.js";
 import { noteOf } from "../agent/notes.js";
 import { githubLookup, closedRefs } from "../agent/github.js";
@@ -66,6 +66,9 @@ import {
   setupView,
   needsKey,
   SETUP_THANKS,
+  notesThread,
+  NOTES_SKIPPED,
+  THINKING,
   OPENER,
   LOOKING,
   PLANNING,
@@ -1000,7 +1003,11 @@ async function showTuck(tabId, view) {
   // Pick up chips under them, and a reminder riding on it as a message of its own.
   // No API key yet: Tuck asks for one before any chat (first run).
   if (view.bubble?.kind === "goal" && needsKey(await loadModelSettings())) view = { ...view, ...setupView() };
-  else if (view.bubble?.kind === "goal") {
+  else if (view.bubble?.kind === "goal" && (await askNotes())) {
+    const t = notesThread();
+    threads.set(tabId, { ...t, at: Date.now() });
+    view = { ...view, ...chatView(t), pose: view.pose };
+  } else if (view.bubble?.kind === "goal") {
     const t = chatFromGoal(view.bubble);
     threads.set(tabId, { ...t, at: Date.now() });
     view = { ...view, ...chatView(t), pose: view.pose };
@@ -1575,13 +1582,13 @@ async function stepFor(intent, { said, onStep } = {}) {
   const template = { step: stuckTemplate(lastTitle, intent.title), minutes: 10, source: "template" };
   const agent = await agentChat();
   if (!agent) return template;
-  const r = await stuckStep(
-    agent.chat,
-    await agentDeps(intent),
-    { title: intent.title, step: intent.steps?.[0], said },
-    { onStep },
-  );
-  await logRun("stuck", r, agent.model, r.value?.step);
+  const args = { title: intent.title, step: intent.steps?.[0], said };
+  // Written in the chat: their words first, their notes only if about the same thing, never
+  // their screen. The row's "I'm stuck" (no words) still looks at the last work page.
+  const r = said
+    ? await chatStep(agent.chat, await agentDeps(intent), args, { notes: await hasNotes(), onStep })
+    : await stuckStep(agent.chat, await agentDeps(intent), args, { onStep });
+  await logRun(said ? "chat" : "stuck", r, agent.model, r.value?.step);
   return r.value ? { ...r.value, source: "agent" } : template;
 }
 
@@ -1784,6 +1791,11 @@ async function maintain() {
 // stored or logged. Every change redraws the chat in place (overlay keeps the draft).
 const threads = new Map(); // tabId → thread (tuck/chat.js), with `at`: when it last changed
 const CHAT_HOLD_MS = 3 * 60 * 1000; // an open chat holds drift words, if it is still in use
+// A new page in the tab (a reload, or a URL change in a single-page site), or the tab
+// closed, ends the chat there: its thread goes
+// with it. A thread left behind would hold every drift word on that tab (#115).
+chrome.tabs.onUpdated.addListener((tabId, info) => (info.status === "loading" || info.url) && threads.delete(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => threads.delete(tabId));
 
 const chatOpenOn = (tabId) => {
   const t = threads.get(tabId);
@@ -1838,7 +1850,7 @@ async function chatSay({ text, stuck: fromRow }, sender) {
     drawThread(tabId, addTrail(now, line));
   };
   if (!intent) return goalChat(tabId, t, said, sender, live);
-  t = pending(t, STUCK_WAIT);
+  t = pending(t, fromRow || (await hasNotes()) ? STUCK_WAIT : THINKING);
   await drawThread(tabId, t);
   const r = await stuck(null, sender, { tabId, said: fromRow ? null : said, onStep: (e) => live(trailLine(e)) });
   if (!threads.has(tabId)) return r;
@@ -1868,13 +1880,16 @@ async function goalChat(tabId, t, said, sender, live) {
   const agent = await agentChat();
   threads.set(tabId, { ...t, at: Date.now() });
   if (!agent) return setIntent({ title: said, from: "chat" }, sender);
-  t = pending(t, LOOKING);
+  const notes = await hasNotes();
+  // With no notes nothing is looked up, and the wait does not say it is.
+  t = pending(t, notes ? LOOKING : THINKING);
   await drawThread(tabId, t);
   const r = await goalFrom(
     agent.chat,
     await agentDeps({ title: said, steps: [] }),
     { said },
     {
+      notes,
       onStep: (e) => live(trailLine(e)),
     },
   );
@@ -1911,7 +1926,8 @@ async function chatGoalSet(tabId, intent, { ack = true } = {}) {
   let t = toStep(threads.get(tabId) ?? newThread({ intent: null, opener: OPENER }), intent);
   // A button pressed (Set as goal, Keep mine, a chip) gets a short yes; Tuck's reply already said it otherwise.
   if (ack) t = tuckSays(t, { text: "Got it." });
-  t = pending(t, PLANNING);
+  // A plan comes from notes: with none, there is nothing to make it from, and no wait for it.
+  if (await hasNotes()) t = pending(t, PLANNING);
   await drawThread(tabId, t);
 }
 
@@ -1920,8 +1936,9 @@ async function chatPlan(tabId, intent) {
     const t = threads.get(tabId);
     if (line && t) drawThread(tabId, addTrail(t, line));
   };
-  const plan = await writePlan(intent, { onStep: (e) => live(trailLine(e)) }).catch(() => null);
-  nextAhead(intent);
+  const plan = (await hasNotes())
+    ? await writePlan(intent, { onStep: (e) => live(trailLine(e)) }).catch(() => null)
+    : null;
   const t = threads.get(tabId);
   if (!t) return;
   // No plan: the planning line goes; the chat stays on what Tuck last said.
@@ -1949,6 +1966,39 @@ async function stepDoneOnCard(_msg, sender) {
   return showTuck(sender?.tab?.id, menuView({ intent, now: Date.now() }));
 }
 
+// Does the person have notes Tuck can read: a brain folder or any other memory source.
+async function hasNotes() {
+  const m = await memory;
+  const [brain, sources, stats] = await Promise.all([
+    m.brainState().catch(() => ({ connected: false })),
+    m.sources().catch(() => []),
+    m.stats().catch(() => ({ notes: 0 })),
+  ]);
+  // A connected folder or source, or notes imported without one.
+  return !!brain.connected || sources.length > 0 || stats.notes > 0;
+}
+
+// The notes question comes once, after the key, and only to someone with no notes yet.
+const askNotes = async () => !(await chrome.storage.local.get({ notesAsked: false })).notesAsked && !(await hasNotes());
+
+// The first chat after the key: the notes question, or the goal question.
+async function firstThread(opener) {
+  if (await askNotes()) return notesThread();
+  return newThread({ intent: null, opener, chips: (await openLoopTitles()).slice(0, 2) });
+}
+
+// The answer to the notes question: Settings opens at the right place (a folder needs a
+// click on an extension page), or Tuck goes on without notes. Then the goal question.
+async function notesChoice({ choice }, sender) {
+  await chrome.storage.local.set({ notesAsked: true });
+  const section = { brain: "brain-section", export: "other-section" }[choice];
+  if (section) await chrome.tabs.create({ url: chrome.runtime.getURL(`options/options.html#${section}`) });
+  const tabId = sender?.tab?.id;
+  if (tabId == null) return;
+  const opener = section ? "Settings is open. Meanwhile, what are we working on?" : NOTES_SKIPPED;
+  await drawThread(tabId, { ...newThread({ intent: null, opener }), expanded: true });
+}
+
 // First run: the key from Tuck's setup bubble (or the popup). One small call checks it; only a
 // rejected key (401/403) is turned away, since a slow or empty reply says nothing about the key.
 // Saved on this device (the person was told so), never logged. Then the goal question.
@@ -1971,9 +2021,7 @@ async function saveKey({ key }, sender) {
   await saveModelSettings(settings, { remember: true });
   await memoryChanged().catch(() => {});
   if (sender?.tab?.id != null) {
-    const loops = (await openLoopTitles()).slice(0, 2);
-    const t = newThread({ intent: null, opener: SETUP_THANKS, chips: loops });
-    await drawThread(sender.tab.id, t);
+    await drawThread(sender.tab.id, await firstThread(SETUP_THANKS));
   }
   return { ok: true };
 }
@@ -1997,6 +2045,7 @@ const HANDLERS = {
       : showTuck(sender?.tab?.id, menuView({ intent: await (await store).activeIntent(), now: Date.now() })),
   "chat-open": chatOpen,
   "save-key": saveKey,
+  "notes-choice": notesChoice,
   "open-settings": () => chrome.runtime.openOptionsPage(),
   "chat-say": chatSay,
   "chat-chip": ({ title }, sender) => setIntent({ title, from: "chat" }, sender),
