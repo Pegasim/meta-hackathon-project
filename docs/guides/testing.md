@@ -15,6 +15,8 @@ what may be written. This file is about tests.
 | eval | Relevance accuracy (LLM#1) on labelled cases against a baseline | `npm run eval` | when a prompt or the model changes |
 | live smoke | The whole product in the user's real Chrome | `test/live_smoke.md` | only when a human arms it |
 
+CI (`.github/workflows/ci.yml`) runs the unit tier on every PR and push to `main`; the integration tier runs locally with the change, and in CI only when started by hand (Actions → ci → Run workflow).
+
 `npm test` runs only `test/unit/**/*.test.js`. Integration tests live in `test/browser/`
 and live tests in `test/live/`, so the default command skips them. A test that
 needs a secret or the network is never in the unit tier.

@@ -858,7 +858,9 @@ async function assets() {
   };
   // A skin that is no longer there must not keep Tuck off every page.
   const skin = await load(tuckSkin).catch(() => load(DEFAULT_SKIN));
-  return { ...skin, item: tuckItem, motion: tuckMotion };
+  // readAt: a page keeps the newest look it was sent; a word drawn with assets read before
+  // a look change must not put the old skin back (overlay ensureRoot).
+  return { ...skin, item: tuckItem, motion: tuckMotion, readAt: Date.now() };
 }
 
 // The person picked another look in settings: Tuck on the page changes in place (a word on

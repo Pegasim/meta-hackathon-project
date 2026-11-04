@@ -627,6 +627,24 @@ await settingsPage.selectOption("#tuck-skin", "paper");
 const backButton = onVideo.locator(".bubble button[data-choice=back]");
 await onVideo.locator("svg.tuck[data-state]").waitFor({ timeout: 5000 });
 const paperKeepsBubble = await backButton.isVisible();
+// A word drawn with assets read before the look change (it was on its way) keeps paper:
+// the race CI hit on main (2026-11-04), sent here on purpose.
+await worker.evaluate(async () => {
+  const [tab] = (await chrome.tabs.query({})).filter((t) => /\/video/.test(t.url ?? ""));
+  const read = (file) => fetch(chrome.runtime.getURL(`tuck/skins/kitten/${file}`)).then((r) => r.text());
+  const manifest = JSON.parse(await read("skin.json"));
+  const svg = globalThis.tuckSkins.spriteSvg(manifest, (n) =>
+    chrome.runtime.getURL(`tuck/skins/kitten/frames/${n}.png`),
+  );
+  const stale = { manifest, svg, css: "", item: "none", motion: "system", readAt: Date.now() - 60000 };
+  await chrome.tabs.sendMessage(tab.id, {
+    type: "tuck-show",
+    view: { pose: "rest", bubble: null, quiet: true },
+    assets: stale,
+  });
+});
+await videoTab.waitForTimeout(300);
+const paperAfterStaleWord = await onVideo.locator("svg.tuck[data-state]").count();
 const paperIcon = await worker.evaluate(() => globalThis.__icons.at(-1)?.path?.[16]);
 await settingsPage.selectOption("#tuck-skin", "v1");
 await onVideo.locator("svg.tuck:not([data-state])").waitFor({ timeout: 5000 });
@@ -1844,6 +1862,7 @@ assert.ok(secondWord, "the L2 word was drawn");
 assert.equal(nudgeState, "drift");
 assert.equal(paperIcon, "tuck/skins/paper/icons/16.png", "the toolbar icon follows the skin");
 assert.ok(paperKeepsBubble, "a new skin keeps the word on screen, buttons and all");
+assert.equal(paperAfterStaleWord, 1, "a word read before the look change does not bring the old skin back");
 assert.ok(frisbeeKeepsBubble, "a new item keeps the word on screen");
 // The day's greeting with the goal form; its line is how the last goal went when there was one (#46).
 assert.ok(switchedOnGreeting, "switched on with no goal, Tuck greets with the goal form");

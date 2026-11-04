@@ -22,6 +22,7 @@
   let current = null; // the view on screen
   let skin = null; // the skin drawn: its manifest
   let item = "none"; // what Tuck wears or carries (skin.json items)
+  let lookAt = 0; // when the newest look change this page was sent was read (background assets)
   let pose = "rest";
   let resting = "rest"; // the pose with nothing to say (the last quiet view's): rest, work or sleep
   let timers = [];
@@ -238,11 +239,16 @@
   // is still installed stays, and this copy does not draw, so two copies never fight;
   // once that copy is gone its host leaves within ORPHAN_CHECK_MS. Returns whether Tuck
   // is ours to draw.
-  function ensureRoot({ manifest, svg, css, item: worn, motion: moves }) {
-    item = manifest.items?.includes(worn) ? worn : "none";
-    motion = moves ?? "system";
+  function ensureRoot({ manifest, svg, css, item: worn, motion: moves, readAt }) {
+    // Assets read before the newest look change (a word on its way while the person picked
+    // another look) keep the look on screen.
+    const stale = root?.isConnected && readAt != null && readAt < lookAt;
+    if (!stale) {
+      item = manifest.items?.includes(worn) ? worn : "none";
+      motion = moves ?? "system";
+    }
     if (root?.isConnected) {
-      if (manifest.id !== skin.id) drawSkin({ manifest, svg, css }); // a new skin, in place: the bubble stays
+      if (!stale && manifest.id !== skin.id) drawSkin({ manifest, svg, css }); // a new skin, in place: the bubble stays
       return true;
     }
     for (const other of document.querySelectorAll(`#${HOST_ID}`)) {
@@ -459,8 +465,11 @@
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "tuck-show") show(msg.view, msg.assets);
-    else if (msg?.type === "tuck-look" && root?.isConnected) (ensureRoot(msg.assets), setPose(pose));
-    else if (msg?.type === "tuck-hide") (hides++, root && leave());
+    else if (msg?.type === "tuck-look" && root?.isConnected) {
+      lookAt = Math.max(lookAt, msg.assets.readAt ?? 0);
+      ensureRoot(msg.assets);
+      setPose(pose);
+    } else if (msg?.type === "tuck-hide") (hides++, root && leave());
     else if (msg?.type === "tuck-rest" && root && current)
       (drawBubble(null), setPose(resting), (current.bubble = null));
   });
