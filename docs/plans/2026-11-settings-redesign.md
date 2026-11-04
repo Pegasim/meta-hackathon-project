@@ -1,6 +1,6 @@
 # Settings and popup redesign
 
-Status: in review
+Status: done (#120). Keep / Remove for memory: #121, after the hackathon.
 
 ## Intent
 
@@ -40,7 +40,7 @@ Agreed in the browser (option B, v3 of the brainstorm mockups):
 
 Not done: Keep / Remove on what Tuck read from the notes. Today a row has Done, Not a
 task and Not the same; what "remove" should mean for memory is Safa's call
-(`src/memory/`, AGENTS.md rule 2), asked in the PR.
+(`src/memory/`, AGENTS.md rule 2): #121. Until then, Not a task only takes a row off the list.
 
 ## Plan
 
