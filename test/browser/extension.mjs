@@ -23,6 +23,7 @@ const shots = process.env.SCREENSHOT_DIR;
 const calls = [];
 const nudgeCalls = [];
 const greetCalls = [];
+const agentCalls = [];
 const taskCalls = [];
 const pairCalls = []; // which open loops are one commitment (#47)
 let tasksCut = false; // the task node's replies are cut at the token limit (#43)
@@ -183,6 +184,14 @@ const server = http.createServer((req, res) => {
         const message = "Two hours on the launch plan last time. Pick it up?";
         const body = JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] });
         return setTimeout(() => res.end(body), 2000);
+      }
+      // Tuck's words about Muse (#67), said only when written ahead of the word.
+      if (/Situation: Muse/.test(messages.at(-1).content)) {
+        agentCalls.push(messages);
+        const message = /may still be waiting/.test(messages.at(-1).content)
+          ? "Muse may still need you. Want to check?"
+          : "Muse finished. Back to the failing test?";
+        return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] }));
       }
       nudgeCalls.push(messages);
       const message = "Still on the video? Back to the failing test.";
@@ -782,9 +791,10 @@ const agentPopup = {
   forTask: await popup.isVisible("#for-my-task"),
 };
 // Still waiting: Tuck asks again, on the page in front, with no new status from the agent.
+// Its line is the model's, written when the first wait was said (#67).
 await agentTab.bringToFront();
 await agentTab
-  .locator("#tuck-companion .bubble", { hasText: "Is Muse still waiting on you?" })
+  .locator("#tuck-companion .bubble", { hasText: "Muse may still need you. Want to check?" })
   .waitFor({ timeout: 10000 });
 await agentTab.close();
 await agentSays("unknown");
@@ -818,6 +828,11 @@ await noDrawTab.goto("chrome://version");
 await noDrawTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 await agentSays("working");
+// The bridge holds a turn's end and says so at once: Tuck writes the word meanwhile (#67).
+await popup.evaluate(() =>
+  chrome.runtime.sendMessage({ type: "agent-status", status: "completed", session: "s1", preview: true }),
+);
+await noDrawTab.waitForTimeout(500);
 await agentSays("completed");
 await noDrawTab.waitForTimeout(500);
 const drawTab = await ctx.newPage();
@@ -1353,10 +1368,17 @@ assert.equal(waitStatus.engine.state, "agent_working");
 assert.equal(waitBadge, "", "waiting for the agent: no drift badge left behind");
 assert.ok(duringWait.respondedAt || duringWait.resolvedAt, "nor a drift word left open");
 assert.deepEqual(agentPopup, { gotIt: true, back: false, forTask: false });
-assert.match(heldBubble, /Muse is done\./);
+assert.match(heldBubble, /Muse finished\. Back to the failing test\?/, "a finished turn's word is the model's (#67)");
 assert.equal(afterOff.engine.agent.status, "completed");
 assert.equal(agentWord.kind, "agent");
-assert.match(agentBubble, /Muse is waiting on you\./);
+assert.match(agentBubble, /Muse is waiting on you\./, "a first wait has no line written ahead: the template, at once");
+const agentPrompts = agentCalls.map((m) => m.at(-1).content);
+assert.ok(agentPrompts.some((c) => /may still be waiting on them/.test(c) && /Their task: /.test(c)));
+assert.ok(agentPrompts.some((c) => /just finished its turn/.test(c)));
+assert.ok(
+  agentPrompts.every((c) => !/Away from work|is waiting on them/.test(c)),
+  "a first wait asks no model",
+);
 assert.ok(waitGone, "Muse back at work: the word about the wait comes down (#66)");
 assert.equal(resumedWord.evidence.agent, "waiting_for_user");
 assert.equal(resumedWord.resolvedBy, "agent", "taken back because Muse works again");

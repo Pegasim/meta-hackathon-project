@@ -40,7 +40,26 @@ const SITUATION = {
   break_over: () => "Their break just ended: invite them back.",
   session_start: () =>
     "A new session starts. Say in a few words how their last goal went (Last time), and if it is not finished, offer to pick it up. Do not name the day.",
+  agent: ({ agent: a = {} }) =>
+    a.again
+      ? "Muse, their coding agent, may still be waiting on them: ask, briefly, whether it is. It can be wrong, so it is a question."
+      : `Muse, their coding agent, ${AGENT_NEWS[a.status] ?? "has news"}. Say that plainly, with the folder and minutes when given, then offer their next step. For example: "Muse finished in bilun after 4 minutes. Back to the rule tests?"`,
 };
+
+// Muse's news, for the agent word (#67). Status only: no prompt, message or output exists here.
+const AGENT_NEWS = {
+  completed: "just finished its turn",
+  failed: "stopped on an error",
+  waiting_for_user: "is waiting on them",
+};
+
+// What the bridge knows of the turn: the folder's name, minutes, what an approval is for.
+const agentLines = ({ folder, minutes, tool } = {}, onWork) => [
+  folder ? `Muse's project folder: ${folder}` : null,
+  minutes != null ? `Muse worked: ${minutes} minutes` : null,
+  tool ? `Muse asks their OK to: ${tool}` : null,
+  onWork != null ? `On a work page now: ${onWork ? "yes" : "no"}` : null,
+];
 
 // How the last goal went, for the greeting (#46): its numbers, never a guess.
 const lastTime = ({ onGoalMin, finished, site }) =>
@@ -49,7 +68,8 @@ const lastTime = ({ onGoalMin, finished, site }) =>
     .join(", ");
 
 // input: {kind, level, site, awayMin, unsure, task: {title, step}, lastWork, hour,
-//         today, due: [{title, when}], last: {onGoalMin, finished, site} for session_start}
+//         today, due: [{title, when}], last: {onGoalMin, finished, site} for session_start,
+//         agent: {status, folder, minutes, tool, again} and onWork for an agent word}
 // `due` holds only what the caller judged close enough to say aloud — the model is
 // never handed a deadline it is not allowed to mention.
 export function nudgeMessages(input) {
@@ -59,7 +79,8 @@ export function nudgeMessages(input) {
     `Their task: ${input.task?.title ?? "(none)"}`,
     input.task?.step ? `Next step: ${input.task.step}` : null,
     input.site ? `Site now: ${input.site}` : null,
-    input.kind === "session_start" ? null : `Away from work: ${input.awayMin ?? 0} minutes`,
+    input.kind === "session_start" || input.kind === "agent" ? null : `Away from work: ${input.awayMin ?? 0} minutes`,
+    ...(input.kind === "agent" ? agentLines(input.agent, input.onWork) : []),
     input.last ? `Last time: ${lastTime(input.last)}` : null,
     input.lastWork ? `Last work page: ${input.lastWork}` : null,
     input.today ? `Today: ${input.today}` : null,
@@ -83,28 +104,32 @@ export function parseNudge(text) {
     .trim();
 }
 
-function checked(text) {
+function checked(text, input) {
   const message = parseNudge(text);
   if (!followsVoice(message)) throw new Error(`the line breaks the rules: "${message}"`);
+  // A word about Muse that does not name it says nothing about whose turn it is.
+  if (input.kind === "agent" && !/\bMuse\b/i.test(message))
+    throw new Error(`the line does not name Muse: "${message}"`);
   return message;
 }
 
 // Returns {message, source, latencyMs, error?}; message is null when the template should be used.
-export async function composeNudge(complete, input, { now = Date.now } = {}) {
+// effort: the reasoning effort, for a word that cannot wait long (an agent word, #67).
+export async function composeNudge(complete, input, { now = Date.now, effort } = {}) {
   const started = now();
   const messages = nudgeMessages(input);
-  const opts = { maxTokens: 4000, temperature: 0.7 };
+  const opts = { maxTokens: 4000, temperature: 0.7, ...(effort && { reasoningEffort: effort }) };
   try {
     const first = await complete(messages, opts);
     try {
-      return { message: checked(first), source: "llm", latencyMs: now() - started };
+      return { message: checked(first, input), source: "llm", latencyMs: now() - started };
     } catch (err) {
       const retry = [
         ...messages,
         { role: "assistant", content: first },
         { role: "user", content: `${err.message}. Follow the rules and reply with the JSON object only.` },
       ];
-      return { message: checked(await complete(retry, opts)), source: "llm", latencyMs: now() - started };
+      return { message: checked(await complete(retry, opts), input), source: "llm", latencyMs: now() - started };
     }
   } catch (err) {
     return { message: null, source: "fallback", latencyMs: now() - started, error: err.message ?? String(err) };

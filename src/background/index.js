@@ -39,7 +39,7 @@ import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks } from "../agent/tasks.js";
 import { dueLabel, localDate } from "../memory/due.js";
-import { siteName, reminderLine, templateGreeting, whenSaid } from "../tuck/voice.js";
+import { siteName, reminderLine, templateGreeting, toolKind, whenSaid } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
 import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
 import { present } from "../tuck/present.js";
@@ -206,8 +206,24 @@ const tick = () => feed({ type: "tick", ts: Date.now() });
 
 // A coding agent's status, from the local bridge (bridge/host.mjs), when one is installed.
 const AGENT_STATUS = ["working", "waiting_for_user", "completed", "failed", "unknown"];
-const agentStatus = ({ status, session }) =>
-  AGENT_STATUS.includes(status) ? feed({ type: "agent", ts: Date.now(), status, session }) : null;
+// What the bridge knows of the turn (#67): the folder's name, minutes since its prompt by
+// the bridge's own clock, and the tool an approval is for.
+const agentFacts = ({ folder, startedAt, ts, tool }) => ({
+  ...(typeof folder === "string" && folder && { folder: folder.slice(0, 64) }),
+  ...(Number.isFinite(startedAt) &&
+    Number.isFinite(ts) &&
+    ts >= startedAt && {
+      minutes: Math.round((ts - startedAt) / 60000),
+    }),
+  ...(typeof tool === "string" && tool && { tool: tool.slice(0, 64) }),
+});
+function agentStatus(line) {
+  const { status, session, preview } = line;
+  if (!AGENT_STATUS.includes(status)) return null;
+  // A turn's end the bridge still holds: write its word now, say it when it comes.
+  if (preview) return void draftAgentWord({ status, session, ...agentFacts(line) }, false);
+  return feed({ type: "agent", ts: Date.now(), status, session, ...agentFacts(line) });
+}
 let bridge = null;
 function connectBridge() {
   if (bridge) return;
@@ -735,8 +751,70 @@ async function writeDraft(s, level, cfg) {
     await chrome.storage.session.set({ nudgeDraft: { key: s.current.key, level, unsure, message: r.message } });
 }
 
+// Tuck's words about Muse (#67). The model takes 6 to 15 s a line (live, low effort), and
+// waiting for it in the queue held every other input back, so a word is the model's only
+// if its line is ready when the word is due; otherwise the template is said at once. Lines
+// are written ahead where the moment is known: a turn's end while the bridge holds it, and
+// the ask again once the first wait is said.
+const agentDrafts = new Map(); // key → { message }
+const agentKey = (a, again) =>
+  JSON.stringify([a.session ?? null, a.status, a.folder ?? null, a.minutes ?? null, a.tool ?? null, again]);
+
+function draftAgentWord(facts, again) {
+  const key = agentKey(facts, again);
+  if (agentDrafts.has(key)) return;
+  const draft = { message: null };
+  agentDrafts.set(key, draft);
+  if (agentDrafts.size > 8) agentDrafts.delete(agentDrafts.keys().next().value);
+  writeAgentWord(facts, again).then(
+    (message) => (draft.message = message),
+    (err) => log({ type: "llm", ts: Date.now(), node: "composeNudge", kind: "agent", ok: false, error: String(err) }),
+  );
+}
+
+async function writeAgentWord({ status, folder, minutes, tool }, again) {
+  const settings = await loadModelSettings();
+  if (!settings) return null;
+  const intent = await (await store).activeIntent();
+  const s = await loadEngine();
+  const used = privateSettings(settings);
+  const r = await composeNudge(
+    modelClient(used),
+    {
+      kind: "agent",
+      agent: { status, folder, minutes, tool: tool && toolKind(tool), again },
+      task: intent ? { title: intent.title, step: intent.steps?.[0] } : undefined,
+      onWork: s.current ? s.current.label === "related" : undefined,
+      hour: new Date().getHours(),
+      today: todayLabel(),
+    },
+    { effort: "low" },
+  );
+  await log({
+    type: "llm",
+    ts: Date.now(),
+    node: "composeNudge",
+    kind: "agent",
+    model: used.model ?? used.provider ?? null,
+    latencyMs: r.latencyMs,
+    ok: r.source === "llm",
+    ...(r.error && { error: r.error }),
+    ...(r.message && { message: r.message }),
+  });
+  return r.message;
+}
+
+// The model's line if it is ready now, else null and the template.
+function agentWord(t, s) {
+  const a = s.agent ?? {};
+  const again = !!t.evidence?.agentAgain;
+  if (a.status === "waiting_for_user" && !again) draftAgentWord(a, true);
+  return agentDrafts.get(agentKey(a, again))?.message ?? null;
+}
+
 // The drafted line, if it was written for this very nudge.
 async function draftFor(t, s) {
+  if (t.kind === "agent") return agentWord(t, s);
   if (t.kind !== "drift") return null;
   const { nudgeDraft: d } = await chrome.storage.session.get("nudgeDraft");
   const unsure = !!t.evidence?.unsure;

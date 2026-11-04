@@ -40,8 +40,31 @@ export function taskPhrase({ title, step } = {}) {
   return t ? asPhrase(t) : "your goal";
 }
 
-// kind, level, site, awayMin, unsure, task: {title, step}.
-export function templateNudge({ kind, level, site, awayMin = 0, unsure = false, task, agent, again = false }) {
+// What an approval is for, said plainly, from the tool's name alone (#67); null when unclear.
+export function toolKind(tool = "") {
+  if (/bash|shell|exec|command|terminal/i.test(tool)) return "run a command";
+  if (/edit|write|patch|replace/i.test(tool)) return "edit a file";
+  if (/fetch|web|browse|url/i.test(tool)) return "open a web page";
+  return null;
+}
+
+// Where and how long, for a word about Muse: " in bilun", ", after 4 minutes".
+const inFolder = (folder) => (folder ? ` in ${folder}` : "");
+const after = (minutes) => (minutes >= 3 ? `, after ${minutes} minutes` : "");
+
+// kind, level, site, awayMin, unsure, task: {title, step}; for an agent word, agent (its
+// status) and agentFacts: {folder, minutes, tool}.
+export function templateNudge({
+  kind,
+  level,
+  site,
+  awayMin = 0,
+  unsure = false,
+  task,
+  agent,
+  again = false,
+  agentFacts = {},
+}) {
   const what = taskPhrase(task);
   switch (kind) {
     case "drift":
@@ -56,10 +79,14 @@ export function templateNudge({ kind, level, site, awayMin = 0, unsure = false, 
       return `Welcome back. Next up: ${what}.`;
     case "break_over":
       return "Break's over. Ready to get back to it?";
-    case "agent":
-      if (agent === "failed") return "Muse stopped on an error.";
-      if (agent === "completed") return "Muse is done.";
-      return again ? "Is Muse still waiting on you?" : "Muse is waiting on you.";
+    case "agent": {
+      const { folder, minutes, tool } = agentFacts;
+      if (agent === "failed") return `Muse stopped on an error${inFolder(folder)}.`;
+      if (agent === "completed") return `Muse is done${inFolder(folder)}${after(minutes)}.`;
+      if (again) return "Is Muse still waiting on you?";
+      const asks = toolKind(tool ?? "");
+      return asks ? `Muse wants your OK to ${asks}${inFolder(folder)}.` : `Muse is waiting on you${inFolder(folder)}.`;
+    }
     case "session_start":
       return "Hi. What are we working on today?";
     default:

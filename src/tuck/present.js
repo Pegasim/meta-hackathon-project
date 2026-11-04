@@ -21,6 +21,7 @@ export function nudgeText(t) {
     unsure: !!e.unsure,
     agent: e.agent,
     again: !!e.agentAgain,
+    agentFacts: { folder: e.agentFolder, minutes: e.agentMin, tool: e.agentTool },
     task: { title: t.intentTitle, step: t.intentStep },
   });
 }

@@ -39,7 +39,7 @@ export function initialState() {
     holds: 0, // holds in this drift because the person was typing
     holdUntil: null,
     holdKey: null, // the page the person was typing on
-    agent: null, // a coding agent's status: {status, ts, session}
+    agent: null, // a coding agent's status: {status, ts, session, folder?, minutes?, tool?}
     agentPending: false, // it stopped while the browser was away: say so on return
     agentAsk: null, // while it waits on the person: {afterSec, inBrowserSec, again}
   };
@@ -112,6 +112,9 @@ function evidence(s, ts, cfg) {
     key: s.current?.key ?? null,
     agent: s.agent?.status ?? null,
     agentAgain: !!s.agentAsk?.again,
+    agentFolder: s.agent?.folder ?? null,
+    agentMin: s.agent?.minutes ?? null,
+    agentTool: s.agent?.tool ?? null,
     dwellSec: Math.round((ts - entered) / S),
     awaySec: s.offTaskSince == null ? 0 : Math.round((ts - s.offTaskSince) / S),
     budgetSec: Math.round(s.budgetSec),
@@ -269,7 +272,11 @@ function applyResponse(s, input, cfg) {
 // Whose turn it is in a coding agent (bridge/). A word when it stops, once.
 function applyAgent(s, input, candidates, cfg) {
   const before = s.agent?.status;
-  s.agent = { status: input.status, ts: input.ts, session: input.session ?? null };
+  // What the bridge knows of the turn, for the words (#67): the folder's name, minutes, a tool.
+  const facts = Object.fromEntries(
+    ["folder", "minutes", "tool"].filter((k) => input[k] != null).map((k) => [k, input[k]]),
+  );
+  s.agent = { status: input.status, ts: input.ts, session: input.session ?? null, ...facts };
   if (before === input.status) return []; // the same news: a word still waiting keeps waiting
   s.agentPending = false;
   s.agentAsk =
