@@ -41,7 +41,17 @@ export function taskPhrase({ title, step } = {}) {
 }
 
 // kind, level, site, awayMin, unsure, task: {title, step}.
-export function templateNudge({ kind, level, site, awayMin = 0, unsure = false, task, agent, again = false }) {
+export function templateNudge({
+  kind,
+  level,
+  site,
+  awayMin = 0,
+  unsure = false,
+  task,
+  agent,
+  again = false,
+  done = false,
+}) {
   const what = taskPhrase(task);
   switch (kind) {
     case "drift":
@@ -60,6 +70,8 @@ export function templateNudge({ kind, level, site, awayMin = 0, unsure = false, 
     case "agent":
       if (agent === "failed") return "Muse stopped on an error.";
       if (agent === "completed") return "Muse is done.";
+      // The turn ended on a question: done, and the next move is theirs.
+      if (done) return "Muse is done and asked you something.";
       return again ? "Is Muse still waiting on you?" : "Muse is waiting on you.";
     case "session_start":
       return "Hi. What are we working on today?";

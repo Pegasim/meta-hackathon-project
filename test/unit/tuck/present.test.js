@@ -195,3 +195,8 @@ test("while Tuck is away only a drift, fragmentation, agent word or the session 
     assert.equal(comesWhileAway(kind), true, kind);
   for (const kind of ["return", "break_over", "checkin"]) assert.equal(comesWhileAway(kind), false, kind);
 });
+
+test("a turn that ended on a question says Muse is done, not that it is still waiting", () => {
+  const trigger = { id: "a", kind: "agent", level: 1, evidence: { agent: "waiting_for_user", agentDone: true } };
+  assert.equal(present({ trigger }).bubble.text, "Muse is done and asked you something.");
+});

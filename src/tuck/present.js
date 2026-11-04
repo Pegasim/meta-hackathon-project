@@ -21,6 +21,7 @@ export function nudgeText(t) {
     unsure: !!e.unsure,
     agent: e.agent,
     again: !!e.agentAgain,
+    done: !!e.agentDone,
     task: { title: t.intentTitle, step: t.intentStep },
   });
 }

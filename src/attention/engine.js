@@ -112,6 +112,7 @@ function evidence(s, ts, cfg) {
     key: s.current?.key ?? null,
     agent: s.agent?.status ?? null,
     agentAgain: !!s.agentAsk?.again,
+    agentDone: !!s.agent?.done,
     dwellSec: Math.round((ts - entered) / S),
     awaySec: s.offTaskSince == null ? 0 : Math.round((ts - s.offTaskSince) / S),
     budgetSec: Math.round(s.budgetSec),
@@ -270,14 +271,18 @@ function applyResponse(s, input, cfg) {
 // Whose turn it is in a coding agent (bridge/). A word when it stops, once.
 function applyAgent(s, input, candidates, cfg) {
   const before = s.agent?.status;
-  s.agent = { status: input.status, ts: input.ts, session: input.session ?? null };
+  s.agent = { status: input.status, ts: input.ts, session: input.session ?? null, done: !!input.turnEnd };
   // The same news: a word still waiting keeps waiting. A turn's end is always news: after
   // an approval, Muse may run the command under another session, so the person's session
   // never says working again before the turn ends with the same waiting_for_user.
   if (before === input.status && !input.turnEnd) return;
   s.agentPending = false;
+  // Asking again whether it still waits is for an approval in the middle of a turn; a
+  // turn that ended (with a question or not) is done, and is said once.
   s.agentAsk =
-    input.status === "waiting_for_user" ? { afterSec: cfg.agentAskAgainSec, inBrowserSec: 0, again: false } : null;
+    input.status === "waiting_for_user" && !input.turnEnd
+      ? { afterSec: cfg.agentAskAgainSec, inBrowserSec: 0, again: false }
+      : null;
   if (!AGENT_STOPS.includes(input.status)) return;
   // Time to take it in: a drift word right after this one would drown it.
   s.budgetSec = 0;

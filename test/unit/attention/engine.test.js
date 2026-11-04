@@ -696,11 +696,25 @@ test("the turn's end is news even after an approval with the same status (Muse 2
     { until: t0 + 70 * S, cfg },
   );
   assert.deepEqual(
-    words(out).map((t) => [t.evidence.agent, t.ts - t0]),
+    words(out).map((t) => [t.evidence.agent, t.ts - t0, t.evidence.agentDone]),
     [
-      ["waiting_for_user", 4 * S],
-      ["waiting_for_user", 66 * S],
+      ["waiting_for_user", 4 * S, false],
+      ["waiting_for_user", 66 * S, true],
     ],
+  );
+});
+
+test("a finished turn is never followed by 'still waiting' (İrem, 2026-11-04)", () => {
+  // The turn ended with a question; the person reads it in the terminal. Asking again
+  // whether Muse still waits is for an approval in the middle of a turn, not for this.
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, agentAskAgainSec: 10, decide: stubDecide });
+  const { out } = run(
+    [setIntent(t0), agent(t0, "working"), { ...agent(t0 + 5 * S, "waiting_for_user"), turnEnd: true }],
+    { until: t0 + 120 * S, cfg },
+  );
+  assert.deepEqual(
+    words(out).map((t) => [t.ts - t0, t.evidence.agentDone, t.evidence.agentAgain]),
+    [[5 * S, true, false]],
   );
 });
 
