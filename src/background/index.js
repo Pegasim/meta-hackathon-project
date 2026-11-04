@@ -40,6 +40,7 @@ import { buildProfile } from "../agent/profile.js";
 import { refreshTasks } from "../agent/tasks.js";
 import { planFor, stuckStep, nextAfter } from "../agent/moments.js";
 import { recentRuns } from "../agent/loop.js";
+import { noteOf } from "../agent/notes.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine, templateGreeting, toolKind, whenSaid } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
@@ -1275,21 +1276,7 @@ async function writeGreeting(sum) {
 // agent/tools.js and proposes words, a plan or a step (agent/moments.js). Always outside
 // the queue: no moment waits for it (#67). Only a short write of what it found goes in.
 
-// A note as the agent reads it, redacted and cut. Tuck's own records (goals and how their
-// days went, topic "focus") are not the person's notes.
-const NOTE_CHARS = 600;
 const ACTIVITY_MIN = 30;
-function noteOf({ title, item }) {
-  const body =
-    typeof item.text === "string"
-      ? item.text
-      : [item.context, item.result, item.next !== "none" && item.next].filter(Boolean).join(" ");
-  return {
-    title: redact(title ?? "").text,
-    topic: item.topic ?? "notes",
-    text: redact(body.replace(/\s+/g, " ")).text.slice(0, NOTE_CHARS),
-  };
-}
 
 // The pages of the last ACTIVITY_MIN minutes, newest first, with what each was judged.
 async function recentPages() {
@@ -1329,9 +1316,11 @@ function agentDeps(intent) {
   return {
     recall: async (query) =>
       (await (await memory).recall(query, { limit: NOTES_SEARCHED }).catch(() => []))
+        // Tuck's own records (goals and how their days went, topic "focus") are not the
+        // person's notes. Each is dated by the person's day (agent/notes.js, #90).
         .filter((h) => h.item && h.item.topic !== "focus")
         .slice(0, 5)
-        .map(noteOf),
+        .map((h) => noteOf(h)),
     tasks: async () =>
       stillOpen(await toDo(), await loadLoops())
         .filter((e) => e.id && e.title !== intent?.title)

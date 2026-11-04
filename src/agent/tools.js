@@ -6,7 +6,7 @@ import { followsVoice, MAX_WORDS } from "../tuck/voice.js";
 
 const noArgs = { type: "object", properties: {} };
 
-// deps: {recall(query) -> [{title, topic, text}], tasks() -> [{id, title, when}],
+// deps: {recall(query) -> [{title, topic, date?, age?, text}], tasks() -> [{id, title, when}],
 // activity() -> [{title, host, label, minutesAgo}], page() -> {title, excerpt} | {skipped},
 // goal() -> {title, step, minutesOn}}. Each is wired in the background and already redacted.
 // Whatever a tool returns is also kept in ctx, so a finishing tool can check its words
@@ -14,7 +14,8 @@ const noArgs = { type: "object", properties: {} };
 export function readTools(deps) {
   return {
     recall_notes: {
-      description: "Search the person's own notes. Returns up to 5 notes with their title, topic and text.",
+      description:
+        "Search the person's own notes. Returns up to 5 notes with their title, topic and text. A dated note also has its date and its age, such as 3 days ago; a document has no date.",
       parameters: {
         type: "object",
         properties: { query: { type: "string", description: "A few words: the goal, a project, a person" } },
