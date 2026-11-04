@@ -586,6 +586,58 @@ const cacheLeft = await slow.evaluate(async () =>
 );
 await slow.close();
 
+// Today and Coming up (#77): invented checkboxes dated around today, and a goal picked from
+// an undated one. Checkboxes need no model, so the views show at once. The fixture vault
+// has fixed dates, so it is removed first: its rows would move between views by the day.
+const split = await ctx.newPage();
+split.on("pageerror", (e) => errors.push(String(e)));
+await split.goto(`chrome-extension://${id}/options/options.html`);
+await split.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const { fromMarkdownFolder } = await import("/memory/markdown.js");
+  const { openStore } = await import("/attention/store.js");
+  const { makeIntent } = await import("/attention/intents.js");
+  const { localDate } = await import("/memory/due.js");
+  const day = (n) => localDate(new Date(Date.now() + n * 86400000));
+  const memory = await Memory.open();
+  await memory.removeSource("md:Vault-6");
+  const text = [
+    `- [ ] Pay the electricity bill 📅 ${day(-2)}`,
+    `- [ ] Send the visa papers 📅 ${day(0)}`,
+    `- [ ] Book the dentist 📅 ${day(1)}`,
+    `- [ ] Sit the exam 📅 ${day(3)}`,
+    `- [ ] Renew the passport 📅 ${day(40)}`,
+    `- [ ] File the tax return 📅 ${day(90)}`,
+    `- [ ] Return the library books 📅 ${day(-20)}`,
+    "- [ ] Call grandma",
+    "- [ ] Fix the bike light",
+  ].join("\n");
+  const folder = fromMarkdownFolder([{ path: "todo.md", text }], { folderName: "Split" });
+  await memory.importEntries({ origin: "md:Split", name: "Split", ...folder });
+  // The id as Tuck knows it, with its origin, as a "switch" from the bubble sends it.
+  const queue = await memory.taskQueue({ limit: Infinity });
+  const bike = queue.find((e) => /bike/.test(e.title));
+  await (await openStore()).putIntent(makeIntent({ title: "Fix the bike light", fromLoopId: bike.id }, Date.now()));
+});
+await split.reload();
+await split.waitForFunction(() => document.getElementById("task-list").innerText.includes("Fix the bike light"));
+if (await split.isVisible("#all-tasks")) await split.click("#all-tasks");
+await split.waitForTimeout(300);
+// Each row with the view it sits under, in order.
+const views = await split.evaluate(() => {
+  let view = null;
+  const out = [];
+  for (const el of document.getElementById("task-list").children) {
+    if (el.classList.contains("row"))
+      out.push(`${view}: ${el.querySelector("span").textContent.replace(/: due .*/, "")}`);
+    else view = el.textContent;
+  }
+  return out;
+});
+if (process.env.SCREENSHOT_DIR)
+  await split.screenshot({ path: path.join(process.env.SCREENSHOT_DIR, "settings-tasks.png"), fullPage: true });
+await split.close();
+
 await ctx.close();
 fs.rmSync(profile, { recursive: true, force: true });
 
@@ -720,4 +772,19 @@ assert.equal(pasteAfterAgain, pasteBefore + 1, "the same file again sends nothin
 assert.deepEqual(cacheLeft, [], "Remove drops what was read from the export too");
 assert.deepEqual(sideBySide.first, ["New task"], "the first of two side-by-side reads sees the write");
 assert.deepEqual(sideBySide.second, ["New task"], "and so does the second: no read takes the old copy as current");
+assert.deepEqual(
+  views,
+  [
+    "Today: Fix the bike light",
+    "Today: Pay the electricity bill",
+    "Today: Send the visa papers",
+    "Today: Book the dentist",
+    "Coming up: Sit the exam",
+    "Coming up: Renew the passport",
+    "Everything else: File the tax return",
+    "Everything else: Call grandma",
+    "Everything else: Return the library books",
+  ],
+  "the goal's row, then what is close; dated within 60 days; the rest in the queue's order (long missed last)",
+);
 console.log("browser test: ok");

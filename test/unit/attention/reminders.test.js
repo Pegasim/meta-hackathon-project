@@ -11,6 +11,7 @@ import {
   pairKey,
   markAll,
   splitRow,
+  splitTasks,
 } from "../../../src/attention/reminders.js";
 
 const today = "2026-11-02";
@@ -169,4 +170,39 @@ test("Not the same splits every pair in the row", () => {
   const splits = splitRow({}, { id: "a", members: ["a", "b", "c"] }, 9);
   assert.deepEqual(Object.keys(splits).sort(), [pairKey("a", "b"), pairKey("a", "c"), pairKey("b", "c")].sort());
   assert.equal(pairKey("b", "a"), pairKey("a", "b"), "a pair is the same both ways");
+});
+
+test("Settings splits the list into Today, Coming up and the rest (#77)", () => {
+  const list = [
+    task("missed", -3),
+    task("long-missed", -9),
+    task("today", 0),
+    task("tomorrow", 1),
+    task("later", 20),
+    task("soon", 3),
+    task("far", 61),
+    task("undated", null),
+    { ...task("goal", 30), members: ["goal", "goal-note"] },
+  ];
+  const ids = (rows) => rows.map((e) => e.id);
+  const { today, comingUp, rest } = splitTasks(list, { goalFrom: "goal-note" });
+  assert.deepEqual(ids(today), ["goal", "missed", "today", "tomorrow"], "the goal's row first, then what is close");
+  assert.deepEqual(ids(comingUp), ["soon", "later"], "dated after tomorrow, within 60 days, soonest first");
+  assert.deepEqual(ids(rest), ["long-missed", "far", "undated"], "the rest keeps the list's order");
+  assert.deepEqual(ids(splitTasks(list).today), ["missed", "today", "tomorrow"], "no goal, no goal row");
+  assert.deepEqual(ids(splitTasks(list).comingUp), ["soon", "later", "goal"]);
+});
+
+test("Today holds at most 5 rows; what does not fit stays in the list, not lost", () => {
+  const close = ["a", "b", "c", "d", "e", "f"].map((id, i) => task(id, i % 2));
+  const { today, comingUp, rest } = splitTasks([...close, task("goal", null)], { goalFrom: "goal" });
+  assert.deepEqual(
+    today.map((e) => e.id),
+    ["goal", "a", "b", "c", "d"],
+  );
+  assert.deepEqual(comingUp, []);
+  assert.deepEqual(
+    rest.map((e) => e.id),
+    ["e", "f"],
+  );
 });
