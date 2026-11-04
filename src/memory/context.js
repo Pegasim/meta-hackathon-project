@@ -69,11 +69,16 @@ export function taskQueue(entries, { today = localDate(), limit = 5, staleAfter 
 // openLoops leaves them out, so they are not in the queue: never a to-do, never said aloud,
 // never read by the task node. Settings shows them in Coming up or Long run with their
 // date. Only what is still ahead of `today`, soonest first.
+// The date must be the note's own: in its title or the first sentence of its result. One
+// further on, or in its context, is mostly about something else ("credit expires Nov 8"
+// in a note on model routing), and a wrong date is worse than none.
+const leadSentence = (text) => String(text ?? "").split(/(?<=[.!?])\s+(?=\p{Lu})/u)[0];
+
 export function upcoming(entries, { today = localDate() } = {}) {
   return entries
     .filter((e) => !e.next || e.next === "none")
     .flatMap((e) => {
-      const due = dueOf(e);
+      const due = dueOf({ date: e.date, title: e.title, result: leadSentence(e.result) });
       const left = daysLeft(due, today);
       return due && left >= 0 ? [{ ...e, due, daysLeft: left, writer: writtenBy(e), upcoming: true }] : [];
     })

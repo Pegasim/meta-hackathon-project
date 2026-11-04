@@ -143,7 +143,7 @@ One format for everything. An entry is the second-brain record (`Date · Context
 - No cue, no deadline. A deadline read wrongly is worse than none.
 - Dates in plain words ("closes today", "the 8th"), and ranges across months ("Nov 28 - Dec 2"), are not parsed.
 
-**Upcoming.** `upcoming()` returns entries with no next action whose deadline (read as above) is still ahead of `today`: "results are announced by 18 Nov", "the lease ends 2027-02-28". They are not open loops, so they are not in the task queue: Tuck never says one aloud and the task node never reads one. Settings shows them with their date in Coming up (within 60 days) or Long run, each with Hide (#96).
+**Upcoming.** `upcoming()` returns entries with no next action whose deadline (read as above) is still ahead of `today`: "results are announced by 18 Nov", "the lease ends 2027-02-28". The deadline is read from the title and the first sentence of the result only: a date further on, or in the context, is mostly about something else ("free credit expires Nov 8" in a note on model routing). They are not open loops, so they are not in the task queue: Tuck never says one aloud and the task node never reads one. Settings shows them with their date in Coming up (within 60 days) or Long run, each with Hide (#96).
 
 **Task queue.** `taskQueue()` orders open loops by time left, as plain arithmetic with no model call: dated loops soonest first, then undated ones newest first, then loops whose deadline passed more than `staleAfter` days ago (14 by default), because nothing marks a loop done and an old note would otherwise sit at the top forever. Days are counted on the user's local date, not UTC (`localDate()`).
 

@@ -189,3 +189,33 @@ test("a dated plan with no next action is upcoming, and never in the queue", () 
   const queued = taskQueue(plans, { today: TODAY, limit: Infinity }).map((e) => e.id);
   assert.ok(!queued.includes("results") && !queued.includes("lease"), "so Tuck never says one aloud");
 });
+
+// A date in passing is about something else: a note on model routing that says the free
+// credit expires 8 Nov is not due on 8 Nov.
+test("a dated plan's date comes from its title or the first sentence of its result", () => {
+  const plans = [
+    entry({ id: "credit", title: "Free credit expires 2026-11-08", result: "61 of 14,219 spent.", next: "none" }),
+    entry({ id: "exam", title: "Exam", result: "Results by Nov. 8, online. Retakes in spring.", next: "none" }),
+    entry({
+      id: "routing",
+      title: "The editor routes to the cloud project",
+      result: "All usage bills the project. Free credit expires 2026-11-08 and should cover it.",
+      next: "none",
+    }),
+    entry({
+      id: "panel",
+      title: "Panel date comes by email",
+      context: "Results 8-11 Dec, contract by 2026-12-31.",
+      result: "No date yet.",
+      next: "none",
+    }),
+  ];
+  assert.deepEqual(
+    upcoming(plans, { today: TODAY }).map((e) => [e.id, e.due]),
+    [
+      ["credit", "2026-11-08"],
+      ["exam", "2026-11-08"],
+    ],
+    "a date later in the result, or in the context, is not the note's",
+  );
+});
