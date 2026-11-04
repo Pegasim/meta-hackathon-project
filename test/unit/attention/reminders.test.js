@@ -99,7 +99,7 @@ const loop = (id, fields = {}) => ({
 });
 const yes = (task) => ({ isTask: true, open: true, task, who: null, personal: false });
 
-test("entries the node found to be one commitment are one row: newest title, earliest deadline, sources", () => {
+test("entries the node found to be one commitment are one row: newest title, a deadline, sources", () => {
   const q = [
     loop("ticket-md", { origin: "md:Vault", due: "2026-11-10", daysLeft: 7, date: "2026-10-18" }),
     loop("other", { due: "2026-11-12", daysLeft: 9 }),
@@ -123,7 +123,7 @@ test("entries the node found to be one commitment are one row: newest title, ear
   );
   const row = list[0];
   assert.equal(row.title, "Buy the train tickets to Lyon", "the newest member's words");
-  assert.equal(row.due, "2026-11-10", "the earliest deadline");
+  assert.equal(row.due, "2026-11-10", "the one member with a deadline");
   assert.equal(row.daysLeft, 7);
   assert.deepEqual(row.members.sort(), ["ticket-md", "ticket-new", "ticket-old"]);
   assert.equal(row.sources, "brain ×2, Vault");
@@ -259,5 +259,42 @@ describe("Settings' views: Missed and the person's own rows first (#92)", () => 
     const { today, missed, rest, suggested } = splitTasks(list);
     assert.deepEqual([ids(today), ids(missed), ids(rest)], [["a"], ["b"], ["c"]]);
     assert.deepEqual(suggested, []);
+  });
+});
+
+// #94: a grouped row's words and its date come from one note, not the newest note's words
+// with the oldest note's date.
+describe("a grouped row's deadline", () => {
+  const q = [
+    loop("old", { due: "2026-11-02", daysLeft: -1, date: "2026-10-10" }),
+    loop("mid", { due: "2026-11-20", daysLeft: 17, date: "2026-10-20" }),
+    loop("new", { date: "2026-10-30" }),
+  ];
+  const verdicts = { old: yes("Old words"), mid: yes("Mid words"), new: yes("New words") };
+  const all = {
+    [pairKey("old", "mid")]: { same: true },
+    [pairKey("mid", "new")]: { same: true },
+  };
+
+  test("is the newest member's, with its words", () => {
+    const dated = q.map((e) => (e.id === "new" ? { ...e, due: "2026-11-25", daysLeft: 22 } : e));
+    const [row] = taskList(dated, { verdicts, pairs: all });
+    assert.equal(row.title, "New words");
+    assert.equal(row.due, "2026-11-25");
+    assert.equal(row.daysLeft, 22);
+  });
+
+  test("is the latest among the members when the newest has none, not the earliest", () => {
+    const [row] = taskList(q, { verdicts, pairs: all });
+    assert.equal(row.title, "New words");
+    assert.equal(row.due, "2026-11-20");
+    assert.equal(row.daysLeft, 17, "the days left come from the same member");
+  });
+
+  test("is none when no member has one", () => {
+    const plain = q.map((e) => ({ ...e, due: null, daysLeft: null }));
+    const [row] = taskList(plain, { verdicts, pairs: all });
+    assert.equal(row.due, null);
+    assert.equal(row.daysLeft, null);
   });
 });
