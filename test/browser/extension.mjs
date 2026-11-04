@@ -960,7 +960,12 @@ await awayBack.locator("#tuck-companion .avatar").click();
 await awayBack.locator("#tuck-companion .bubble button", { hasText: "Tuck away" }).click();
 await awayBack.waitForTimeout(500);
 away.hiddenAgain = await tuckAwayNow();
+await awayBack
+  .locator("#tuck-companion .dock.in")
+  .waitFor({ state: "detached", timeout: 3000 })
+  .catch(() => {});
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+away.afterDoneWhileAway = await settledDockCount(awayBack, 1500);
 await popup.evaluate(() => chrome.storage.session.set({ pendingGreeting: true }));
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 await awayBack.locator("#tuck-companion .bubble input[name=goal]").waitFor({ timeout: 10000 });
@@ -1415,6 +1420,7 @@ assert.deepEqual(
     flagAfterSwitch: false,
     restingAgain: "rest",
     hiddenAgain: true,
+    afterDoneWhileAway: 0,
     flagAfterGreeting: false,
   },
   "Tuck away",

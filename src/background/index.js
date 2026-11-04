@@ -1053,8 +1053,9 @@ async function completeIntent() {
     await st.putIntent({ ...intent, doneAt: Date.now() });
     if (intent.fromLoopId) await saveLoops(markDone(await loadLoops(), intent.fromLoopId, Date.now()));
     await process({ type: "session", ts: Date.now(), kind: "intent_done", payload: { id: intent.id } });
-    // Tuck asks what's next, on the page in front.
-    await showWithReminder((await loadEngine()).current?.tabId, present({ event: "goal_done" }), intent.title);
+    // Tuck asks what's next, on the page in front, unless it is tucked away.
+    if (await isAway()) await hideTuck();
+    else await showWithReminder((await loadEngine()).current?.tabId, present({ event: "goal_done" }), intent.title);
     return intent;
   });
 }
