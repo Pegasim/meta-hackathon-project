@@ -4,7 +4,7 @@
 // what to propose. Each returns runAgent's result (agent/loop.js); value null: no proposal,
 // and the caller keeps its template.
 import { runAgent } from "./loop.js";
-import { readTools, planTools, stuckTools, nextTools, goalTools } from "./tools.js";
+import { readTools, planTools, stuckTools, nextTools, goalTools, chatTools } from "./tools.js";
 import { closedRefs } from "./github.js";
 import { MAX_WORDS } from "../tuck/voice.js";
 
@@ -68,20 +68,27 @@ const GOAL_NO_NOTES = [
   VOICE,
 ].join("\n");
 
+const CHAT_CHOICE = [
+  "Choose by what they wrote. If it is already something they will do, finish with",
+  "keep_step: their words are saved as their step, as written; do not rewrite them. If",
+  "they ask for help or ideas, finish with propose_step: one small, concrete action built",
+  "on what they wrote and the goal, doable in 5 to 15 minutes. If you cannot tell what",
+  "they mean, finish with ask_back: one short question.",
+];
+
 const CHAT_STEP = [
   "You are Tuck, a small focus companion. The person is working on a goal and just wrote",
-  "to you. What they wrote matters most. Search their notes once for the same thing. Use a",
-  "note only if it is about what they wrote; otherwise build the step from their words and",
-  "the goal alone. Finish with propose_step: one small, concrete action that answers what",
-  "they wrote, doable in 5 to 15 minutes.",
+  "to you. What they wrote matters most. If they want help, search their notes once for",
+  "the same thing and use a note only if it is about what they wrote.",
+  ...CHAT_CHOICE,
   HISTORY,
   VOICE,
 ].join("\n");
 
 const CHAT_STEP_NO_NOTES = [
   "You are Tuck, a small focus companion. The person is working on a goal and just wrote",
-  "to you. They have no notes. Finish with propose_step: one small, concrete action that",
-  "answers what they wrote, built from their words and the goal, doable in 5 to 15 minutes.",
+  "to you. They have no notes.",
+  ...CHAT_CHOICE,
   VOICE,
 ].join("\n");
 
@@ -201,8 +208,8 @@ export const chatStep = (chat, deps, { title, step, said } = {}, { notes = true,
       .filter(Boolean)
       .join("\n"),
     tools: notes
-      ? tools(deps, stuckTools, ["look_at_page", "recent_activity", "list_tasks", "goal", "github_status"])
-      : stuckTools,
+      ? tools(deps, chatTools, ["look_at_page", "recent_activity", "list_tasks", "goal", "github_status"])
+      : chatTools,
     ctx: { said, goal: { title, step } },
     readRounds: 1,
     ...opts,

@@ -315,3 +315,34 @@ export const goalTools = {
     }),
   },
 };
+
+// What the person writes in the chat with a goal running. The model chooses: their words
+// are already the next thing to do (keep_step: saved as written), they want help or ideas
+// (propose_step: one small step built on what they wrote), or it is unclear (ask_back).
+export const chatTools = {
+  keep_step: {
+    description:
+      "Finish with the person's own words as their next step, saved exactly as they wrote them: they already know what they will do. Optionally a short reply.",
+    parameters: { type: "object", properties: { reply: { type: "string" } } },
+    finish: (args, ctx) => {
+      const reply = checkReply(args?.reply);
+      return {
+        step: String(ctx.said ?? "")
+          .trim()
+          .slice(0, 200),
+        kept: true,
+        ...(reply && { reply }),
+      };
+    },
+  },
+  propose_step: stuckTools.propose_step,
+  ask_back: {
+    description: `Finish with one short question back when you cannot tell what they mean, at most ${MAX_WORDS} words.`,
+    parameters: { type: "object", properties: { question: { type: "string" } }, required: ["question"] },
+    finish: (args) => {
+      const question = String(args?.question ?? "").trim();
+      if (!question) throw new Error("write the question");
+      return { question: checkReply(question, { required: true }) };
+    },
+  },
+};

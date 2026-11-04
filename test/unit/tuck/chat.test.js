@@ -186,3 +186,4 @@ test("after the key, Tuck asks about notes once: a folder, a chat history, or sk
   assert.equal(chatView(t).bubble.compact, true);
   for (const line of [NOTES_ASK, NOTES_SKIPPED, THINKING]) assert.ok(followsVoice(line), line);
 });
+
