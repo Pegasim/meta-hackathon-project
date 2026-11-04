@@ -1,24 +1,32 @@
 // Tuck on the page: draws what background.js decided (see present.js) inside its own
 // Shadow DOM. It reads nothing from the page. Top right by default; the person can
 // drag it anywhere and it stays there on every page, the open ones too. The bubble opens toward the
-// roomier side (layout.js, injected first). Injected with chrome.scripting, possibly
+// roomier side (layout.js, injected first). The art is the chosen skin's (skins.js,
+// injected first too, sets its pose attributes). Injected with chrome.scripting, possibly
 // several times into one page, so it installs once.
 (() => {
   if (window.__tuckInstalled) return;
   window.__tuckInstalled = true;
 
   const { placement, clamp, anchor, fromAnchor } = globalThis.tuckLayout;
+  const { poseAttrs, themeCss } = globalThis.tuckSkins;
   const HOST_ID = "tuck-companion";
   const OWNER = chrome.runtime.id; // marks our host: another copy of Tuck shares the page's DOM
   const ORPHAN_CHECK_MS = 2000;
-  const SIZE = { width: 72, height: 72 };
+  let SIZE = { width: 72, height: 72 }; // the skin's (skin.json size)
   const DRAG_THRESHOLD = 4; // px; less is a click
   let root = null;
   let pos = null; // {x, y} of Tuck on screen, in viewport px: saved, fitted to this window
   let saved = null; // where the person put Tuck (layout.js anchor); fitting never changes it
   let dragging = false;
   let current = null; // the view on screen
+  let skin = null; // the skin drawn: its manifest
+  let item = "none"; // what Tuck wears or carries (skin.json items)
+  let pose = "rest";
+  let resting = "rest"; // the pose with nothing to say (the last quiet view's): rest, work or sleep
   let timers = [];
+  let hides = 0; // tuck-hide messages seen: a show that waited past one is stale
+  let enterFrame = null; // the slide-in waiting for the next frame; a hide before it cancels it
 
   // Removed, disabled or reloaded, the extension leaves this script in the page with no
   // runtime behind it, and its host in the DOM. Nothing tells the page, so look.
@@ -26,6 +34,8 @@
   const orphanCheck = setInterval(() => orphaned() && leavePage(), ORPHAN_CHECK_MS);
   function leavePage() {
     clearInterval(orphanCheck);
+    cancelAnimationFrame(enterFrame);
+    clearTimeout(spriteTimer);
     timers.forEach(clearTimeout);
     timers = [];
     window.removeEventListener("resize", place);
@@ -43,44 +53,49 @@
 
   const STYLE = `
     :host { all: initial; }
-    .dock { position: fixed; z-index: 2147483647; width: 72px; height: 72px;
-            font: 14px/1.4 system-ui, -apple-system, sans-serif; color: #24262d;
+    .dock { position: fixed; z-index: 2147483647; width: var(--tk-w); height: var(--tk-h);
+            font: 13px/1.4 ui-rounded, system-ui, -apple-system, sans-serif; color: var(--tk-ink);
             opacity: 0; transform: scale(.6); transition: opacity .35s ease, transform .45s cubic-bezier(.2,.8,.2,1);
             pointer-events: none; }
     .dock.in { opacity: 1; transform: none; }
+    @media (prefers-reduced-motion: reduce) { .dock { transition: none; } }
     .avatar { all: unset; cursor: grab; pointer-events: auto; border-radius: 16px; touch-action: none; display: block; }
     .avatar.dragging { cursor: grabbing; }
-    .avatar:focus-visible { outline: 2px solid #94BFAE; outline-offset: 2px; }
-    .tuck { --tuck-accent: #94BFAE; width: 72px; height: 72px; filter: drop-shadow(0 2px 6px rgba(0,0,0,.18)); }
-    .bubble { pointer-events: auto; position: absolute; width: 260px; background: #fff; border: 1px solid #dfe3e8;
-              border-radius: 14px; padding: 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.14); }
+    .avatar:focus-visible { outline: 2px solid var(--tk-ink); outline-offset: 2px; }
+    .tuck { --tuck-accent: var(--tk-accent); width: var(--tk-w); height: var(--tk-h);
+            filter: drop-shadow(0 0 .6px var(--tk-rim)) drop-shadow(0 2px 6px rgba(0,0,0,.18)); }
+    .bubble { pointer-events: auto; position: absolute; width: 260px; background: var(--tk-surface); color: var(--tk-ink);
+              border: 1px solid var(--tk-outline); border-radius: 16px; padding: 12px 14px; font-weight: 400;
+              box-shadow: 0 8px 24px rgba(0,0,0,.14); }
+    .bubble::before { content: ""; position: absolute; width: 10px; height: 10px; background: var(--tk-surface);
+                      border: 1px solid var(--tk-outline); border-width: 1px 0 0 1px; }
     .bubble[hidden] { display: none; }
     .dock[data-side="left"] .bubble { right: 0; }
     .dock[data-side="right"] .bubble { left: 0; }
-    .dock[data-vertical="below"] .bubble { top: 80px; }
-    .dock[data-vertical="above"] .bubble { bottom: 80px; }
-    .text { margin: 0 18px 10px 0; font-weight: 600; }
-    .next { margin: -6px 0 10px; color: #65616d; font-size: 13px; }
-    .plan { margin: -4px 0 10px; padding-left: 18px; color: #65616d; font-size: 13px; }
+    .dock[data-side="left"] .bubble::before { right: calc(var(--tk-w) / 2 - 5px); }
+    .dock[data-side="right"] .bubble::before { left: calc(var(--tk-w) / 2 - 5px); }
+    .dock[data-vertical="below"] .bubble { top: calc(var(--tk-h) + 8px); }
+    .dock[data-vertical="below"] .bubble::before { top: -6px; transform: rotate(45deg); }
+    .dock[data-vertical="above"] .bubble { bottom: calc(var(--tk-h) + 8px); }
+    .dock[data-vertical="above"] .bubble::before { bottom: -6px; transform: rotate(225deg); }
+    .text { margin: 0 18px 10px 0; font-size: 14px; font-weight: 600; }
+    .next { margin: -6px 0 10px; color: var(--tk-muted); font-size: 13px; }
+    .plan { margin: -4px 0 10px; padding-left: 18px; color: var(--tk-muted); font-size: 13px; }
     .row { display: flex; flex-wrap: wrap; gap: 6px; }
-    button.b { all: unset; cursor: pointer; border: 1px solid #cfd5dc; border-radius: 999px; padding: 5px 12px;
-               font-size: 13px; color: #24262d; background: #fff; }
-    button.b.primary { background: #94BFAE; border-color: #94BFAE; font-weight: 600; color: #1f2a26; }
-    button.b:hover { border-color: #94BFAE; }
-    button.b:focus-visible { outline: 2px solid #94BFAE; outline-offset: 1px; }
-    .close { all: unset; cursor: pointer; position: absolute; top: 6px; right: 10px; color: #8a8f98; font-size: 16px; }
+    button.b { all: unset; cursor: pointer; border: 1px solid var(--tk-outline); border-radius: 999px; padding: 5px 12px;
+               font-size: 13px; color: var(--tk-ink); background: var(--tk-surface); }
+    button.b.primary { background: var(--tk-accent); border-color: var(--tk-accent); font-weight: 600; color: var(--tk-on-accent); }
+    button.b:hover { border-color: var(--tk-accent); }
+    button.b:focus-visible { outline: 2px solid var(--tk-ink); outline-offset: 1px; }
+    .close { all: unset; cursor: pointer; position: absolute; top: 6px; right: 10px; color: var(--tk-muted); font-size: 16px; }
+    .close:hover { color: var(--tk-ink); }
+    .close:focus-visible { outline: 2px solid var(--tk-ink); outline-offset: 1px; border-radius: 4px; }
     form { display: grid; gap: 6px; margin: 0; }
-    input { all: unset; border: 1px solid #cfd5dc; border-radius: 8px; padding: 6px 8px; font-size: 13px;
-            background: #fff; color: #24262d; }
-    input:focus { border-color: #94BFAE; }
-    .pick { margin-bottom: 8px; display: grid; gap: 6px; }
-    @media (prefers-color-scheme: dark) {
-      .bubble { background: #24262d; border-color: #3a3d46; color: #eceef1; }
-      .dock { color: #eceef1; }
-      button.b, input { background: #2d3038; border-color: #464a54; color: #eceef1; }
-      button.b.primary { color: #1f2a26; }
-      .next, .plan { color: #a9adb6; }
-    }`;
+    input { all: unset; border: 1px solid var(--tk-outline); border-radius: 8px; padding: 6px 8px; font-size: 13px;
+            background: var(--tk-surface); color: var(--tk-ink); }
+    input:focus { border-color: var(--tk-accent); }
+    input:focus-visible { outline: 2px solid var(--tk-ink); outline-offset: 1px; }
+    .pick { margin-bottom: 8px; display: grid; gap: 6px; }`;
 
   function el(tag, props = {}, ...children) {
     const e = Object.assign(document.createElement(tag), props);
@@ -90,6 +105,59 @@
 
   const dock = () => root.querySelector(".dock");
   const art = () => root.querySelector("svg.tuck");
+
+  // ---- Sprite skins ---------------------------------------------------------
+  // A sprite skin's pose is a strip of frames (skin.json frames). Entrances play once and
+  // hold; only work loops; rest replays its breath now and then; a pose with gaze turns to
+  // the bubble once it has played. Reduced motion holds the frame and plays nothing.
+  let spriteTimer = null;
+  // Settings → Tuck's motion: "system" follows the computer's reduce-motion setting, "on"
+  // always animates, "off" keeps every pose still.
+  let motion = "system";
+  const reducedMotion = () =>
+    motion === "off" || (motion !== "on" && matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const isSprite = () => skin?.kind === "sprites";
+  function spriteFrame(strip, i) {
+    // Removed or reloaded, the extension leaves this script with no runtime behind it.
+    if (orphaned()) return leavePage();
+    const img = art()?.querySelector(".tuck__strip");
+    const f = skin.frames[strip];
+    if (!img || !f) return;
+    img.setAttribute("href", chrome.runtime.getURL(`tuck/skins/${skin.id}/frames/${strip}.png`));
+    const w = (skin.frame ?? skin.size).width;
+    img.setAttribute("width", w * f.count);
+    img.setAttribute("x", -w * (i % f.count));
+  }
+  // The look frame toward the bubble: the look strip runs clockwise from up in 22.5° steps.
+  function gazeFrame() {
+    const d = dock()?.dataset ?? {};
+    const deg = d.side === "left" ? (d.vertical === "above" ? 315 : 225) : d.vertical === "above" ? 45 : 135;
+    return deg / 22.5;
+  }
+  function holdSprite(strip) {
+    const f = skin.frames[strip];
+    if (f.gaze && current?.bubble && skin.frames.look) spriteFrame("look", gazeFrame());
+    // An entrance settles on the resting frame, so the face does not jump between poses.
+    else if (f.count > 1 && strip !== "work" && skin.frames.rest) strip = (spriteFrame("rest", 0), "rest");
+    else spriteFrame(strip, 0);
+    // Settled on rest (its own or after an entrance): the idle breath comes back now and then.
+    const every = skin.frames[strip].every;
+    if (every && !reducedMotion()) spriteTimer = setTimeout(() => playSprite(strip), every);
+  }
+  function playSprite(strip) {
+    clearTimeout(spriteTimer);
+    const f = skin.frames[strip];
+    if (!f) return;
+    if (reducedMotion() || f.count === 1) return holdSprite(strip);
+    const total = f.loop ? Infinity : f.count * (f.repeat ?? 1);
+    let i = 0;
+    const tick = () => {
+      if (i >= total) return holdSprite(strip);
+      spriteFrame(strip, i++);
+      spriteTimer = setTimeout(tick, 1000 / (f.fps ?? 6));
+    };
+    tick();
+  }
   const later = (ms, fn) => timers.push(setTimeout(fn, ms));
 
   // ---- Position ------------------------------------------------------------
@@ -133,6 +201,11 @@
       const dx = e.clientX - start.px;
       const dy = e.clientY - start.py;
       if (!dragged && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      if (isSprite() && !reducedMotion()) {
+        const strip = e.clientX >= (start.lastX ?? start.px) ? "drag-right" : "drag-left";
+        if (strip !== start.strip && skin.frames[strip]) playSprite((start.strip = strip));
+      }
+      start.lastX = e.clientX;
       dragged = dragging = true;
       avatar.classList.add("dragging");
       saved = anchor(clamp({ x: start.x + dx, y: start.y + dy }, SIZE, view()), SIZE, view());
@@ -140,6 +213,7 @@
     });
     avatar.addEventListener("pointerup", () => {
       if (!start) return;
+      if (start.strip) setPose(pose); // stop running: back to the pose
       start = null;
       dragging = false;
       avatar.classList.remove("dragging");
@@ -148,8 +222,12 @@
     // A drag ends with a click event too; only a real click counts.
     avatar.addEventListener("click", (e) => {
       if (dragged) return ((dragged = false), e.preventDefault());
-      if (current?.bubble) closeBubble();
-      else send({ type: "tuck-click" });
+      // A nudge is answered, as × answers it (Tuck tucked away then leaves with it).
+      if (current?.bubble?.kind === "nudge") send({ type: "respond", choice: "dismiss" });
+      else if (current?.bubble) {
+        if (current.bubble.kind === "goal") send({ type: "goal-form-closed" });
+        closeBubble();
+      } else send({ type: "tuck-click" });
     });
   }
 
@@ -160,8 +238,13 @@
   // is still installed stays, and this copy does not draw, so two copies never fight;
   // once that copy is gone its host leaves within ORPHAN_CHECK_MS. Returns whether Tuck
   // is ours to draw.
-  function ensureRoot({ svg, css }) {
-    if (root?.isConnected) return true;
+  function ensureRoot({ manifest, svg, css, item: worn, motion: moves }) {
+    item = manifest.items?.includes(worn) ? worn : "none";
+    motion = moves ?? "system";
+    if (root?.isConnected) {
+      if (manifest.id !== skin.id) drawSkin({ manifest, svg, css }); // a new skin, in place: the bubble stays
+      return true;
+    }
     for (const other of document.querySelectorAll(`#${HOST_ID}`)) {
       if (other.dataset.owner && other.dataset.owner !== OWNER) return false;
       other.remove();
@@ -170,27 +253,47 @@
     host.dataset.owner = OWNER;
     const shadow = host.attachShadow({ mode: "open" });
     const avatar = el("button", { className: "avatar", ariaLabel: "Open Tuck", title: "Tuck — drag to move" });
+    const bubble = el("div", { className: "bubble", hidden: true, role: "status", ariaLive: "polite" });
+    // Site shortcuts (YouTube's k, Gmail's c) must not fire while typing to Tuck.
+    for (const type of ["keydown", "keyup", "keypress"]) bubble.addEventListener(type, (e) => e.stopPropagation());
+    shadow.append(el("style"), el("div", { className: "dock" }, avatar, bubble));
+    document.documentElement.append(host);
+    root = shadow;
+    drawSkin({ manifest, svg, css });
+    makeDraggable(avatar);
+    window.addEventListener("resize", place);
+    return true;
+  }
+
+  // The skin's art, its theme and size; the pose on screen carries over.
+  function drawSkin({ manifest, svg, css }) {
+    clearTimeout(spriteTimer); // a frame of the old skin must not land on the new one
+    skin = manifest;
+    SIZE = manifest.size;
+    root.querySelector("style").textContent = css + themeCss(manifest.theme) + STYLE;
+    const avatar = root.querySelector(".avatar");
     avatar.innerHTML = svg;
     const svgEl = avatar.querySelector("svg");
     svgEl.setAttribute("aria-hidden", "true");
     svgEl.removeAttribute("role");
     svgEl.removeAttribute("aria-label");
-    const bubble = el("div", { className: "bubble", hidden: true, role: "status", ariaLive: "polite" });
-    // Site shortcuts (YouTube's k, Gmail's c) must not fire while typing to Tuck.
-    for (const type of ["keydown", "keyup", "keypress"]) bubble.addEventListener(type, (e) => e.stopPropagation());
-    shadow.append(el("style", { textContent: css + STYLE }), el("div", { className: "dock" }, avatar, bubble));
-    document.documentElement.append(host);
-    root = shadow;
-    makeDraggable(avatar);
+    dock().style.setProperty("--tk-w", `${SIZE.width}px`);
+    dock().style.setProperty("--tk-h", `${SIZE.height}px`);
+    setPose(pose);
     place();
-    window.addEventListener("resize", place);
-    return true;
   }
 
-  function setState(state) {
+  function setPose(next) {
+    pose = next;
+    clearTimeout(spriteTimer);
     const svg = art();
-    svg.dataset.state = state;
-    // Replay the state's entrance even when the state repeats.
+    // "Keep Tuck still" for SVG skins too (their CSS stops on data-motion="off").
+    if (motion === "off") svg.dataset.motion = "off";
+    else delete svg.dataset.motion;
+    for (const [name, value] of Object.entries(poseAttrs(skin, next))) svg.setAttribute(name, value);
+    svg.dataset.item = item;
+    if (isSprite()) return playSprite(svg.dataset.pose);
+    // Replay the pose's entrance even when the pose repeats.
     for (const part of svg.querySelectorAll("*"))
       for (const a of part.getAnimations()) if (a.effect?.getTiming().iterations !== Infinity) (a.cancel(), a.play());
   }
@@ -198,10 +301,12 @@
   function closeBubble() {
     root.querySelector(".bubble").hidden = true;
     if (current) current = { ...current, bubble: null };
-    setState("resting");
+    setPose(resting);
   }
 
   function leave() {
+    cancelAnimationFrame(enterFrame); // a show still waiting for its frame must not bring Tuck back
+    clearTimeout(spriteTimer); // a hidden Tuck plays nothing
     dock().classList.remove("in");
     current = null;
   }
@@ -270,6 +375,7 @@
             onclick: () => send({ type: "complete-intent", from: "tuck" }),
           }),
           el("button", { className: "b", textContent: "Change", onclick: () => send({ type: "tuck-change" }) }),
+          el("button", { className: "b", textContent: "Tuck away", onclick: () => send({ type: "tuck-away" }) }),
         ),
       );
     }
@@ -304,36 +410,58 @@
           className: "close",
           ariaLabel: "Close",
           textContent: "×",
-          onclick: () => (b.kind === "nudge" ? send({ type: "respond", choice: "dismiss" }) : closeBubble()),
+          onclick: () => {
+            if (b.kind === "nudge") return send({ type: "respond", choice: "dismiss" });
+            // Closing the goal form without a goal: Tuck stops offering it on new pages for a while.
+            if (b.kind === "goal") send({ type: "goal-form-closed" });
+            closeBubble();
+          },
         }),
       );
   }
 
   async function show(v, assets) {
+    const seen = hides;
     if (!root?.isConnected) await loadPos();
-    if (!ensureRoot(assets)) return;
-    // Quiet presence never interrupts what is on screen.
-    if (v.quiet && current) return;
+    if (seen !== hides || !ensureRoot(assets)) return;
+    // Quiet presence never interrupts a word on screen; after a hop it is what Tuck settles to.
+    if (v.quiet) resting = v.pose;
+    if (v.quiet && current?.settle) return void (current.settle = v.pose);
+    if (v.quiet && current?.bubble) return;
     timers.forEach(clearTimeout);
     timers = [];
     current = v;
+    if (v.settle) resting = v.settle; // what Tuck rests as once the word closes
     place();
-    setState(v.tuck);
+    setPose(v.pose);
     drawBubble(v.bubble);
     if (v.instant) {
       // Back after a reload: already there, not sliding in again.
       dock().style.transition = "none";
       dock().classList.add("in");
       requestAnimationFrame(() => (dock().style.transition = ""));
-    } else requestAnimationFrame(() => dock().classList.add("in"));
-    if (v.settle) later(1400, () => setState(v.settle));
+    } else {
+      cancelAnimationFrame(enterFrame);
+      enterFrame = requestAnimationFrame(() => {
+        enterFrame = null;
+        dock().classList.add("in");
+      });
+    }
+    if (v.settle)
+      later(1400, () => {
+        if (!current?.settle) return; // gone meanwhile
+        setPose(current.settle);
+        current.settle = null;
+      });
     if (v.closeBubbleAfterMs) later(v.closeBubbleAfterMs, closeBubble);
+    if (v.leaveAfterMs) later(v.leaveAfterMs, leave);
   }
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "tuck-show") show(msg.view, msg.assets);
-    else if (msg?.type === "tuck-hide" && root) leave();
+    else if (msg?.type === "tuck-look" && root?.isConnected) (ensureRoot(msg.assets), setPose(pose));
+    else if (msg?.type === "tuck-hide") (hides++, root && leave());
     else if (msg?.type === "tuck-rest" && root && current)
-      (drawBubble(null), setState("resting"), (current.bubble = null));
+      (drawBubble(null), setPose(resting), (current.bubble = null));
   });
 })();

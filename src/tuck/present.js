@@ -1,4 +1,4 @@
-// What Tuck shows for an engine trigger or a goal event: its state and its bubble.
+// What Tuck shows for an engine trigger or a goal event: its pose (skins.js POSES) and its bubble.
 // Pure; background.js sends the result to the page (overlay.js draws it) and the
 // popup shares the same words. Design §12.
 import { siteName, templateNudge } from "./voice.js";
@@ -21,22 +21,29 @@ export function nudgeText(t) {
     unsure: !!e.unsure,
     agent: e.agent,
     again: !!e.agentAgain,
+    done: !!e.agentDone,
     agentFacts: { folder: e.agentFolder, minutes: e.agentMin, tool: e.agentTool },
     task: { title: t.intentTitle, step: t.intentStep },
   });
 }
 
+// While Tuck is hidden ("Tuck away"), these are the only words that still come:
+// a drift (fragmentation counts as one), the coding agent's word, and the day's goal form.
+const WHILE_AWAY = new Set(["drift", "fragmentation", "agent", "session_start"]);
+export const comesWhileAway = (kind) => WHILE_AWAY.has(kind);
+
 const goalForm = (text, pickUp = []) => ({ kind: "goal", text, pickUp });
 
-// input: {trigger, loops} for an engine trigger, or {event, intent} for
-// "goal_set" | "goal_done" | "resolved" | "presence" | "card". Returns null when Tuck stays away.
-export function present({ trigger, loops = [], event, intent }) {
+// input: {trigger, loops} for an engine trigger, or {event, intent, agent} for
+// "goal_set" | "goal_done" | "resolved" | "back" | "presence" | "break" | "card" | "away". Returns null when
+// Tuck stays away. Poses follow the spec's pose table (2026-11-04-tuck-v1-skins-design.md).
+export function present({ trigger, loops = [], event, intent, agent }) {
   if (trigger) {
     if (trigger.level < 1) return null;
     const { kind, level, id } = trigger;
     if (kind === "session_start")
       return {
-        tuck: "checkin",
+        pose: "hello",
         bubble: goalForm(
           nudgeText(trigger),
           loops.slice(0, 2).map((l) => l.title),
@@ -45,7 +52,7 @@ export function present({ trigger, loops = [], event, intent }) {
     if (kind === "return" || kind === "break_over") {
       const buttons = kind === "return" ? [ANSWERS.back] : [ANSWERS.back, ANSWERS.break];
       return {
-        tuck: "checkin",
+        pose: "hello",
         bubble: { kind: "nudge", text: nudgeText(trigger), buttons, dismissable: true },
         triggerId: id,
       };
@@ -53,7 +60,7 @@ export function present({ trigger, loops = [], event, intent }) {
     // Tuck cannot bring a terminal to the front, so there is nothing to take the person back to.
     if (kind === "agent")
       return {
-        tuck: "checkin",
+        pose: "wait",
         bubble: {
           kind: "nudge",
           text: nudgeText(trigger),
@@ -82,10 +89,10 @@ export function present({ trigger, loops = [], event, intent }) {
             buttons: [ANSWERS.back, ANSWERS.related, ANSWERS.break],
             dismissable: true,
           };
-      return { tuck: "checkin", bubble, triggerId: id };
+      return { pose: "drift", bubble, triggerId: id };
     }
     return {
-      tuck: "thinking",
+      pose: "drift",
       bubble: {
         kind: "nudge",
         text: nudgeText(trigger),
@@ -95,26 +102,40 @@ export function present({ trigger, loops = [], event, intent }) {
       triggerId: id,
     };
   }
+  // Tuck's pose with nothing to say: resting, or working while the coding agent does.
+  const resting = agent === "working" ? "work" : "rest";
   switch (event) {
     case "goal_set":
       return {
-        tuck: "welcome",
-        settle: "resting",
+        pose: "happy",
+        settle: resting,
         bubble: { kind: "note", text: "Got it. Let's go." },
         closeBubbleAfterMs: 2000,
       };
+    case "away":
+      // Tucked away from the card: one line on the way out, so the way back is known.
+      return {
+        pose: "hello",
+        bubble: { kind: "note", text: "Okay. Click the toolbar icon to bring me back." },
+        leaveAfterMs: 2500,
+      };
     case "goal_done":
-      return { tuck: "checkin", bubble: goalForm("Nice work. What's next?") };
+      return { pose: "hello", bubble: goalForm("Nice work. What's next?") };
     case "resolved":
-      return { tuck: "welcome", settle: "resting", bubble: null };
+    case "back":
+      return { pose: "happy", settle: resting, bubble: null };
     case "presence":
-      // Tuck rests on every page while there is a goal; quiet: no entrance if already there.
-      return { tuck: "resting", bubble: null, quiet: true };
+      // Tuck rests on every page while there is a goal, and works while the coding agent
+      // does; quiet: no entrance if already there.
+      return { pose: resting, bubble: null, quiet: true };
+    case "break":
+      // Asleep on the page for the whole break.
+      return { pose: "sleep", bubble: null, quiet: true };
     case "card":
       // The plan the agent made from the person's notes (#78), when it made one.
       return intent
         ? {
-            tuck: "checkin",
+            pose: "hello",
             bubble: {
               kind: "card",
               text: intent.title,
@@ -122,7 +143,7 @@ export function present({ trigger, loops = [], event, intent }) {
               ...(intent.plan && { plan: intent.plan.steps.map((s) => s.step), watchOut: intent.plan.watchOut }),
             },
           }
-        : { tuck: "checkin", bubble: goalForm("What are we working on?") };
+        : { pose: "hello", bubble: goalForm("What are we working on?") };
     default:
       return null;
   }

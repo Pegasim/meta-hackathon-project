@@ -1,0 +1,39 @@
+{
+  "id": "paper",
+  "name": "Paper",
+  "kind": "svg",
+  "size": { "width": 64, "height": 64 },
+  "poses": [],
+  "stateAttr": "data-state",
+  "fallback": {
+    "rest": "resting",
+    "work": "resting",
+    "wait": "checkin",
+    "drift": "checkin",
+    "happy": "welcome",
+    "sleep": "sleeping",
+    "hello": "checkin"
+  },
+  "items": ["none"],
+  "theme": {
+    "light": {
+      "accent": "#94BFAE",
+      "onAccent": "#1f2a26",
+      "surface": "#ffffff",
+      "ink": "#24262d",
+      "muted": "#65616d",
+      "outline": "#dfe3e8",
+      "pink": "#e98a95"
+    },
+    "dark": {
+      "accent": "#94BFAE",
+      "onAccent": "#1f2a26",
+      "surface": "#24262d",
+      "ink": "#eceef1",
+      "muted": "#a9adb6",
+      "outline": "#3a3d46",
+      "pink": "#e98a95"
+    },
+    "rim": "#FFFFFF"
+  }
+}

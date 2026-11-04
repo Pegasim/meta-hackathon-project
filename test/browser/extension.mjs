@@ -41,6 +41,8 @@ const server = http.createServer((req, res) => {
   if (req.url === "/repo") return page("cart.js · acme/shop");
   if (req.url === "/video") return page("Top 10 F1 crashes - Video");
   if (req.url === "/tax") return page("Tax form");
+  if (req.url === "/notes") return page("Reading notes");
+  if (req.url === "/recipes") return page("Recipes");
   // Issue #5: one social site, three pages. The title says "Social" on all of them.
   const reply = `<textarea id="reply" placeholder="Write a message"></textarea>`;
   if (req.url === "/chat")
@@ -427,7 +429,51 @@ await repoTab.goto(repo);
 const tuck = repoTab.locator("#tuck-companion");
 await greetingShown(tuck);
 const greeting = await tuck.locator(".bubble .text").textContent();
-const greetState = await tuck.locator("svg.tuck").getAttribute("data-state");
+const greetState = await tuck.locator("svg.tuck").getAttribute("data-pose");
+// The default skin is the pastel kitten, a sprite skin: its greeting plays the waving strip.
+const greetStrip = await tuck.locator("svg.tuck image.tuck__strip").getAttribute("href");
+// The bubble wears the skin's light palette (kitten), from the theme variables alone.
+const bubbleLook = await tuck.locator(".bubble").evaluate((b) => {
+  const css = getComputedStyle;
+  const start = b.querySelector("button.start");
+  return {
+    bg: css(b).backgroundColor,
+    primaryBg: css(start).backgroundColor,
+    styleText: b.getRootNode().querySelector("style").textContent,
+  };
+});
+bubbleLook.hostAt = bubbleLook.styleText.indexOf(":host { all: initial; }");
+// The body's light rim survives the overlay's own shadow; every focus ring is in the ink
+// colour (mint on cream is below the 3:1 floor); the slide-in respects reduced motion.
+await repoTab.waitForTimeout(400); // the goal box takes focus 300 ms after drawing
+const ringLook = await tuck.evaluate((host) => {
+  const shadow = host.shadowRoot;
+  const input = shadow.querySelector("input[name=goal]");
+  const rings = [...shadow.querySelector("style").sheet.cssRules]
+    .filter((r) => r.selectorText?.includes(":focus-visible"))
+    .map((r) => r.cssText);
+  return {
+    filter: getComputedStyle(shadow.querySelector("svg.tuck")).filter,
+    inputFocused: shadow.activeElement === input,
+    inputRing: getComputedStyle(input).outlineColor,
+    ink: getComputedStyle(input).color,
+    rings,
+  };
+});
+await repoTab.emulateMedia({ reducedMotion: "reduce" });
+ringLook.reducedSlide = await tuck.locator(".dock").evaluate((d) => getComputedStyle(d).transitionDuration);
+// Motion (Settings → Tuck's look): with the computer's reduce motion on, "Always animate"
+// still plays the strips; following the computer holds one frame.
+const stripX = () => tuck.locator("svg.tuck image.tuck__strip").getAttribute("x");
+const framesSeen = async (setting) => {
+  await settingsPage.evaluate((m) => chrome.storage.local.set({ tuckMotion: m }), setting);
+  await repoTab.waitForTimeout(200);
+  const xs = new Set();
+  for (let i = 0; i < 8; i++) xs.add(await stripX(), await repoTab.waitForTimeout(110));
+  return xs.size;
+};
+const motion = { always: await framesSeen("on"), follow: await framesSeen("system") };
+await repoTab.emulateMedia({ reducedMotion: "no-preference" });
 if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-greeting.png") });
 // Drag Tuck to the left: the bubble then opens rightwards.
 await repoTab.waitForTimeout(600); // the slide-in
@@ -440,16 +486,36 @@ const dragged = await tuck.locator(".avatar").boundingBox();
 const bubbleAfterDrag = await tuck.locator(".bubble").boundingBox();
 const formStillOpen = await tuck.locator("input[name=goal]").isVisible();
 if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-dragged-left.png") });
+// No goal yet: Tuck greets on every new page with the goal form. Closed without a goal,
+// it stays on the next page quietly, without the form.
+const noGoal = {};
+const notesTab = await ctx.newPage();
+await notesTab.goto(`http://localhost:${port}/notes`);
+const notesForm = notesTab.locator("#tuck-companion .bubble input[name=goal]");
+noGoal.formOnNewTab = await notesForm.waitFor({ timeout: 8000 }).then(
+  () => 1,
+  () => 0,
+);
+await notesTab.locator("#tuck-companion .bubble .close").click();
+const recipesTab = await ctx.newPage();
+await recipesTab.goto(`http://localhost:${port}/recipes`);
+await recipesTab.locator("#tuck-companion .dock.in").waitFor({ timeout: 8000 });
+await recipesTab.waitForTimeout(500);
+noGoal.formAfterClosing = await recipesTab.locator("#tuck-companion .bubble input[name=goal]").count();
+await notesTab.close();
+await recipesTab.close();
+await repoTab.bringToFront();
+await tuck.locator("input[name=goal]").waitFor({ timeout: 8000 });
 await tuck.locator("input[name=goal]").fill("Fix the checkout bug");
 await tuck.locator("input[name=step]").fill("Write the failing test");
 await tuck.locator("button.start").click();
 await tuck.locator(".bubble .text", { hasText: "Got it" }).waitFor();
-// Tuck stays, resting; a click is a check-in wave with the goal card.
+// Tuck stays, resting; a click is a hello with the goal card.
 await repoTab.waitForTimeout(2500);
-const restState = await tuck.locator("svg.tuck").getAttribute("data-state");
+const restState = await tuck.locator("svg.tuck").getAttribute("data-pose");
 await tuck.locator(".avatar").click();
 await tuck.locator(".bubble .text", { hasText: "Fix the checkout bug" }).waitFor();
-const clickState = await tuck.locator("svg.tuck").getAttribute("data-state");
+const clickState = await tuck.locator("svg.tuck").getAttribute("data-pose");
 await tuck.locator(".bubble .close").click();
 await repoTab.waitForTimeout(1500);
 
@@ -458,7 +524,7 @@ await repoTab.waitForTimeout(1500);
 await repoTab.reload();
 await tuck.waitFor({ state: "attached", timeout: 10000 });
 const afterReload = {
-  state: await tuck.locator("svg.tuck").getAttribute("data-state"),
+  state: await tuck.locator("svg.tuck").getAttribute("data-pose"),
   formOpen: await tuck.locator("input[name=goal]").isVisible(),
   shown: await tuck.locator(".dock.in").count(),
   hosts: await repoTab.locator("#tuck-companion").count(),
@@ -492,6 +558,35 @@ async function clickOnCard(button) {
   await popup.waitForTimeout(500);
   return text;
 }
+// Tuck's pose on a page (spec pose table), and waiting for one: the last pose seen.
+const poseOf = (page) => page.locator("#tuck-companion svg.tuck").getAttribute("data-pose", { timeout: 2000 });
+async function waitForPose(page, pose, poke = false) {
+  let seen = null;
+  for (let i = 0; i < 40 && seen !== pose; i++) {
+    if (i) await page.waitForTimeout(250);
+    if (poke) await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+    seen = await poseOf(page).catch(() => null);
+  }
+  return seen;
+}
+// Stops the extension's service worker the way Chrome stops an idle one (its Stop button in
+// chrome://serviceworker-internals; Playwright has no call for it). A mark set in the worker
+// through the test's handle tells that the worker came back fresh.
+async function stopWorker() {
+  await worker.evaluate(() => (globalThis.__beforeStop = true));
+  const internals = await ctx.newPage();
+  await internals.goto("chrome://serviceworker-internals/");
+  const registration = internals.locator(".serviceworker-registration", { hasText: ext });
+  await registration.getByRole("button", { name: "Stop" }).first().click();
+  let stopped = false;
+  for (let i = 0; i < 40 && !stopped; i++) {
+    stopped = /Running Status: STOPPED/.test(await registration.innerText());
+    if (!stopped) await internals.waitForTimeout(100);
+  }
+  await internals.close();
+  return stopped;
+}
+const workerIsFresh = () => worker.evaluate(() => globalThis.__beforeStop === undefined);
 
 // Browse: the repo, then the video. The model judges each page once.
 await repoTab.bringToFront();
@@ -501,18 +596,56 @@ await videoTab.goto(video);
 await videoTab.bringToFront();
 const drift1 = await waitForNewDrift(null);
 const badge = await popup.evaluate(() => chrome.action.getBadgeText({}));
-// Tuck on the video speaks at the first detection (L1): a check-in wave with the
-// message. Still drifting, it turns to thinking (L2).
+// Tuck on the video speaks at the first detection (L1), in the drift pose, with the
+// message. Still drifting, the L2 word comes, in the drift pose too. Both say the same
+// drafted line, so the L2 bubble is known by its text being drawn anew.
 const onVideo = videoTab.locator("#tuck-companion");
 await onVideo.locator(".bubble button[data-choice=back]").waitFor({ timeout: 2500 });
-const firstState = await onVideo.locator("svg.tuck").getAttribute("data-state");
+const firstState = await onVideo.locator("svg.tuck").getAttribute("data-pose");
 const firstText = await onVideo.locator(".bubble .text").textContent();
-for (let i = 0; i < 40 && (await onVideo.locator("svg.tuck").getAttribute("data-state")) !== "thinking"; i++)
-  await videoTab.waitForTimeout(250);
-const nudgeState = await onVideo.locator("svg.tuck").getAttribute("data-state");
+const firstLine = await onVideo.locator(".bubble .text").elementHandle();
+let secondWord = false;
+for (let i = 0; i < 60 && !secondWord; i++) {
+  const t = await lastTrigger();
+  secondWord = t?.id !== drift1.id && t?.level >= 2 && !(await firstLine.evaluate((e) => e.isConnected));
+  if (!secondWord) await videoTab.waitForTimeout(250);
+}
+const nudgeState = await onVideo.locator("svg.tuck").getAttribute("data-pose");
 const videoAvatar = await onVideo.locator(".avatar").boundingBox();
 const cardText = await onVideo.locator(".bubble .text").textContent();
 if (shots) await videoTab.screenshot({ path: path.join(shots, "tuck-nudge.png") });
+// Choosing another look in settings changes Tuck on the page in place: the open word and its
+// buttons stay; the toolbar icon follows the skin.
+await settingsPage.bringToFront();
+await settingsPage.reload();
+await worker.evaluate(() => {
+  globalThis.__icons = [];
+  const set = chrome.action.setIcon.bind(chrome.action);
+  chrome.action.setIcon = (details) => (globalThis.__icons.push(details), set(details));
+});
+await settingsPage.selectOption("#tuck-skin", "paper");
+const backButton = onVideo.locator(".bubble button[data-choice=back]");
+await onVideo.locator("svg.tuck[data-state]").waitFor({ timeout: 5000 });
+const paperKeepsBubble = await backButton.isVisible();
+const paperIcon = await worker.evaluate(() => globalThis.__icons.at(-1)?.path?.[16]);
+await settingsPage.selectOption("#tuck-skin", "v1");
+await onVideo.locator("svg.tuck:not([data-state])").waitFor({ timeout: 5000 });
+await settingsPage.selectOption("#tuck-item", "frisbee");
+await onVideo.locator("svg.tuck[data-item=frisbee]").waitFor({ timeout: 5000 });
+const frisbeeKeepsBubble = await backButton.isVisible();
+await settingsPage.selectOption("#tuck-item", "bandana");
+await onVideo.locator("svg.tuck[data-item=bandana]").waitFor({ timeout: 5000 });
+// A skin the popup does not know falls back to the default, as the background does.
+await settingsPage.evaluate(() => chrome.storage.local.set({ tuckSkin: "gone" }));
+await popup.reload();
+// The popup draws its mark after its module's top-level await, so after the load event.
+await popup
+  .locator("#tuck-mark svg.tuck")
+  .waitFor({ timeout: 5000 })
+  .catch(() => {});
+const popupFallback = await popup.locator("#tuck-mark svg.tuck").count();
+await settingsPage.evaluate(() => chrome.storage.local.set({ tuckSkin: "kitten" }));
+await videoTab.bringToFront();
 await onVideo.locator(".bubble button[data-choice=back]").click();
 await popup.waitForTimeout(800);
 if (shots) await popup.screenshot({ path: path.join(shots, "popup-trigger.png"), fullPage: true });
@@ -818,10 +951,84 @@ await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 const driftOff = await waitForNewDrift(driftSlowFeed.id);
 
-// Whose turn it is in a coding agent (#11): while it works the same drifting page is a
-// wait; when it stops Tuck says so, once.
+// A coding agent's status, as the bridge sends it (#11).
 const agentSays = (status) =>
   popup.evaluate((s) => chrome.runtime.sendMessage({ type: "agent-status", status: s, session: "s1" }), status);
+
+// A break from the nudge: Tuck stays on the page, asleep, for the whole break (spec pose
+// table). Review Focus 1: the service worker stops during the break; a page opened then is
+// drawn from the state kept in storage, still asleep. The break ends on a work page with
+// nothing to say, and Tuck wakes there quietly. While the agent works, the page in front
+// shows Tuck working, also on a fresh page after another stop.
+await settingsPage.evaluate(async () => {
+  const { attentionConfig } = await chrome.storage.local.get("attentionConfig");
+  await chrome.storage.local.set({ attentionConfig: { ...attentionConfig, breakMin: 0.25 } }); // 15 s
+});
+await chatTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+const breakButton = chatTab.locator("#tuck-companion .bubble button[data-choice=break]");
+await breakButton.waitFor({ timeout: 15000 });
+const breakFrom = await lastTrigger();
+await breakButton.click();
+const onBreak = {
+  pose: await waitForPose(chatTab, "sleep"),
+  bubble: await chatTab.locator("#tuck-companion .bubble").isVisible(),
+  shown: await chatTab.locator("#tuck-companion .dock.in").count(),
+};
+const stoppedOnBreak = await stopWorker();
+const breakPage = await ctx.newPage();
+await breakPage.goto(compose); // not the video: its judgments are counted below
+await breakPage.bringToFront();
+await breakPage.locator("#tuck-companion").waitFor({ state: "attached", timeout: 10000 });
+const afterStopOnBreak = {
+  pose: await waitForPose(breakPage, "sleep"),
+  bubble: await breakPage.locator("#tuck-companion .bubble").isVisible(),
+  fresh: await workerIsFresh(),
+};
+// The goal card on a break: Tuck says hello, and goes back to sleep when it closes.
+await breakPage.locator("#tuck-companion .avatar").click();
+await breakPage.locator("#tuck-companion .bubble .text", { hasText: "Fix the checkout bug" }).waitFor();
+const cardOnBreak = await poseOf(breakPage);
+await breakPage.locator("#tuck-companion .bubble .close").click();
+const afterCardOnBreak = await waitForPose(breakPage, "sleep");
+await breakPage.close();
+const wakeTab = await ctx.newPage();
+await wakeTab.goto(repo);
+await wakeTab.bringToFront();
+await wakeTab.locator("#tuck-companion").waitFor({ state: "attached", timeout: 10000 });
+const asleepAtWork = await waitForPose(wakeTab, "sleep");
+// Until the break runs out, then a look at the page in front.
+const { breakUntil } = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).engine;
+await wakeTab.waitForTimeout(Math.max(0, breakUntil - Date.now()) + 250);
+const wokePose = await waitForPose(wakeTab, "rest", true);
+const afterBreak = {
+  bubble: await wakeTab.locator("#tuck-companion .bubble").isVisible(),
+  trigger: (await lastTrigger())?.kind,
+  state: (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).engine.state,
+};
+await agentSays("working");
+const agentWorkPose = await waitForPose(wakeTab, "work");
+const agentWorkBubble = await wakeTab.locator("#tuck-companion .bubble").isVisible();
+const stoppedWhileWorking = await stopWorker();
+const workPage = await ctx.newPage();
+await workPage.goto(repo);
+await workPage.bringToFront();
+await workPage.locator("#tuck-companion").waitFor({ state: "attached", timeout: 10000 });
+const afterStopWorking = { pose: await waitForPose(workPage, "work"), fresh: await workerIsFresh() };
+await agentSays("unknown");
+const afterAgentStops = await waitForPose(workPage, "rest");
+await workPage.close();
+await wakeTab.close();
+await settingsPage.evaluate(async () => {
+  const { attentionConfig } = await chrome.storage.local.get("attentionConfig");
+  delete attentionConfig.breakMin;
+  await chrome.storage.local.set({ attentionConfig });
+});
+await chatTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+
+// Whose turn it is in a coding agent (#11): while it works the same drifting page is a
+// wait; when it stops Tuck says so, once.
 const agentTab = await ctx.newPage();
 await agentTab.goto(dockedSocial);
 await agentTab.bringToFront();
@@ -831,6 +1038,8 @@ await agentTab.waitForTimeout(500);
 const beforeWait = await lastTrigger();
 await agentTab.waitForTimeout(6000);
 const duringWait = await lastTrigger();
+const workPose = await waitForPose(agentTab, "work");
+const workBubble = await agentTab.locator("#tuck-companion .bubble").isVisible();
 const waitStatus = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }));
 const waitBadge = await popup.evaluate(() => chrome.action.getBadgeText({}));
 await agentSays("waiting_for_user");
@@ -839,6 +1048,7 @@ await agentTab.locator("#tuck-companion").waitFor({ state: "attached" });
 await agentTab.waitForTimeout(500);
 const agentWord = await lastTrigger();
 const agentBubble = await agentTab.locator("#tuck-companion .bubble").innerText();
+const waitPose = await poseOf(agentTab);
 // The popup answers an agent's word as the bubble does: nothing teaches about the page.
 await popup.reload();
 await popup.waitForSelector("#trigger:not([hidden])");
@@ -908,6 +1118,209 @@ await agentSays("completed");
 await setMode("focus");
 const afterOff = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }));
 await agentSays("unknown");
+await chatTab.bringToFront();
+
+// Tuck away (spec "Tuck away"): one click on the card hides Tuck; it then comes only for a drift
+// or an agent word, and leaves again after the answer. The popup's Bring Tuck back brings it
+// back, and so does the day's session start.
+const tuckAwayNow = () => popup.evaluate(async () => (await chrome.storage.local.get("tuckAway")).tuckAway === true);
+const dockCount = (page) => page.locator("#tuck-companion .dock.in").count();
+async function settledDockCount(page, wait = 1500) {
+  await page.waitForTimeout(wait);
+  return dockCount(page);
+}
+// An older tab with Tuck drawn on it, from before Tuck was tucked away.
+const awayOlder = await ctx.newPage();
+await awayOlder.goto(repo);
+await awayOlder.bringToFront();
+await awayOlder.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
+await awayOlder.evaluate(() => (document.title = "Tuck away: older tab"));
+const awayTab = await ctx.newPage();
+await awayTab.goto(repo);
+await awayTab.bringToFront();
+await awayTab.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
+await awayTab.locator("#tuck-companion .avatar").click();
+const tuckAwayButton = awayTab.locator("#tuck-companion .bubble button", { hasText: "Tuck away" });
+await tuckAwayButton.waitFor({ timeout: 5000 });
+await tuckAwayButton.click();
+const away = { flag: undefined, here: undefined, next: undefined };
+// Tuck says how to come back, then leaves.
+away.parting = await awayTab
+  .locator("#tuck-companion .dock.in .bubble:not([hidden]) .text", { hasText: "bring me back" })
+  .textContent({ timeout: 3000 })
+  .catch(() => null);
+await awayTab
+  .locator("#tuck-companion .dock.in")
+  .waitFor({ state: "detached", timeout: 5000 })
+  .catch(() => {});
+away.here = await settledDockCount(awayTab, 800);
+away.flag = await tuckAwayNow();
+// Every tab lets Tuck go, not just the one clicked: the older tab shows no Tuck in front.
+await awayOlder.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.olderTab = await settledDockCount(awayOlder, 800);
+// A Tuck left on a tab (drawn there while away, then another tab took the word) goes when
+// that tab comes to the front again.
+await awayTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await worker.evaluate(async () => {
+  const [tab] = await chrome.tabs.query({ title: "Tuck away: older tab" });
+  const read = async (f) => (await fetch(chrome.runtime.getURL(`tuck/skins/v1/${f}`))).text();
+  const assets = {
+    manifest: JSON.parse(await read("skin.json")),
+    svg: await read("tuck.svg"),
+    css: await read("tuck.css"),
+    item: "none",
+  };
+  await chrome.tabs.sendMessage(tab.id, { type: "tuck-show", view: { pose: "rest", bubble: null }, assets });
+});
+away.staleDrawn = await settledDockCount(awayOlder, 500);
+await awayOlder.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.staleOnSwitch = await settledDockCount(awayOlder, 800);
+// A click on a Tuck still on the page while away sends it away, not to the goal card.
+await worker.evaluate(async () => {
+  const [tab] = await chrome.tabs.query({ title: "Tuck away: older tab" });
+  const read = async (f) => (await fetch(chrome.runtime.getURL(`tuck/skins/v1/${f}`))).text();
+  const assets = {
+    manifest: JSON.parse(await read("skin.json")),
+    svg: await read("tuck.svg"),
+    css: await read("tuck.css"),
+    item: "none",
+  };
+  await chrome.tabs.sendMessage(tab.id, { type: "tuck-show", view: { pose: "rest", bubble: null }, assets });
+});
+await awayOlder.locator("#tuck-companion .dock.in").waitFor({ timeout: 3000 });
+await awayOlder.locator("#tuck-companion .avatar").click();
+away.clickWhileAway = await settledDockCount(awayOlder, 1000);
+away.cardWhileAway = await awayOlder.locator("#tuck-companion .bubble:not([hidden])").count();
+const awayNext = await ctx.newPage();
+await awayNext.goto(repo);
+await awayNext.bringToFront();
+away.next = await settledDockCount(awayNext);
+// A drift still comes, with its bubble, and the answer sends Tuck away again.
+const beforeAwayDrift = await lastTrigger();
+const awayDriftTab = await ctx.newPage();
+await awayDriftTab.goto(dockedSocial);
+await awayDriftTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await waitForNewDrift(beforeAwayDrift?.id ?? null);
+await awayDriftTab.locator("#tuck-companion .bubble button[data-choice=back]").waitFor({ timeout: 8000 });
+away.driftPose = await poseOf(awayDriftTab);
+await awayDriftTab.locator("#tuck-companion .bubble button[data-choice=back]").click();
+away.afterDrift = await settledDockCount(awayDriftTab, 2500);
+await awayDriftTab.close();
+// Clicking Tuck with the drift word open answers it as × does: Tuck leaves with it.
+const beforeAvatarDrift = await lastTrigger();
+const awayAvatarTab = await ctx.newPage();
+await awayAvatarTab.goto(dockedSocial);
+await awayAvatarTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await waitForNewDrift(beforeAvatarDrift?.id ?? null);
+await awayAvatarTab.locator("#tuck-companion .bubble button[data-choice=back]").waitFor({ timeout: 8000 });
+await awayAvatarTab.locator("#tuck-companion .avatar").click();
+away.afterAvatarClick = await settledDockCount(awayAvatarTab, 1500);
+away.avatarAnswer = (await lastTrigger())?.choice;
+await awayAvatarTab.close();
+// An agent's word comes, and Got it sends Tuck away again.
+await awayNext.bringToFront();
+await agentSays("working");
+await agentSays("waiting_for_user");
+await awayNext.locator("#tuck-companion .bubble button[data-choice=dismiss]").waitFor({ timeout: 8000 });
+away.agentPose = await poseOf(awayNext);
+await awayNext.locator("#tuck-companion .bubble button[data-choice=dismiss]").click();
+away.afterAgent = await settledDockCount(awayNext, 1500);
+await agentSays("unknown");
+// Review Focus 5: the word met a page Tuck cannot draw on; it comes once, on the next page that can.
+const awayNoDraw = await ctx.newPage();
+await awayNoDraw.goto("chrome://version");
+await awayNoDraw.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await agentSays("working");
+await agentSays("waiting_for_user");
+await awayNoDraw.waitForTimeout(500);
+const awayHeld = await ctx.newPage();
+await awayHeld.goto(repo);
+await awayHeld.bringToFront();
+await awayHeld.locator("#tuck-companion .bubble button[data-choice=dismiss]").waitFor({ timeout: 8000 });
+away.heldCount = await awayHeld.locator("#tuck-companion .bubble").count();
+await awayHeld.locator("#tuck-companion .bubble button[data-choice=dismiss]").click();
+away.afterHeld = await settledDockCount(awayHeld, 1500);
+await agentSays("unknown");
+const awayLater = await ctx.newPage();
+await awayLater.goto(repo);
+await awayLater.bringToFront();
+away.later = await settledDockCount(awayLater);
+// The popup's card is the way back. In front: a page Tuck was drawn on and left (a page
+// that never had Tuck gets it from any look at it, as after a reload).
+await awayHeld.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await awayHeld.waitForTimeout(500);
+await popup.reload();
+await popup.locator("#bring-back").waitFor({ timeout: 5000 });
+away.popupWhileAway = {
+  card: await popup.isVisible("#away-card"),
+  text: await popup.locator("#away-card span").textContent(),
+  awayButton: await popup.isVisible("#tuck-away"),
+};
+await popup.click("#bring-back");
+await popup.waitForTimeout(300);
+away.flagAfterSwitch = await tuckAwayNow();
+// Tuck is back at once on the page in front, without a page change.
+away.backInPlace = await awayHeld
+  .locator("#tuck-companion .dock.in")
+  .waitFor({ timeout: 5000 })
+  .then(() => 1)
+  .catch(() => 0);
+away.popupAfterBack = { card: await popup.isVisible("#away-card"), awayButton: await popup.isVisible("#tuck-away") };
+// The popup's Tuck away hides Tuck on the page in front; Bring Tuck back again for what follows.
+await popup.click("#tuck-away");
+await popup.waitForTimeout(300);
+away.popupAwayFlag = await tuckAwayNow();
+away.afterPopupAway = await settledDockCount(awayHeld, 800);
+await popup.click("#bring-back");
+await awayHeld.locator("#tuck-companion .dock.in").waitFor({ timeout: 5000 });
+const awayBack = await ctx.newPage();
+await awayBack.goto(repo);
+await awayBack.bringToFront();
+await awayBack.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
+away.restingAgain = await poseOf(awayBack);
+// A new day's session start clears it.
+await awayBack.locator("#tuck-companion .avatar").click();
+await awayBack.locator("#tuck-companion .bubble button", { hasText: "Tuck away" }).click();
+await awayBack.waitForTimeout(500);
+away.hiddenAgain = await tuckAwayNow();
+await awayBack
+  .locator("#tuck-companion .dock.in")
+  .waitFor({ state: "detached", timeout: 5000 })
+  .catch(() => {});
+// Done on a goal of its own, so the checkout goal is replaced, not finished (the day
+// summary below says so).
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Try Tuck away" }));
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+// A look at the page with no goal (the heartbeat's): the day's greeting was had before
+// the restart above, so it does not come again.
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.afterDoneWhileAway = await settledDockCount(awayBack, 1500);
+await agentSays("working");
+await popup.evaluate(() => chrome.storage.session.set({ pendingGreeting: true }));
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await awayBack.locator("#tuck-companion .bubble input[name=goal]").waitFor({ timeout: 10000 });
+away.flagAfterGreeting = await tuckAwayNow();
+// The goal set from Tuck's form while the agent works: once the note closes, Tuck works.
+await awayBack.locator("#tuck-companion .bubble input[name=goal]").fill("Fix the checkout bug");
+await awayBack.locator("#tuck-companion button.start").click();
+await awayBack.locator("#tuck-companion .bubble .text", { hasText: "Got it" }).waitFor({ timeout: 5000 });
+await awayBack.waitForTimeout(2600);
+away.goalSetWhileWorking = await poseOf(awayBack);
+await agentSays("unknown");
+// The greeting named the due to-do item (once a day); let the reminder test below hear it fresh.
+await popup.evaluate(async () => {
+  const { loops } = await chrome.storage.local.get("loops");
+  for (const l of Object.values(loops ?? {})) delete l.saidOn;
+  await chrome.storage.local.set({ loops });
+});
+for (const page of [awayOlder, awayTab, awayNext, awayNoDraw, awayHeld, awayLater, awayBack]) await page.close();
 await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 
@@ -1000,6 +1413,17 @@ await lastingRow.locator("button").click();
 await settingsPage.waitForTimeout(300);
 const forgotten = await preferences(lastingKey);
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+
+// Switched on with no goal: Tuck asks for one at once (the day's greeting went by while off).
+await chatTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await setMode("off");
+await setMode("focus");
+const switchedOnGreeting = await chatTab
+  .locator("#tuck-companion .dock.in .bubble:not([hidden])", { has: chatTab.locator("input[name=goal]") })
+  .locator(".text")
+  .textContent({ timeout: 5000 })
+  .catch(() => null);
 
 // Issue #29: the to-do list is what the task node kept from the open loops, the first 7 in
 // sight. A note to keep watching and a task a later note closed are not on it, and Not a
@@ -1373,26 +1797,57 @@ assert.match(partialRows, /Run errand/);
 assert.doesNotMatch(partialRows, /Rent went up/, "with some entries judged, an unread one is still not listed");
 assert.match(partialStatus, /1 note with a next action/);
 assert.equal(greeting, "Hi. What are we working on today?");
-assert.equal(greetState, "checkin");
-assert.equal(restState, "resting", "Tuck rests on the page once the goal is set");
+assert.equal(greetState, "hello");
+assert.match(
+  greetStrip ?? "",
+  /tuck\/skins\/kitten\/frames\/hello\.png$/,
+  "the greeting plays the kitten's waving strip",
+);
+assert.equal(bubbleLook.bg, "rgb(255, 248, 252)", "the bubble is the skin's surface");
+assert.ok(motion.always > 1, `"Always animate" plays the strip under reduce motion: ${motion.always} frames`);
+assert.equal(motion.follow, 1, "following the computer's reduce motion holds one frame");
+assert.deepEqual(noGoal, { formOnNewTab: 1, formAfterClosing: 0 }, "no goal: the form on a new page, then quiet");
+assert.equal(bubbleLook.primaryBg, "rgb(201, 179, 242)", "the primary button is the skin's accent");
+assert.match(ringLook.filter, /drop-shadow\(rgb\(255, 255, 255\) 0px 0px 0\.6px\)/, "the rim shows on the page");
+assert.match(ringLook.filter, /drop-shadow\(rgba\(0, 0, 0, 0\.18\) 0px 2px 6px\)/, "with the soft shadow");
+assert.equal(ringLook.inputFocused, true, "the goal box has focus, so its ring is drawn");
+assert.equal(ringLook.inputRing, ringLook.ink, "the focus ring is the ink colour");
+assert.equal(ringLook.rings.length, 4, `avatar, buttons, × and inputs: ${ringLook.rings}`);
+for (const ring of ringLook.rings)
+  assert.match(ring, /outline: 2px solid var\(--tk-ink\)/, `every focus ring is ink: ${ring}`);
+assert.match(ringLook.reducedSlide, /^0s(, 0s)*$/, "no slide-in with reduced motion");
+assert.ok(bubbleLook.hostAt >= 0, "the overlay's own CSS marker was found, so the colour check is not vacuous");
+assert.doesNotMatch(
+  bubbleLook.styleText.slice(bubbleLook.hostAt),
+  /#[0-9a-f]{3,6}\b/i,
+  "the bubble CSS has no literal colours",
+);
+assert.equal(restState, "rest", "Tuck rests on the page once the goal is set");
 assert.deepEqual(
   afterReload,
-  { state: "resting", formOpen: false, shown: 1, hosts: 1 },
+  { state: "rest", formOpen: false, shown: 1, hosts: 1 },
   "after a reload Tuck is back on the page, resting, once",
 );
-assert.equal(clickState, "checkin", "clicking Tuck is a check-in");
+assert.equal(clickState, "hello", "clicking Tuck is a hello");
 assert.ok(dragged.x < 100, `dragged to the left: ${dragged.x}`);
 assert.ok(bubbleAfterDrag.x >= dragged.x, "on the left, the bubble opens rightwards");
 assert.ok(formStillOpen, "a drag is not a click");
 assert.ok(videoAvatar.x < 100, `Tuck remembers where it was put: ${videoAvatar.x}`);
 assert.equal(intentShown, "Fix the checkout bug");
 assert.equal(drift1.level, 1);
-assert.equal(firstState, "checkin", "the first detection is a visible wave");
+assert.equal(firstState, "drift", "the first detection is a visible drift pose");
 assert.equal(firstText, "Still on the video? Back to the failing test.", "Tuck says the model's line");
 assert.ok(nudgeCalls.length >= 1);
 assert.match(nudgeCalls[0][1].content, /Site now: localhost/);
 assert.match(nudgeCalls[0][1].content, /Next step: Write the failing test/);
-assert.equal(nudgeState, "thinking");
+assert.ok(secondWord, "the L2 word was drawn");
+assert.equal(nudgeState, "drift");
+assert.equal(paperIcon, "tuck/skins/paper/icons/16.png", "the toolbar icon follows the skin");
+assert.ok(paperKeepsBubble, "a new skin keeps the word on screen, buttons and all");
+assert.ok(frisbeeKeepsBubble, "a new item keeps the word on screen");
+// The day's greeting with the goal form; its line is how the last goal went when there was one (#46).
+assert.ok(switchedOnGreeting, "switched on with no goal, Tuck greets with the goal form");
+assert.equal(popupFallback, 1, "the popup draws the default skin when the stored one is unknown");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
 const looks = calls.filter((m) => /excerpt/.test(m[0].content));
 const judged = calls.filter((m) => !/excerpt/.test(m[0].content));
@@ -1532,6 +1987,27 @@ assert.ok(
   ),
   "the log says the word was taken back, and why",
 );
+assert.equal(workPose, "work", "while the agent works, Tuck on the page works");
+assert.equal(workBubble, false, "quietly");
+assert.equal(waitPose, "wait", "the agent waiting on you: Tuck waits, with the word");
+assert.equal(breakFrom.kind, "drift", "the break is taken from a drift nudge");
+assert.deepEqual(onBreak, { pose: "sleep", bubble: false, shown: 1 }, "on a break Tuck stays on the page, asleep");
+assert.ok(stoppedOnBreak, "the service worker stopped during the break");
+assert.deepEqual(
+  afterStopOnBreak,
+  { pose: "sleep", bubble: false, fresh: true },
+  "a page opened after the worker stopped still shows the break",
+);
+assert.equal(cardOnBreak, "hello", "the goal card on a break is a hello");
+assert.equal(afterCardOnBreak, "sleep", "closing it, Tuck sleeps again: the break goes on");
+assert.equal(asleepAtWork, "sleep", "asleep on a work page too, for the whole break");
+assert.equal(wokePose, "rest", "the break over on a work page: Tuck wakes quietly");
+assert.deepEqual(afterBreak, { bubble: false, trigger: breakFrom.kind, state: "focused" });
+assert.equal(agentWorkPose, "work", "the agent starts working: the page in front shows it");
+assert.equal(agentWorkBubble, false, "with no bubble");
+assert.ok(stoppedWhileWorking, "the service worker stopped while the agent works");
+assert.deepEqual(afterStopWorking, { pose: "work", fresh: true }, "a fresh page after the stop shows Tuck working");
+assert.equal(afterAgentStops, "rest", "the agent stops: Tuck rests again");
 assert.equal(afterDone.intent, null, "no stale goal after change + done");
 assert.match(reminderText, /Due today\. Still on your list\?/, "the deadline in Tuck's words");
 assert.match(reminderText, /Send the visa papers/);
@@ -1581,6 +2057,41 @@ assert.deepEqual(forgotten.titles, [], "and the preference: recall no longer fin
 assert.equal(selfReturn.id, drift5.id);
 assert.equal(selfReturn.resolvedBy, "self", "a drift ends on its own when you go back to work");
 assert.equal(cardAfterSelfReturn, false, "no stale card in the popup");
+assert.deepEqual(
+  away,
+  {
+    parting: "Okay. Click the toolbar icon to bring me back.",
+    flag: true,
+    here: 0,
+    olderTab: 0,
+    staleDrawn: 1,
+    staleOnSwitch: 0,
+    clickWhileAway: 0,
+    cardWhileAway: 0,
+    next: 0,
+    driftPose: "drift",
+    afterDrift: 0,
+    afterAvatarClick: 0,
+    avatarAnswer: "dismiss",
+    agentPose: "wait",
+    afterAgent: 0,
+    heldCount: 1,
+    afterHeld: 0,
+    later: 0,
+    popupWhileAway: { card: true, text: "Tuck is tucked away.", awayButton: false },
+    flagAfterSwitch: false,
+    backInPlace: 1,
+    popupAfterBack: { card: false, awayButton: true },
+    popupAwayFlag: true,
+    afterPopupAway: 0,
+    restingAgain: "rest",
+    hiddenAgain: true,
+    afterDoneWhileAway: 0,
+    flagAfterGreeting: false,
+    goalSetWhileWorking: "work",
+  },
+  "Tuck away",
+);
 for (const t of ["context", "relevance", "llm", "state", "trigger", "response", "feedback", "session"])
   assert.ok(types.has(t), `log has ${t}: ${[...types]}`);
 assert.ok(!log.events.some((e) => String(e.url ?? "").startsWith("chrome-extension:")), "no extension URLs in the log");

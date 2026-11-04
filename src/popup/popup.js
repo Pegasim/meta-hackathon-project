@@ -2,6 +2,7 @@ import { Memory } from "../memory/index.js";
 import { loadModelSettings } from "../memory/model.js";
 import { activityRows } from "./activity.js";
 import { nudgeText } from "../tuck/present.js";
+import "../tuck/skins.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
@@ -127,15 +128,52 @@ setInterval(renderActivity, 15000);
 
 // Tuck in the header; sleeping while you are on a break or not to be disturbed.
 async function renderMark() {
-  const svg = await (await fetch(chrome.runtime.getURL("tuck/assets/tuck.svg"))).text();
+  // The skin the background draws on pages (background assets()).
+  const { DEFAULT_SKIN, loadSkin } = globalThis.tuckSkins;
+  const stored = await chrome.storage.local.get({ tuckSkin: DEFAULT_SKIN, tuckItem: "bandana" });
+  const { tuckItem } = stored;
+  // An unknown skin falls back to the default, as the background does.
+  const ids = await (await fetch(chrome.runtime.getURL("tuck/skins/index.json"))).json();
+  const tuckSkin = ids.includes(stored.tuckSkin) ? stored.tuckSkin : DEFAULT_SKIN;
+  const url = (file) => chrome.runtime.getURL(`tuck/skins/${tuckSkin}/${file}`);
+  const { manifest, svg, css } = await loadSkin(async (file) => (await fetch(url(file))).text(), url);
+  $("skin-theme").before(Object.assign(document.createElement("style"), { textContent: css }));
   $("tuck-mark").innerHTML = svg;
+  // The popup wears the skin's colours: its own colour variables follow the theme ones.
+  $("skin-theme").textContent =
+    globalThis.tuckSkins.themeCss(manifest.theme).replaceAll(":host", ":root") +
+    ":root{--bg:var(--tk-surface);--surface:var(--tk-surface);--border:var(--tk-outline);--text:var(--tk-ink);" +
+    "--muted:var(--tk-muted);--accent:var(--tk-accent);--accent-text:var(--tk-on-accent)}";
   const { engine } = await send("get-status");
-  $("tuck-mark").querySelector("svg").dataset.state = ["break", "paused"].includes(engine.state)
-    ? "sleeping"
-    : "resting";
+  const pose = ["break", "paused"].includes(engine.state) ? "sleep" : "rest";
+  const root = $("tuck-mark").querySelector("svg");
+  for (const [name, value] of Object.entries(globalThis.tuckSkins.poseAttrs(manifest, pose))) {
+    root.setAttribute(name, value);
+  }
+  root.dataset.item = manifest.items?.includes(tuckItem) ? tuckItem : "none";
+  // A sprite skin shows its pose's first frame (asleep on a break).
+  const strip = root.querySelector(".tuck__strip");
+  if (strip && manifest.frames?.[pose]) {
+    strip.setAttribute("href", url(`frames/${pose}.png`));
+    strip.setAttribute("width", (manifest.frame ?? manifest.size).width * manifest.frames[pose].count);
+  }
 }
 
+// Tuck away, from here or Tuck's card; while away, the card at the top brings it back
+// (the background then draws Tuck on the page in front).
+async function renderAway() {
+  const { tuckAway } = await chrome.storage.local.get({ tuckAway: false });
+  $("away-card").hidden = !tuckAway;
+  $("tuck-away").hidden = tuckAway;
+}
+$("bring-back").onclick = () => chrome.storage.local.set({ tuckAway: false });
+$("tuck-away").onclick = () => send("tuck-away");
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.tuckAway) renderAway();
+});
+
 render();
+renderAway();
 renderMark();
 renderActivity();
 renderSetup();

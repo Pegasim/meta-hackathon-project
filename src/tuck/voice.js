@@ -64,13 +64,15 @@ export function templateNudge({
   agent,
   again = false,
   agentFacts = {},
+  done = false,
 }) {
   const what = taskPhrase(task);
   switch (kind) {
     case "drift":
       // "Next up: …" reads well whatever the step's wording ("testing …", "write …").
       if (unsure) return "Is this page part of your task?";
-      if (level >= 2 && awayMin >= 3) return `That's ${awayMin} minutes on ${site}. Next up: ${what}.`;
+      // The minutes are time away from work across pages, not time on this site.
+      if (level >= 2 && awayMin >= 3) return `That's ${awayMin} minutes away from work. Next up: ${what}.`;
       if (level >= 2) return `Still on ${site}. Want to get back to it?`;
       return `Still on ${site}? Next up: ${what}.`;
     case "fragmentation":
@@ -83,6 +85,8 @@ export function templateNudge({
       const { folder, minutes, tool } = agentFacts;
       if (agent === "failed") return `Muse stopped on an error${inFolder(folder)}.`;
       if (agent === "completed") return `Muse is done${inFolder(folder)}${after(minutes)}.`;
+      // The turn ended on a question: done, and the next move is theirs.
+      if (done) return `Muse is done${inFolder(folder)}${after(minutes)} and asked you something.`;
       if (again) return "Is Muse still waiting on you?";
       const asks = toolKind(tool ?? "");
       return asks ? `Muse wants your OK to ${asks}${inFolder(folder)}.` : `Muse is waiting on you${inFolder(folder)}.`;

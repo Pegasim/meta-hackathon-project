@@ -96,8 +96,20 @@ test("the host sends the turn's start, and the tool only with an approval", () =
     tool: "Bash",
   });
   const done = { ts: 500, session: "s1", status: "completed", turnEnd: true };
-  assert.deepEqual(outgoing(done, turn), { status: "completed", session: "s1", ts: 500, startedAt: 100 });
-  assert.deepEqual(outgoing({ ...done, session: "s2" }, turn), { status: "completed", session: "s2", ts: 500 });
+  // The turn's end is marked, so a repeated status is still news to Tuck.
+  assert.deepEqual(outgoing(done, turn), {
+    status: "completed",
+    session: "s1",
+    ts: 500,
+    turnEnd: true,
+    startedAt: 100,
+  });
+  assert.deepEqual(outgoing({ ...done, session: "s2" }, turn), {
+    status: "completed",
+    session: "s2",
+    ts: 500,
+    turnEnd: true,
+  });
 });
 
 test("only the session of the latest prompt counts: subagents are ignored", () => {

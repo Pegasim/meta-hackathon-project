@@ -37,6 +37,27 @@
   </section>
 
   <section class="card stack">
+    <h2>Tuck's look</h2>
+    <div>
+      <label for="tuck-skin">Look</label>
+      <select id="tuck-skin"></select>
+    </div>
+    <div id="tuck-item-row">
+      <label for="tuck-item">Wears or carries</label>
+      <select id="tuck-item"></select>
+    </div>
+    <div>
+      <label for="tuck-motion">Motion</label>
+      <select id="tuck-motion">
+        <option value="system">Follow my computer's reduce-motion setting</option>
+        <option value="on">Always animate</option>
+        <option value="off">Keep Tuck still</option>
+      </select>
+    </div>
+    <div id="tuck-preview" aria-hidden="true"></div>
+  </section>
+
+  <section class="card stack">
     <h2>Brain</h2>
     <p class="small muted">Connect your second-brain folder. It is read in the browser; new memory entries are written into its <code>inbox/</code>.</p>
     <div class="row">

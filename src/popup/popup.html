@@ -4,13 +4,16 @@
 <meta charset="utf-8">
 <title>Tuck</title>
 <link rel="stylesheet" href="../shared/ui.css">
-<link rel="stylesheet" href="../tuck/assets/tuck.css">
+<style id="skin-theme"></style>
 <style>
   body { width: 360px; padding: 12px; }
   #trigger-text { font-weight: 600; }
+  a { color: var(--text); }
   #mode { width: auto; }
   .brand { display: flex; align-items: center; gap: 8px; }
-  .brand .tuck { width: 36px; height: 36px; --tuck-accent: #94BFAE; }
+  #tuck-away { border: none; background: none; padding: 7px 4px; color: var(--muted); text-decoration: underline; }
+  #tuck-away:hover { color: var(--text); }
+  .brand .tuck { width: 36px; height: 36px; --tuck-accent: var(--tk-accent, #94BFAE); }
   .sites { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
   .site { min-width: 0; } /* long titles must not widen the row */
   .site-name { font-weight: 600; }
@@ -26,6 +29,11 @@
     <a href="#" id="open-settings" class="small">Settings</a>
   </div>
 
+  <section class="card row between" id="away-card" hidden>
+    <span>Tuck is tucked away.</span>
+    <button class="primary" id="bring-back">Bring Tuck back</button>
+  </section>
+
   <p id="setup" class="card small" hidden></p>
 
   <section class="card" id="intent-card">
@@ -36,6 +44,7 @@
       <div class="row" style="margin-top:10px">
         <button id="done">Done</button>
         <button id="change">Change</button>
+        <button id="tuck-away">Tuck away</button>
       </div>
     </div>
     <form id="intent-form" class="stack">

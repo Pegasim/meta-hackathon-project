@@ -274,7 +274,10 @@ test("session_start does not follow a finished goal, even after a restart", () =
     until: morning + 70 * S,
     cfg,
   });
-  assert.deepEqual(triggers.filter((t) => t.kind === "session_start"), []);
+  assert.deepEqual(
+    triggers.filter((t) => t.kind === "session_start"),
+    [],
+  );
 });
 
 test("one nudge at a time: no fragmentation while a drift is running", () => {
@@ -370,6 +373,25 @@ test("evidence counts time away from work, not time on this page", () => {
   assert.equal(drift.ts, t0 + 55 * S);
   assert.equal(drift.evidence.awaySec, 45);
   assert.equal(drift.evidence.host, "x.com");
+});
+
+test("time outside the browser is not time away from work (İrem's log, 2026-11-04)", () => {
+  // Off to a video, then three minutes in the terminal answering the coding agent, then
+  // back on another unrelated page: only the browser time counts.
+  const X = ["https://x.com/home", "Home / X"];
+  const { triggers } = run(
+    [
+      setIntent(t0),
+      ctx(t0, REPO, "related"),
+      ctx(t0 + 10 * S, VIDEO, "unrelated"),
+      ctx(t0 + 20 * S, VIDEO, "unrelated", { browserFocused: false }),
+      ctx(t0 + 200 * S, X, "unrelated"),
+    ],
+    { until: t0 + 240 * S },
+  );
+  const drift = triggers.find((t) => t.kind === "drift" && t.ts > t0 + 200 * S);
+  assert.ok(drift, "a drift word on the page after coming back");
+  assert.equal(drift.evidence.awaySec, Math.round((drift.ts - t0 - 190 * S) / S));
 });
 
 // ---- The second look (issue #5) ----------------------------------------------
@@ -660,7 +682,14 @@ test("the bridge's facts reach the agent word's evidence (#67)", () => {
   assert.equal(word.evidence.agentFolder, "bilun");
   assert.equal(word.evidence.agentMin, 4);
   assert.equal(word.evidence.agentTool, null);
-  assert.deepEqual(state.agent, { status: "completed", ts: t0 + S, session: "s1", folder: "bilun", minutes: 4 });
+  assert.deepEqual(state.agent, {
+    status: "completed",
+    ts: t0 + S,
+    session: "s1",
+    done: false,
+    folder: "bilun",
+    minutes: 4,
+  });
 });
 
 test("while the agent works, an unrelated page is a wait, not a drift", () => {
@@ -689,6 +718,81 @@ test("when it stops, Tuck says so once, and drift counts again", () => {
   assert.equal(words(out).length, 1);
   assert.equal(words(out)[0].evidence.agent, "waiting_for_user");
   assert.ok(state.budgetSec > 20);
+});
+
+test("the turn's end is news even after an approval with the same status (Muse 2026-11-04)", () => {
+  // Recorded: Muse asked for approval, ran the command under another session id (so the
+  // person's session never said working again), then ended the turn with a question.
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, agentAskAgainSec: 600, decide: stubDecide });
+  const { out } = run(
+    [
+      setIntent(t0),
+      agent(t0, "working"),
+      agent(t0 + 4 * S, "waiting_for_user"), // PermissionRequest
+      agent(t0 + 24 * S, "waiting_for_user"), // the second command's approval
+      { ...agent(t0 + 66 * S, "waiting_for_user"), turnEnd: true }, // Stop: "Want me to fix cart.js?"
+    ],
+    { until: t0 + 70 * S, cfg },
+  );
+  assert.deepEqual(
+    words(out).map((t) => [t.evidence.agent, t.ts - t0, t.evidence.agentDone]),
+    [
+      ["waiting_for_user", 4 * S, false],
+      ["waiting_for_user", 66 * S, true],
+    ],
+  );
+});
+
+test("idle in front of an unrelated page still counts as time away from work", () => {
+  // Reading a feed or a muted video without touching anything is still the detour.
+  const X = ["https://x.com/home", "Home / X"];
+  const { triggers } = run(
+    [
+      setIntent(t0),
+      ctx(t0, REPO, "related"),
+      ctx(t0 + 10 * S, VIDEO, "unrelated"),
+      ctx(t0 + 20 * S, VIDEO, "unrelated", { idleState: "idle" }),
+      ctx(t0 + 200 * S, X, "unrelated"),
+    ],
+    { until: t0 + 240 * S },
+  );
+  const drift = triggers.filter((t) => t.kind === "drift").at(-1);
+  assert.equal(drift.evidence.awaySec, Math.round((drift.ts - t0 - 10 * S) / S));
+});
+
+test("after Muse's turn ends, drift on a page counts again (İrem, 2026-11-04)", () => {
+  // Her second recorded turn: an approval, another, then the turn ends on a question.
+  // Then she browses an unrelated page: Tuck must notice, as with no agent at all.
+  const cfg = withOverrides({ secondLook: false, decide: stubDecide });
+  const { out } = run(
+    [
+      setIntent(t0),
+      ctx(t0, REPO, "related"),
+      agent(t0, "working"),
+      agent(t0 + 4 * S, "waiting_for_user"),
+      agent(t0 + 18 * S, "waiting_for_user"),
+      { ...agent(t0 + 51 * S, "waiting_for_user"), turnEnd: true },
+      ctx(t0 + 60 * S, VIDEO, "unrelated"),
+    ],
+    { until: t0 + 200 * S, cfg },
+  );
+  const drift = out.find((o) => o.type === "trigger" && o.kind === "drift");
+  assert.ok(drift, "a drift word after the turn ended");
+  assert.ok(drift.ts - t0 <= 60 * S + cfg.toleranceSec * S + 2 * S, `drift at ${(drift.ts - t0) / S}s`);
+});
+
+test("a finished turn is never followed by 'still waiting' (İrem, 2026-11-04)", () => {
+  // The turn ended with a question; the person reads it in the terminal. Asking again
+  // whether Muse still waits is for an approval in the middle of a turn, not for this.
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, agentAskAgainSec: 10, decide: stubDecide });
+  const { out } = run(
+    [setIntent(t0), agent(t0, "working"), { ...agent(t0 + 5 * S, "waiting_for_user"), turnEnd: true }],
+    { until: t0 + 120 * S, cfg },
+  );
+  assert.deepEqual(
+    words(out).map((t) => [t.ts - t0, t.evidence.agentDone, t.evidence.agentAgain]),
+    [[5 * S, true, false]],
+  );
 });
 
 test("a word comes for each stop, once work has started again", () => {

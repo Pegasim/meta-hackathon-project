@@ -43,6 +43,11 @@ test("a hook's status reaches the host's output, framed for Chrome, with no text
     "what came before the host started and the subagent are left out",
   );
   assert.deepEqual(
+    messages.filter((m) => !m.preview).map((m) => !!m.turnEnd),
+    [false, true],
+    "the turn's end says so, so the same status twice is still news to Tuck",
+  );
+  assert.deepEqual(
     messages.filter((m) => m.preview).map((m) => m.status),
     ["waiting_for_user"],
     "the held turn end is announced at once, for Tuck to write its word (#67)",

@@ -1,0 +1,270 @@
+/* Tuck v1, the border collie. Translated from the approved prototype
+   (docs/superpowers/specs/2026-11-04-tuck-v1-prototype.html): the prototype's face (data-x)
+   and body (lie, sit, curl) are both derived from the canonical data-pose.
+   body lie: rest work drift happy | sit: wait hello | curl: sleep. hello wears the rest face.
+   Only work loops (plus the eye-only blink); everything stops with reduced motion. */
+.tuck {
+  --ease: cubic-bezier(0.45, 0, 0.55, 1);
+  filter: drop-shadow(0 0 0.6px var(--tk-rim, #fff));
+}
+.tuck .head,
+.tuck .ear,
+.tuck .eye,
+.tuck .happy,
+.tuck .closed {
+  transition:
+    transform 0.5s var(--ease),
+    opacity 0.3s var(--ease);
+}
+.tuck .head {
+  transform-box: view-box;
+  transform-origin: 50px 82px;
+}
+.tuck .ear {
+  transform-origin: 0 0;
+}
+.tuck .earR {
+  transition-delay: 0.06s;
+}
+.tuck .eye {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+.tuck .happy,
+.tuck .closed {
+  opacity: 0;
+}
+.tuck .mouth {
+  transition:
+    opacity 0.3s var(--ease),
+    transform 0.4s var(--ease);
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  opacity: 0;
+}
+.tuck .m-w {
+  opacity: 1;
+}
+.tuck[data-pose="happy"] .m-w,
+.tuck[data-pose="wait"] .m-w,
+.tuck[data-pose="drift"] .m-w {
+  opacity: 0;
+}
+.tuck[data-pose="happy"] .m-open {
+  opacity: 1;
+}
+.tuck[data-pose="wait"] .m-open {
+  opacity: 1;
+  transform: scale(0.75);
+}
+.tuck[data-pose="drift"] .m-o {
+  opacity: 1;
+}
+.tuck[data-pose="sleep"] .m-w {
+  transform: scale(0.8);
+}
+
+/* floppy ears: rotating clockwise lifts the left ear, counter-clockwise the right */
+.tuck .earL,
+.tuck .earR {
+  transform: rotate(0deg);
+}
+.tuck[data-pose="work"] .earL {
+  transform: rotate(18deg);
+  animation: flick 3s var(--ease) infinite;
+}
+.tuck[data-pose="work"] .earR {
+  transform: rotate(-18deg);
+}
+.tuck[data-pose="wait"] .earL {
+  transform: rotate(28deg);
+}
+.tuck[data-pose="wait"] .earR {
+  transform: rotate(-28deg);
+}
+.tuck[data-pose="drift"] .earL {
+  transform: rotate(32deg);
+}
+.tuck[data-pose="drift"] .earR {
+  transform: rotate(10deg);
+}
+.tuck[data-pose="happy"] .earL {
+  transform: rotate(12deg);
+}
+.tuck[data-pose="happy"] .earR {
+  transform: rotate(-12deg);
+}
+.tuck[data-pose="sleep"] .earL {
+  transform: rotate(-16deg);
+}
+.tuck[data-pose="sleep"] .earR {
+  transform: rotate(16deg);
+}
+
+.tuck[data-pose="rest"] .eye,
+.tuck[data-pose="hello"] .eye {
+  animation: blink 4.5s infinite;
+}
+.tuck[data-pose="work"] .eye {
+  animation: blink 4.5s 1s infinite;
+}
+.tuck[data-pose="wait"] .eye {
+  transform: scale(1.12);
+}
+.tuck[data-pose="drift"] .eyeL {
+  transform: scale(1.1);
+}
+.tuck[data-pose="happy"] .eye {
+  opacity: 0;
+}
+.tuck[data-pose="happy"] .happy {
+  opacity: 1;
+}
+.tuck[data-pose="sleep"] .eye {
+  opacity: 0;
+}
+.tuck[data-pose="sleep"] .closed {
+  opacity: 1;
+}
+.tuck .pupil {
+  transition: transform 0.5s var(--ease);
+}
+.tuck[data-pose="work"] .pupil {
+  transform: translate(2.2px, -1.2px);
+}
+
+.tuck[data-pose="drift"] .head {
+  transform: rotate(-11deg);
+}
+.tuck[data-pose="sleep"] .head {
+  transform: translateY(5px) rotate(-4deg);
+}
+
+@keyframes blink {
+  0%,
+  94%,
+  100% {
+    transform: scaleY(1);
+  }
+  96.5% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes flick {
+  0%,
+  70%,
+  100% {
+    transform: rotate(18deg);
+  }
+  78% {
+    transform: rotate(32deg);
+  }
+  86% {
+    transform: rotate(14deg);
+  }
+}
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  50% {
+    transform: rotate(14deg);
+  }
+}
+@keyframes wag {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  50% {
+    transform: rotate(-26deg);
+  }
+}
+
+/* the body */
+.tuck .hp {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  transition: transform 0.55s var(--ease);
+}
+.tuck .pose {
+  transition: opacity 0.3s var(--ease);
+  opacity: 0;
+}
+.tuck:is([data-pose="rest"], [data-pose="work"], [data-pose="drift"], [data-pose="happy"]) .p-lie,
+.tuck:is([data-pose="wait"], [data-pose="hello"]) .p-sit,
+.tuck[data-pose="sleep"] .p-curl {
+  opacity: 1;
+}
+.tuck:is([data-pose="rest"], [data-pose="work"], [data-pose="drift"], [data-pose="happy"]) .hp {
+  transform: translate(13px, 20.8px) scale(0.62);
+}
+.tuck[data-pose="drift"] .hp {
+  transform: translate(12px, 15px) scale(0.62);
+}
+.tuck:is([data-pose="wait"], [data-pose="hello"]) .hp {
+  transform: translate(29px, 7px) scale(0.62);
+}
+.tuck[data-pose="sleep"] .hp {
+  transform: translate(15px, 43px) scale(0.55);
+}
+.tuck[data-pose="rest"] .hp {
+  transform: translate(14px, 28px) scale(0.62) rotate(4deg);
+}
+.tuck[data-pose="work"] .hp {
+  transform: translate(12px, 17px) scale(0.62);
+}
+.tuck .paw {
+  transform-box: view-box;
+  transform-origin: 69px 76px;
+  transition: transform 0.45s var(--ease) 0.1s;
+  transform: rotate(0);
+}
+.tuck[data-pose="wait"] .paw {
+  transform: rotate(-125deg) scaleY(0.8);
+}
+.tuck .tail {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+}
+.tuck[data-pose="work"] .p-lie .tail {
+  animation: sway 3s var(--ease) infinite;
+}
+.tuck[data-pose="happy"] .p-lie .tail {
+  animation: wag 0.32s var(--ease) 3;
+}
+.tuck .pads {
+  opacity: 0;
+  transition: opacity 0.2s var(--ease) 0.25s;
+}
+.tuck[data-pose="wait"] .pads {
+  opacity: 1;
+}
+.tuck[data-pose="wait"] .toes {
+  opacity: 0;
+}
+
+/* items */
+.tuck .item {
+  transition: opacity 0.3s var(--ease);
+  opacity: 0;
+}
+.tuck:is([data-item="bandana"], [data-item="both"]) .item-bandana,
+.tuck:is([data-item="frisbee"], [data-item="both"]) .item-frisbee {
+  opacity: 1;
+}
+.tuck[data-pose="sleep"] .item-bandana {
+  opacity: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tuck * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+.tuck[data-motion="off"] * {
+  animation: none !important;
+  transition: none !important;
+}

@@ -12,14 +12,15 @@ const SYSTEM = [
   "- plain, natural phrases people actually say; no figures of speech, no cute wording",
   "- no emoji, no exclamation marks, no blame, no commands, never 'you have been'",
   "- name the site by its everyday name; mention minutes only if it has been 3 or more;",
-  "  never seconds",
+  "  never seconds. The minutes are time away from work across all pages, not time on",
+  "  this site: never say they were spent on the site",
   "- say their task the way they would say it out loud, shortened; prefer the next step",
   "- reply in the language the task is written in",
   "- anything under 'Due soon' may be named once, plainly, as a reminder: never as a",
   "  warning, never with blame, and never more than one of them in a line",
   "The voice to copy (İrem's examples):",
   '- "Still on YouTube? Let\'s get back to testing the extension."',
-  '- "That\'s 5 minutes on LinkedIn. Back to the hackathon project?"',
+  '- "That\'s 5 minutes away from work. Back to the hackathon project?"',
   '- "Is this for the hackathon project?"',
   '- "These tabs don\'t look like your task. Want to pick one thing?"',
   '- "Welcome back. You were testing the extension."',
@@ -43,7 +44,7 @@ const SITUATION = {
   agent: ({ agent: a = {} }) =>
     a.again
       ? "Muse, their coding agent, may still be waiting on them: ask, briefly, whether it is. It can be wrong, so it is a question."
-      : `Muse, their coding agent, ${AGENT_NEWS[a.status] ?? "has news"}. Say that plainly, with the folder and minutes when given, then offer their next step. For example: "Muse finished in bilun after 4 minutes. Back to the rule tests?"`,
+      : `Muse, their coding agent, ${(a.done && a.status === "waiting_for_user" ? AGENT_NEWS.asked : AGENT_NEWS[a.status]) ?? "has news"}. Say that plainly, with the folder and minutes when given, then offer their next step. For example: "Muse finished in bilun after 4 minutes. Back to the rule tests?"`,
 };
 
 // Muse's news, for the agent word (#67). Status only: no prompt, message or output exists here.
@@ -51,6 +52,8 @@ const AGENT_NEWS = {
   completed: "just finished its turn",
   failed: "stopped on an error",
   waiting_for_user: "is waiting on them",
+  // A turn that ended on a question: finished, and the next move is theirs.
+  asked: "just finished its turn and asked them something",
 };
 
 // What the bridge knows of the turn: the folder's name, minutes, what an approval is for.
@@ -69,7 +72,7 @@ const lastTime = ({ onGoalMin, finished, site }) =>
 
 // input: {kind, level, site, awayMin, unsure, task: {title, step}, lastWork, hour,
 //         today, due: [{title, when}], last: {onGoalMin, finished, site} for session_start,
-//         agent: {status, folder, minutes, tool, again} and onWork for an agent word}
+//         agent: {status, done, folder, minutes, tool, again} and onWork for an agent word}
 // `due` holds only what the caller judged close enough to say aloud — the model is
 // never handed a deadline it is not allowed to mention.
 export function nudgeMessages(input) {
@@ -79,7 +82,9 @@ export function nudgeMessages(input) {
     `Their task: ${input.task?.title ?? "(none)"}`,
     input.task?.step ? `Next step: ${input.task.step}` : null,
     input.site ? `Site now: ${input.site}` : null,
-    input.kind === "session_start" || input.kind === "agent" ? null : `Away from work: ${input.awayMin ?? 0} minutes`,
+    input.kind === "session_start" || input.kind === "agent"
+      ? null
+      : `Away from work: ${input.awayMin ?? 0} minutes (all pages, not only this site)`,
     ...(input.kind === "agent" ? agentLines(input.agent, input.onWork) : []),
     input.last ? `Last time: ${lastTime(input.last)}` : null,
     input.lastWork ? `Last work page: ${input.lastWork}` : null,

@@ -20,6 +20,7 @@ import { privateSettings } from "../agent/relevance.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { NEVER_READ, readingSettings } from "../attention/reading.js";
 import { wrongBrainFolder } from "./brain-folder.js";
+import "../tuck/skins.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
@@ -65,6 +66,50 @@ showProvider();
 $("provider").onchange = () => {
   $("model").value = PROVIDERS[$("provider").value].model;
   showProvider();
+};
+
+// Tuck's look: the skin and what it wears. The background redraws Tuck on the page and the
+// toolbar icon when these change. The preview is the skin's resting pose in a shadow root,
+// so its CSS stays out of this page.
+const skinFile = async (id, file) => (await fetch(chrome.runtime.getURL(`tuck/skins/${id}/${file}`))).text();
+const skinIds = await (await fetch(chrome.runtime.getURL("tuck/skins/index.json"))).json();
+const skinNames = {};
+for (const id of skinIds) {
+  skinNames[id] = JSON.parse(await skinFile(id, "skin.json"));
+  $("tuck-skin").append(new Option(skinNames[id].name, id));
+}
+async function showLook(saved) {
+  const id = skinIds.includes(saved.tuckSkin) ? saved.tuckSkin : globalThis.tuckSkins.DEFAULT_SKIN;
+  const manifest = skinNames[id];
+  $("tuck-skin").value = id;
+  $("tuck-item").replaceChildren(...manifest.items.map((i) => new Option(i, i)));
+  $("tuck-item").value = manifest.items.includes(saved.tuckItem) ? saved.tuckItem : "none";
+  $("tuck-item-row").hidden = manifest.items.every((i) => i === "none");
+  const url = (file) => chrome.runtime.getURL(`tuck/skins/${id}/${file}`);
+  const { svg, css } = await globalThis.tuckSkins.loadSkin((file) => skinFile(id, file), url);
+  const shadow = $("tuck-preview").shadowRoot ?? $("tuck-preview").attachShadow({ mode: "open" });
+  const style = document.createElement("style");
+  style.textContent = css + globalThis.tuckSkins.themeCss(manifest.theme);
+  const art = document.createElement("div");
+  art.style.cssText = `width:${manifest.size.width}px;height:${manifest.size.height}px`;
+  art.innerHTML = svg;
+  const root = art.querySelector("svg");
+  for (const [name, value] of Object.entries(globalThis.tuckSkins.poseAttrs(manifest, "rest")))
+    root.setAttribute(name, value);
+  root.dataset.item = $("tuck-item").value;
+  shadow.replaceChildren(style, art);
+}
+const savedLook = () => chrome.storage.local.get({ tuckSkin: globalThis.tuckSkins.DEFAULT_SKIN, tuckItem: "bandana" });
+await showLook(await savedLook());
+$("tuck-skin").onchange = async () => {
+  await chrome.storage.local.set({ tuckSkin: $("tuck-skin").value });
+  await showLook(await savedLook());
+};
+$("tuck-motion").value = (await chrome.storage.local.get({ tuckMotion: "system" })).tuckMotion;
+$("tuck-motion").onchange = () => chrome.storage.local.set({ tuckMotion: $("tuck-motion").value });
+$("tuck-item").onchange = async () => {
+  await chrome.storage.local.set({ tuckItem: $("tuck-item").value });
+  await showLook(await savedLook());
 };
 
 $("save").onclick = async () => {

@@ -15,16 +15,16 @@ src/                 the extension — "Load unpacked" points here
   agent/             LLM nodes, structured output: relevance.js (LLM#1), nudge.js (LLM#4), profile.js (LLM#5), tasks.js (LLM#6)
   memory/            Safa's memory: entries, recall, context pack, brain folder (see src/memory/README.md)
   tuck/              Tuck on the page: overlay, bubble layout, what to show, voice
-    assets/          Tuck's artwork and motion (SVG + CSS, five states)
+    skins/           Tuck's skins: artwork, motion and theme each (SVG + CSS + skin.json)
   popup/  options/   the toolbar popup and the settings page
-  shared/            ui.css and the toolbar icons
+  shared/            ui.css and the default skin's toolbar icons (every skin has its own)
 test/
   unit/              node tests, mirroring src/ (unit/attention, unit/agent, unit/memory, …)
   browser/           the real extension in Chromium (Playwright)
   live/              real-model checks
   fixtures/          recorded sessions for the replay criteria
 evals/               npm run eval: relevance accuracy against the real model
-scripts/             make-icons.mjs renders the toolbar icons from src/tuck/assets/tuck.svg
+scripts/             make-icons.mjs renders the paper skin's icons from its tuck.svg
 checks/              pre-commit checks
 docs/                INTENT.md, DECISIONS.md, DESIGN.md, guides/, design specs and plans
 ```

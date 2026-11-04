@@ -107,6 +107,8 @@ export function outgoing(line, turn) {
     session: line.session,
     ts: line.ts,
     ...(line.folder && { folder: line.folder }),
+    // A turn's end is news to Tuck even when the status repeats (an approval before it).
+    ...(line.turnEnd && { turnEnd: true }),
     ...(same && turn.startedAt != null && { startedAt: turn.startedAt }),
     ...(same && line.permission && turn.tool && { tool: turn.tool }),
   };

@@ -42,5 +42,11 @@
     "32": "shared/icons/icon-32.png",
     "48": "shared/icons/icon-48.png",
     "128": "shared/icons/icon-128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["tuck/skins/*/frames/*.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

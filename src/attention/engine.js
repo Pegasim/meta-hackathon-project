@@ -23,6 +23,7 @@ export function initialState() {
     timeline: [],
     away: false,
     awaySince: null,
+    awayOutside: false, // that away time is outside the browser (not idle in front of a page)
     breakUntil: null,
     sessionDay: null,
     asked: {},
@@ -112,6 +113,7 @@ function evidence(s, ts, cfg) {
     key: s.current?.key ?? null,
     agent: s.agent?.status ?? null,
     agentAgain: !!s.agentAsk?.again,
+    agentDone: !!s.agent?.done,
     agentFolder: s.agent?.folder ?? null,
     agentMin: s.agent?.minutes ?? null,
     agentTool: s.agent?.tool ?? null,
@@ -139,11 +141,18 @@ function applyContext(s, input, candidates, cfg) {
   const away = input.browserFocused === false || (input.idleState !== "active" && !input.audible);
   if (away) {
     if (!s.away) s.awaySince = input.ts;
+    // Outside the browser (another app) or idle in front of a page (reading, a muted video)?
+    s.awayOutside = s.away ? s.awayOutside || input.browserFocused === false : input.browserFocused === false;
     s.away = true;
     return [];
   }
   if (s.away && s.awaySince != null && s.intent && input.ts - s.awaySince >= cfg.returnAwaySec * S)
     candidates.push("return");
+  // Time outside the browser (the terminal, another app, sleep) is not time away from work:
+  // the count of minutes away picks up where it stopped. Idle in front of the page is
+  // still time on it (reading a feed, a muted video), so it keeps counting.
+  if (s.away && s.awayOutside && s.awaySince != null && s.offTaskSince != null)
+    s.offTaskSince += input.ts - Math.max(s.awaySince, s.offTaskSince);
   s.away = false;
   s.awaySince = null;
   s.lastActiveTs = input.ts;
@@ -276,11 +285,18 @@ function applyAgent(s, input, candidates, cfg) {
   const facts = Object.fromEntries(
     ["folder", "minutes", "tool"].filter((k) => input[k] != null).map((k) => [k, input[k]]),
   );
-  s.agent = { status: input.status, ts: input.ts, session: input.session ?? null, ...facts };
-  if (before === input.status) return []; // the same news: a word still waiting keeps waiting
+  s.agent = { status: input.status, ts: input.ts, session: input.session ?? null, done: !!input.turnEnd, ...facts };
+  // The same news: a word still waiting keeps waiting. A turn's end is always news: after
+  // an approval, Muse may run the command under another session, so the person's session
+  // never says working again before the turn ends with the same waiting_for_user.
+  if (before === input.status && !input.turnEnd) return [];
   s.agentPending = false;
+  // Asking again whether it still waits is for an approval in the middle of a turn; a
+  // turn that ended (with a question or not) is done, and is said once.
   s.agentAsk =
-    input.status === "waiting_for_user" ? { afterSec: cfg.agentAskAgainSec, inBrowserSec: 0, again: false } : null;
+    input.status === "waiting_for_user" && !input.turnEnd
+      ? { afterSec: cfg.agentAskAgainSec, inBrowserSec: 0, again: false }
+      : null;
   // Working again after a wait: the person answered it in the terminal, so a word about
   // the wait is old news (#66). The worker takes it down if it is still open.
   if (before === "waiting_for_user" && input.status === "working") return [{ type: "agent_resumed", ts: input.ts }];
@@ -386,6 +402,7 @@ export function step(prev, input, cfg = DEFAULTS) {
       // Sleep or a crash: the silence is time away, never time on the page.
       if (!s.away) s.awaySince = s.lastTs;
       s.away = true;
+      s.awayOutside = true;
     } else {
       advance(s, dt, cfg);
     }
