@@ -1,5 +1,18 @@
-import { stillOpen, taskList, taskKey } from "../attention/reminders.js";
-import { Memory, redact, previewPaste, importPasted, ASK_YOUR_ASSISTANT, MAX_PASTE_CHARS } from "../memory/index.js";
+import { stillOpen, taskList, taskKey, splitTasks } from "../attention/reminders.js";
+import { openStore } from "../attention/store.js";
+import {
+  Memory,
+  redact,
+  previewPaste,
+  importPasted,
+  ASK_YOUR_ASSISTANT,
+  MAX_PASTE_CHARS,
+  readExport,
+  selectConversations,
+  conversationText,
+  importExport,
+  exportEntries,
+} from "../memory/index.js";
 import { PROVIDERS, DEFAULT_PROVIDER, modelClient, loadModelSettings, saveModelSettings } from "../memory/model.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks, taskByConstruction } from "../agent/tasks.js";
@@ -11,6 +24,7 @@ import "../tuck/skins.js";
 
 const $ = (id) => document.getElementById(id);
 const memory = await Memory.open();
+const attention = openStore(); // the goal, for the row it came from (#77)
 
 const NAMES = {
   meta: "Meta · Muse Spark 1.3",
@@ -101,6 +115,8 @@ $("tuck-item").onchange = async () => {
 $("save").onclick = async () => {
   await saveModelSettings(current(), { remember: $("remember").checked });
   $("model-status").textContent = $("remember").checked ? "Saved on this device." : "Saved until Chrome closes.";
+  // A brain connected before the model was saved has not been read: read it now (#68).
+  if (await unread()) await rereadMemory().catch((err) => ($("profile-status").textContent = `Failed: ${err.message}`));
 };
 
 $("test").onclick = async () => {
@@ -140,9 +156,7 @@ $("connect").onclick = async () => {
     const r = await memory.connectBrain(dir);
     await chrome.runtime.sendMessage({ type: "memory-changed" });
     $("brain-status").textContent = await brainStatus({ connected: true, name: dir.name, ...r });
-    $("profile-status").textContent = "Reading…";
-    const note = await readProfile();
-    await showProfile(note, await readTasks());
+    await rereadMemory();
   } catch (err) {
     if (err.name !== "AbortError") $("brain-status").textContent = `Failed: ${err.message}`;
   }
@@ -156,10 +170,7 @@ $("sync").onclick = async () => {
     const exported = r.connected && !r.needsPermission ? await memory.exportPending({ prompt: true }) : null;
     $("brain-status").textContent =
       (await brainStatus(r)) + (exported?.exported ? `\n${exported.exported} new entries written to inbox/` : "");
-    if (r.connected && !r.needsPermission) {
-      const note = await readProfile();
-      await showProfile(note, await readTasks());
-    }
+    if (r.connected && !r.needsPermission) await rereadMemory();
   } catch (err) {
     $("brain-status").textContent = `Failed: ${err.message}`;
   }
@@ -169,16 +180,14 @@ $("brain-status").textContent = await brainStatus(await memory.brainState().catc
 
 // ---- Other memory --------------------------------------------------------
 
-const KINDS = { md: "Notes folder", paste: "Pasted memory" };
+const KINDS = { md: "Notes folder", paste: "Pasted memory", export: "Assistant export" };
 
 // After an import or a removal, as after a brain sync: the worker judges pages again, and
 // the profile and the tasks are read again.
 async function sourcesChanged() {
   await chrome.runtime.sendMessage({ type: "memory-changed" });
   await showSources();
-  $("profile-status").textContent = "Reading…";
-  const note = await readProfile();
-  await showProfile(note, await readTasks());
+  await rereadMemory();
 }
 
 function sourceText(s) {
@@ -196,6 +205,7 @@ async function showSources() {
             if (!confirm(`Remove "${s.name}" from Tuck's memory? Nothing in the folder or your assistant changes.`))
               return;
             await memory.removeSource(s.origin);
+            if (s.kind === "export") await forgetExport(s.origin);
             $("source-status").textContent = `Removed "${s.name}".`;
             await sourcesChanged();
           });
@@ -228,6 +238,96 @@ $("add-folder").onclick = async () => {
     await sourcesChanged();
   } catch (err) {
     if (err.name !== "AbortError") $("source-status").textContent = `Failed: ${err.message}`;
+  }
+};
+
+// An assistant's export. The whole file is read here, in the page; the preview says how
+// many of its conversations go to the model, and nothing is sent before Import. What each
+// conversation gave is kept by origin in exportCache, so the same file again sends only
+// what is new or changed, and a run that stopped halfway picks up where it was.
+const EXPORT_NAMES = { claude: "Claude export", gemini: "Gemini export" };
+let exportFile = null; // { kind, origin, name, conversations, chosen }
+
+const exportCaches = async () => (await chrome.storage.local.get("exportCache")).exportCache ?? {};
+async function forgetExport(origin) {
+  const caches = await exportCaches();
+  delete caches[origin];
+  await chrome.storage.local.set({ exportCache: caches });
+}
+
+$("add-export").onclick = () => $("export-file").click();
+$("export-file").onchange = async () => {
+  const file = $("export-file").files[0];
+  $("export-file").value = ""; // so the same file can be chosen again
+  if (!file) return;
+  exportFile = null;
+  $("import-export").hidden = true;
+  $("export-status").textContent = "Reading the file…";
+  try {
+    const { kind, conversations } = readExport(JSON.parse(await file.text()));
+    const s = selectConversations(conversations, { today: localDate() });
+    const origin = `export:${kind}:${file.name}`;
+    const cache = (await exportCaches())[origin] ?? {};
+    const fresh = s.chosen.filter((c) => cache[c.id]?.stamp !== c.updated);
+    const chars = fresh.reduce((n, c) => n + conversationText(c).text.length, 0);
+    const dates = s.chosen.map((c) => c.updated.slice(0, 10)).sort();
+    exportFile = { kind, origin, name: file.name, conversations, chosen: s.chosen };
+    $("export-status").textContent = [
+      `${EXPORT_NAMES[kind]} "${file.name}": ${conversations.length} conversations.`,
+      s.chosen.length
+        ? `${s.chosen.length} are from the last 30 days and name a date or a to-do in your own words, ${dates[0]} to ${dates.at(-1)}.`
+        : "None is from the last 30 days with a date or a to-do in your own words.",
+      fresh.length < s.chosen.length ? `${s.chosen.length - fresh.length} were read before.` : null,
+      `${fresh.length} will be sent, one at a time: ${chars.toLocaleString()} characters, secrets removed, to Muse Spark 1.3 (not Contributor).`,
+      `Left out: ${s.tooOld} older, ${s.noCue} with nothing owed` +
+        (s.overCap ? `, ${s.overCap} over the limit of 50` : "") +
+        ".",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    $("import-export").hidden = !s.chosen.length;
+  } catch (err) {
+    $("export-status").textContent = `Could not read it: ${err.message}`;
+  }
+};
+$("import-export").onclick = async () => {
+  const f = exportFile;
+  if (!f) return;
+  $("import-export").hidden = true;
+  try {
+    const settings = await loadModelSettings();
+    if (!settings) {
+      $("import-export").hidden = false;
+      return ($("export-status").textContent = "Set up a model above first.");
+    }
+    $("export-status").textContent = "Reading…";
+    const r = await importExport(modelClient(privateSettings(settings)), f.chosen, {
+      kind: f.kind,
+      cache: (await exportCaches())[f.origin] ?? {},
+      topics: (await memory.profile().catch(() => null))?.topics ?? [],
+      onSaved: async (cache) =>
+        chrome.storage.local.set({ exportCache: { ...(await exportCaches()), [f.origin]: cache } }),
+      onProgress: ({ done, total }) => ($("export-status").textContent = `Reading… ${done} of ${total}`),
+    });
+    const failed = r.failed
+      ? `${r.failed} conversations could not be read (${r.errors.join(" | ")}); import the file again to retry them.`
+      : null;
+    const entries = exportEntries(r.cache, f.conversations);
+    if (!entries.length) return ($("export-status").textContent = failed ?? "Nothing in it could be read as memory.");
+    const stored = await memory.importEntries({ origin: f.origin, name: f.name, entries });
+    exportFile = null;
+    $("export-status").textContent = [
+      `${stored.entries} entries from "${f.name}"` +
+        (r.redactions ? `, ${r.redactions} secrets removed first` : "") +
+        ".",
+      failed,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    await sourcesChanged();
+  } catch (err) {
+    $("export-status").textContent = `Failed: ${err.message}`;
+    $("import-export").hidden = false;
   }
 };
 
@@ -308,8 +408,16 @@ async function readProfile() {
 // Which open loops are real tasks (agent/tasks.js), read here for the same reason as the
 // profile. Only entries that are new or changed since the last read cost a call. Returns
 // a note, and never throws.
+// While it runs, taskProgress says how far it got, so a redraw in between keeps saying so.
+// It is cleared by the re-read that started it, right before its last draw, so the status
+// does not look settled while that draw, with the run's own note, is still to come.
+// The run lives in this page and its verdicts are stored only at the end, so closing the
+// page stops it and loses the batches already read (#68): the status says so.
+let taskProgress = null;
 async function readTasks() {
-  $("task-status").textContent = "Reading your tasks…";
+  const progress = (text) =>
+    ($("task-status").textContent = taskProgress = `${text} Keep this page open until it is done.`);
+  progress("Reading your tasks…");
   try {
     const settings = await loadModelSettings();
     if (!settings) return null;
@@ -318,7 +426,7 @@ async function readTasks() {
       storage: chrome.storage.local,
       today: localDate(),
       clean: (text) => redact(text).text,
-      onProgress: ({ done, total }) => ($("task-status").textContent = `Reading your tasks… ${done} of ${total}`),
+      onProgress: ({ done, total }) => progress(`Reading your tasks… ${done} of ${total}.`),
     });
     return r.failed ? `${r.failed} entries could not be read: ${r.errors.join(" | ")}. Re-read to try again.` : null;
   } catch (err) {
@@ -326,16 +434,55 @@ async function readTasks() {
   }
 }
 
-async function showProfile(note, taskNote) {
+// After an import or a sync. The tasks that need no model, such as a notes folder's
+// checkboxes, are listed at once; the profile and the task node are then read side by
+// side, and each is drawn as soon as it is back. Drawing used to wait for both, one after
+// the other, so the list sat empty for the half minute the model took (#6).
+// Re-reads run one after another: a second one (a click while the first runs, or an
+// import) starts when the first is done, so the node is never asked twice at once and a
+// run's verdicts are never written over by one that started before it.
+function rereadMemory() {
+  rereadMemory.queue = (rereadMemory.queue ?? Promise.resolve()).then(rereadOnce, rereadOnce);
+  return rereadMemory.queue;
+}
+
+async function rereadOnce() {
+  $("profile-status").textContent = "Reading…";
+  const tasks = readTasks();
+  await showTasks(await queueNow());
+  const profile = readProfile().then(async (note) => {
+    await drawProfile(note);
+    return note;
+  });
+  const [note, taskNote] = await Promise.all([profile, tasks]).finally(() => (taskProgress = null));
+  await showProfile(note, taskNote);
+}
+
+// Memory that no run has read: no profile, or no task verdicts stored (#68).
+async function unread() {
+  const [sources, profile, { taskVerdicts }] = await Promise.all([
+    memory.sources(),
+    memory.profile().catch(() => null),
+    chrome.storage.local.get("taskVerdicts"),
+  ]);
+  return sources.some((s) => s.entries || s.documents) && (!profile || !taskVerdicts);
+}
+
+const queueNow = () => memory.taskQueue({ today: localDate(), limit: Infinity });
+
+async function drawProfile(note) {
   const profile = await memory.profile();
-  const queue = await memory.taskQueue({ today: localDate(), limit: Infinity });
   const lines = [
     note,
     profile ? `Tuck knows you as: ${profile.summary}` : "Nothing read yet.",
     profile?.topics?.length ? `Your topics: ${profile.topics.join(", ")}` : null,
   ].filter(Boolean);
   $("profile-status").textContent = lines.join("\n");
-  await showTasks(queue, taskNote);
+}
+
+async function showProfile(note, taskNote) {
+  await drawProfile(note);
+  await showTasks(await queueNow(), taskNote);
   await showLabels();
 }
 
@@ -352,26 +499,48 @@ function listRow(text, label, onclick) {
   return row;
 }
 
-// The first few tasks; the rest behind Show all.
+// Today and Coming up in full (#77); of the rest, the first few, then Show all.
 const FIRST_TASKS = 7;
 let allTasks = false;
+const heading = (text) => Object.assign(document.createElement("p"), { className: "small muted", textContent: text });
 
 // The tasks the node kept, in memory's order (deadline, then recency). Nothing in the
 // notes marks a task done, so one stays until it is marked here or answered in Tuck's
 // bubble. Not a task takes out what the node got wrong; both survive a re-import. A note
 // the node has not judged may be a fact with a next action, so it is held back and counted,
-// not listed as a task (#43). A Markdown checkbox never needs judging.
+// not listed as a task (#43). A Markdown checkbox never needs judging. Entries the node
+// found to be one commitment are one row, with where they came from and Not the same (#47).
+let taskDraws = 0; // only the newest draw writes, so a slower, older one cannot win
 async function showTasks(queue, note) {
+  const draw = ++taskDraws;
   const {
     loops = {},
     taskVerdicts = {},
     taskSettings = {},
+    taskPairs = {},
+    taskSplits = {},
     taskProblem,
-  } = await chrome.storage.local.get(["loops", "taskVerdicts", "taskSettings", "taskProblem"]);
+  } = await chrome.storage.local.get([
+    "loops",
+    "taskVerdicts",
+    "taskSettings",
+    "taskPairs",
+    "taskSplits",
+    "taskProblem",
+  ]);
+  const model = await loadModelSettings();
+  const goal = await attention.then((st) => st.activeIntent()).catch(() => null);
+  if (draw !== taskDraws) return;
   $("hide-personal").checked = !!taskSettings.hidePersonal;
   // Goals set here are not tasks from the notes: they end with Done on the goal itself.
   const open = stillOpen(
-    taskList(queue, { verdicts: taskVerdicts, hidePersonal: !!taskSettings.hidePersonal }),
+    taskList(queue, {
+      verdicts: taskVerdicts,
+      hidePersonal: !!taskSettings.hidePersonal,
+      loops,
+      pairs: taskPairs,
+      splits: taskSplits,
+    }),
     loops,
   ).filter((e) => e.source !== "extension");
   const tasks = open.filter((e) => taskVerdicts[taskKey(e)] || taskByConstruction(e));
@@ -380,25 +549,39 @@ async function showTasks(queue, note) {
     await chrome.runtime.sendMessage({ type: "reminder-answer", id: e.id, title: e.title, choice });
     await showProfile();
   };
+  const taskRow = (e) => {
+    const row = listRow(
+      `${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}${e.members ? ` (${e.sources})` : ""}`,
+      "Done",
+      answer(e, "done"),
+    );
+    row.append(button("Not a task", answer(e, "not_task")));
+    if (e.members) row.append(button("Not the same", answer(e, "not_same")));
+    return row;
+  };
+  // A view with nothing in it is left out; with only undated tasks, the list reads as before.
+  const view = (name, rows) => (rows.length ? [...(name ? [heading(name)] : []), ...rows.map(taskRow)] : []);
+  const { today, comingUp, rest } = splitTasks(tasks, { goalFrom: goal?.fromLoopId });
   $("task-list").replaceChildren(
-    ...tasks.slice(0, allTasks ? tasks.length : FIRST_TASKS).map((e) => {
-      const row = listRow(
-        `${e.title}${e.due ? `: due ${e.due} (${dueLabel(e.daysLeft)})` : ""}`,
-        "Done",
-        answer(e, "done"),
-      );
-      row.append(button("Not a task", answer(e, "not_task")));
-      return row;
-    }),
+    ...view("Today", today),
+    ...view("Coming up", comingUp),
+    ...view(
+      today.length || comingUp.length ? "Everything else" : null,
+      rest.slice(0, allTasks ? rest.length : FIRST_TASKS),
+    ),
   );
-  $("all-tasks").hidden = tasks.length <= FIRST_TASKS;
+  $("all-tasks").hidden = rest.length <= FIRST_TASKS;
   $("all-tasks").textContent = allTasks ? "Show fewer" : `Show all ${tasks.length}`;
   const notes = waiting === 1 ? "1 note" : `${waiting} notes`;
-  const why = note ? "" : taskProblem ? `: ${taskProblem}` : " (needs a model above)";
+  // A run's own problem first; with none, only a missing model is a reason (#68).
+  const why = note ? "" : taskProblem ? `: ${taskProblem}` : model ? null : " (needs a model above)";
+  if (taskProgress) return void ($("task-status").textContent = taskProgress);
   $("task-status").textContent = [
     note,
     waiting
-      ? `Tuck could not read your notes yet${why}, so ${notes} with a next action are not listed. Press Re-read my memory to try again.`
+      ? why === null
+        ? `Your notes are not read yet, so ${notes} with a next action are not listed. Press Re-read my memory to read them.`
+        : `Tuck could not read your notes yet${why}, so ${notes} with a next action are not listed. Press Re-read my memory to try again.`
       : null,
     tasks.length || waiting ? null : "No open tasks.",
   ]
@@ -436,11 +619,8 @@ async function showLabels() {
 }
 
 $("reread").onclick = async () => {
-  $("profile-status").textContent = "Reading…";
-  $("task-status").textContent = "Reading your tasks…";
   try {
-    const note = await readProfile();
-    await showProfile(note, await readTasks());
+    await rereadMemory();
   } catch (err) {
     $("profile-status").textContent = `Failed: ${err.message}`;
   }
@@ -448,6 +628,43 @@ $("reread").onclick = async () => {
 
 await showProfile();
 await showSources();
+
+// ---- What Tuck looked at (#81) --------------------------------------------
+
+// The agent's last runs: each tool it called, with its short arguments and how much it found.
+const MOMENTS = { plan: "Planned the goal", next: "Goal done: what's next", stuck: "You were stuck" };
+const toolLine = ({ tool, args = {}, result }) => {
+  const shown = Object.values(args).filter((v) => typeof v === "string" || typeof v === "number");
+  return `${tool}${shown.length ? ` "${shown.join(", ")}"` : ""}${result ? ` → ${result}` : ""}`;
+};
+
+async function showAgentRuns() {
+  const runs = await chrome.runtime.sendMessage({ type: "agent-runs" });
+  const p = (text, className = "small") => Object.assign(document.createElement("p"), { className, textContent: text });
+  $("agent-runs").replaceChildren(
+    ...(runs?.length
+      ? runs.map((r) => {
+          const box = document.createElement("div");
+          box.className = "stack agent-run";
+          const when = new Date(r.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          const outcome =
+            r.source === "agent"
+              ? `${r.steps} step${r.steps === 1 ? "" : "s"}`
+              : `fell back: ${r.error ?? "no answer"}`;
+          box.append(
+            p(`${when} · ${MOMENTS[r.moment] ?? r.moment} · ${outcome}`),
+            ...(r.trail ?? []).map((t) => p(toolLine(t), "small muted")),
+          );
+          const said = Array.isArray(r.said) ? r.said.join(" / ") : r.said;
+          if (said) box.append(p(`Said: ${said}`, "small"));
+          return box;
+        })
+      : [p("Nothing yet.", "small muted")]),
+  );
+}
+
+$("refresh-runs").onclick = showAgentRuns;
+await showAgentRuns();
 
 // ---- Page reading --------------------------------------------------------
 

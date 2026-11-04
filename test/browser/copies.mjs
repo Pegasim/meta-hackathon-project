@@ -54,6 +54,17 @@ async function petsBecome(page, n, ms = 8000) {
   return count;
 }
 const owner = (page) => page.locator("#tuck-companion").first().getAttribute("data-owner");
+const owners = (page) => page.locator("#tuck-companion").evaluateAll((hosts) => hosts.map((h) => h.dataset.owner));
+// Polls until no pet on the page is `id`'s, or gives up after `ms`. Returns the owners left.
+async function petLeaves(page, id, ms = 8000) {
+  const end = Date.now() + ms;
+  let left = await owners(page);
+  while (left.includes(id) && Date.now() < end) {
+    await page.waitForTimeout(250);
+    left = await owners(page);
+  }
+  return left;
+}
 const extensionPage = async (id) => {
   const p = await ctx.newPage();
   await p.goto(`chrome-extension://${id}/options/options.html`);
@@ -79,10 +90,12 @@ const mark = await owner(page);
 const drawing = mark ?? ids[0]; // unmarked (before #26): remove either
 const other = ids.find((id) => id !== drawing);
 
-// The copy that draws is removed: its pet leaves the open page, no reload.
+// The copy that draws is removed: its pet leaves the open page, no reload. The copy
+// left may then draw there itself as soon as it hears of the page (under load the tab
+// switch can reach it after the pet left), so what counts is whose pet is left.
 await remove(drawing);
 await page.bringToFront();
-const afterRemove = await petsBecome(page, 0);
+const afterRemove = await petLeaves(page, drawing);
 
 // The copy left draws on the next page.
 await page.goto(url("/two"));
@@ -109,7 +122,8 @@ fs.rmSync(tmp, { recursive: true, force: true });
 
 assert.deepEqual(errors, []);
 assert.equal(ids.length, 2, "two copies loaded");
-assert.equal(afterRemove, 0, "removing the extension takes its pet off the open page");
+assert.ok(!afterRemove.includes(drawing), "removing the extension takes its pet off the open page");
+assert.ok(afterRemove.every((id) => id === other) && afterRemove.length <= 1, `then one pet at most, the other copy's: ${afterRemove}`);
 assert.equal(withBoth, 1, "two copies installed show one pet");
 assert.ok(ids.includes(mark), `the pet names its copy: ${mark}`);
 assert.equal(nextPage, 1, "the copy left draws on the next page");

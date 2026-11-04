@@ -40,7 +40,20 @@ export function taskPhrase({ title, step } = {}) {
   return t ? asPhrase(t) : "your goal";
 }
 
-// kind, level, site, awayMin, unsure, task: {title, step}.
+// What an approval is for, said plainly, from the tool's name alone (#67); null when unclear.
+export function toolKind(tool = "") {
+  if (/bash|shell|exec|command|terminal/i.test(tool)) return "run a command";
+  if (/edit|write|patch|replace/i.test(tool)) return "edit a file";
+  if (/fetch|web|browse|url/i.test(tool)) return "open a web page";
+  return null;
+}
+
+// Where and how long, for a word about Muse: " in bilun", ", after 4 minutes".
+const inFolder = (folder) => (folder ? ` in ${folder}` : "");
+const after = (minutes) => (minutes >= 3 ? `, after ${minutes} minutes` : "");
+
+// kind, level, site, awayMin, unsure, task: {title, step}; for an agent word, agent (its
+// status) and agentFacts: {folder, minutes, tool}.
 export function templateNudge({
   kind,
   level,
@@ -50,6 +63,7 @@ export function templateNudge({
   task,
   agent,
   again = false,
+  agentFacts = {},
   done = false,
 }) {
   const what = taskPhrase(task);
@@ -67,17 +81,44 @@ export function templateNudge({
       return `Welcome back. Next up: ${what}.`;
     case "break_over":
       return "Break's over. Ready to get back to it?";
-    case "agent":
-      if (agent === "failed") return "Muse stopped on an error.";
-      if (agent === "completed") return "Muse is done.";
+    case "agent": {
+      const { folder, minutes, tool } = agentFacts;
+      if (agent === "failed") return `Muse stopped on an error${inFolder(folder)}.`;
+      if (agent === "completed") return `Muse is done${inFolder(folder)}${after(minutes)}.`;
       // The turn ended on a question: done, and the next move is theirs.
-      if (done) return "Muse is done and asked you something.";
-      return again ? "Is Muse still waiting on you?" : "Muse is waiting on you.";
+      if (done) return `Muse is done${inFolder(folder)}${after(minutes)} and asked you something.`;
+      if (again) return "Is Muse still waiting on you?";
+      const asks = toolKind(tool ?? "");
+      return asks ? `Muse wants your OK to ${asks}${inFolder(folder)}.` : `Muse is waiting on you${inFolder(folder)}.`;
+    }
     case "session_start":
       return "Hi. What are we working on today?";
     default:
       return "";
   }
+}
+
+// The day's greeting once the last goal is known (attention/summary.js): how it went, in
+// plain facts. The goal itself is offered below it, to pick up. when: whenSaid().
+export function templateGreeting({ goal, onGoalMin = 0, site, finished }, when) {
+  const what = asPhrase(goal);
+  if (finished) return `Done ${when.toLowerCase()}: ${what}. What's next?`;
+  const time = onGoalMin >= 3 ? `${spokenTime(onGoalMin)} on ${what}` : what;
+  return site ? `${when}: ${time}, last on ${siteName(site)}.` : `${when}: ${time}.`;
+}
+
+function spokenTime(min) {
+  if (min < 60) return `${min} minutes`;
+  const h = Math.floor(min / 60);
+  return min % 60 ? `${h}h ${min % 60}m` : `${h} hour${h === 1 ? "" : "s"}`;
+}
+
+// The day a goal was on, from today's: both as dayKey() gives them (YYYY-MM-DD).
+export function whenSaid(date, today) {
+  if (date === today) return "Earlier today";
+  const yesterday = new Date(`${today}T12:00:00Z`);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  return date === yesterday.toISOString().slice(0, 10) ? "Yesterday" : "Last time";
 }
 
 // A deadline said aloud at a natural moment. when: "today", "tomorrow", "3 days ago".

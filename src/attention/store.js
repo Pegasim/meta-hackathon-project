@@ -71,6 +71,11 @@ export async function openStore(name = "attention") {
       const all = await tx(db, "intents", "readonly", (s) => s.getAll());
       return all.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
     },
+    // Goals that ended (done, replaced or run out) and have no day summary yet (#46).
+    async endedIntents() {
+      const all = await tx(db, "intents", "readonly", (s) => s.getAll());
+      return all.filter((i) => (i.doneAt || i.expiredAt) && !i.summarizedAt).sort((a, b) => a.createdAt - b.createdAt);
+    },
     pruneBefore: (ts) =>
       tx(db, "events", "readwrite", (s) => {
         const req = s.index("ts").openCursor(IDBKeyRange.upperBound(ts, true));

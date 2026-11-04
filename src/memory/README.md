@@ -26,6 +26,7 @@ maintain() (every 15 min): consolidate + prune activity older than 7 days + expo
 | `due.js` | Deadlines derived from entry text, and day arithmetic (see Entry format) |
 | `activity.js` | Tab events → time spans → per-site summary |
 | `distill.js` | Prompt and parser for turning activity into entries (the model call is passed in) |
+| `exports.js` | An assistant's account export (Claude `conversations.json`, Gemini Takeout `MyActivity.json`) into conversations, and the few that are sent: the last 30 days, a date or a to-do in the person's own words, newest first, at most 50. Each goes through the paste prompt with its own date as today, at low effort, three at a time; what each gave is cached by its last message, so the same file again sends only what changed. User and assistant text only: attachments, tool calls and Canvas documents stay out |
 | `paste.js` | Prompt and parser for turning a pasted assistant memory into entries: redacted and capped first, one call per paste (the model call is passed in). An entry is dated today, or earlier when its own text names an earlier date, so a deadline already missed still reads as one |
 | `markdown.js` | Any Markdown folder (Obsidian, plain notes) → `todo` entries for unchecked `- [ ]` items (with Obsidian's `📅` and `due::` deadlines) and a document per file. Pure; `sources.js` reads the folder with `readTextFiles` |
 | `sources.js` | Origins and the folder readers by kind (`READERS`: `brain`, `md`) |
@@ -61,8 +62,8 @@ await memory.consolidate();                     // { accepted, duplicates, rejec
 await memory.recall("query", { limit });        // [{ ref, title, score, item }]
 await memory.openLoops();                       // entries with a next action
 await memory.latestIntent();                    // newest todo
-await memory.taskQueue({ today, limit, staleAfter }); // open loops by time left; each has due and daysLeft
-await memory.profileSample({ limit });         // newest entries as { topic, title, next }, for the profile call
+await memory.taskQueue({ today, limit, staleAfter, distilledFor }); // open loops by time left; each has due, daysLeft and writer
+await memory.profileSample({ limit });         // newest entries as { topic, title, next, date, result }, for the profile and task calls
 await memory.profile();                        // { summary, topics, workHosts }, or null before the first read
 await memory.setProfile(profile);              // stored in IndexedDB meta
 const { pack, prompt } = await memory.contextPack({ title, url });
@@ -98,6 +99,7 @@ Every entry and document carries an `origin`, where it came from (`sources.js`):
 | `brain` | The second-brain folder (`connectBrain`) | Yes: `exportPending()` writes the extension's own entries into its `inbox/` |
 | `md:<folder name>` | Any folder of `.md` files (`connectFolder(dir, { kind: "md" })`), read by `markdown.js` | Never |
 | `paste:<id>` | What an assistant said it knows, turned into entries once (`importEntries`) | Never |
+| `export:<claude\|gemini>:<file>` | The recent conversations of an account export that name something owed (`exports.js`), turned into entries through the paste prompt (`importEntries`) | Never |
 | none | The extension's own entries (`add()`, `distill()`) | Into the brain, once each |
 
 `source` is another field: who wrote the entry (claude-code, distill, extension).
@@ -138,6 +140,8 @@ One format for everything. An entry is the second-brain record (`Date · Context
 - Dates in plain words ("closes today") are not parsed.
 
 **Task queue.** `taskQueue()` orders open loops by time left, as plain arithmetic with no model call: dated loops soonest first, then undated ones newest first, then loops whose deadline passed more than `staleAfter` days ago (14 by default), because nothing marks a loop done and an old note would otherwise sit at the top forever. Days are counted on the user's local date, not UTC (`localDate()`).
+
+**Who wrote a loop.** Each loop carries `writer` (`writtenBy()`): `own` for the person's (a Markdown folder, a goal set in the extension, a paste, an export, `brain add` run by hand, which writes `source: manual`), `agent` for a coding agent's session note in a brain (any other `source`, such as `claude-code`), and `distilled` for a distill job's (`source` naming `distill`, such as the brain's nightly `brain-distill`). Within one deadline, and among the undated, own loops come first, then an agent's, then distilled ones. A distilled loop older than `distilledFor` days (14 by default) is left out, unless its deadline is still live: the distill job restates work that comes up again, so an old one is the state of a finished session (#76).
 
 **Ids.** An entry read from `notes/log/` keeps the `id` in its file. Every other entry gets `entryId()`: a hash of its date, topic and title plus its title, context, result, evidence and next. The same entry gets the same id on every import, and editing any of those fields gives it a new one. Whether an inbox entry keeps its id once the brain's own `consolidate` has filed it is not verified.
 

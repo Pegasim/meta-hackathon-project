@@ -5,13 +5,13 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { follow, latestPromptSession, settle, settled } from "./status.mjs";
+import { follow, latestPromptSession, outgoing, settle, settled, track } from "./status.mjs";
 
 const file = path.join(os.homedir(), ".tuck", "agent.jsonl");
 const POLL_MS = 500;
 
-function send({ status, session, ts, turnEnd }) {
-  const body = Buffer.from(JSON.stringify({ status, session, ts, ...(turnEnd && { turnEnd: true }) }));
+function send(line, extra = {}) {
+  const body = Buffer.from(JSON.stringify({ ...outgoing(line, turn), ...extra }));
   const size = Buffer.alloc(4);
   size.writeUInt32LE(body.length);
   process.stdout.write(Buffer.concat([size, body]));
@@ -34,6 +34,7 @@ let session = (() => {
     return null;
   }
 })();
+let turn = session && { session, startedAt: null, tool: null };
 let partial = "";
 let held = null;
 
@@ -55,11 +56,15 @@ function readNewLines() {
     } catch {
       continue;
     }
+    turn = track(turn, line, session);
+    if (!line.status) continue; // a tool's name, for the approval that may follow
     const next = follow(session, line);
     session = next.session;
     const settling = settle(held, next.pass, Date.now());
+    // A turn's end is held for a while: Tuck can write its word meanwhile (#67).
+    if (settling.held && settling.held.line === next.pass) send(next.pass, { preview: true });
     held = settling.held;
-    settling.send.forEach(send);
+    settling.send.forEach((l) => send(l));
   }
 }
 

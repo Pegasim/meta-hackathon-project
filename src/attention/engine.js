@@ -40,7 +40,7 @@ export function initialState() {
     holds: 0, // holds in this drift because the person was typing
     holdUntil: null,
     holdKey: null, // the page the person was typing on
-    agent: null, // a coding agent's status: {status, ts, session}
+    agent: null, // a coding agent's status: {status, ts, session, folder?, minutes?, tool?}
     agentPending: false, // it stopped while the browser was away: say so on return
     agentAsk: null, // while it waits on the person: {afterSec, inBrowserSec, again}
   };
@@ -114,6 +114,9 @@ function evidence(s, ts, cfg) {
     agent: s.agent?.status ?? null,
     agentAgain: !!s.agentAsk?.again,
     agentDone: !!s.agent?.done,
+    agentFolder: s.agent?.folder ?? null,
+    agentMin: s.agent?.minutes ?? null,
+    agentTool: s.agent?.tool ?? null,
     dwellSec: Math.round((ts - entered) / S),
     awaySec: s.offTaskSince == null ? 0 : Math.round((ts - s.offTaskSince) / S),
     budgetSec: Math.round(s.budgetSec),
@@ -230,7 +233,7 @@ function applyRelevance(s, input) {
   rememberRelated(s, input.ts);
 }
 
-function applySession(s, input) {
+function applySession(s, input, cfg) {
   if (input.kind === "intent_set") {
     s.intent = input.payload;
     s.budgetSec = 0;
@@ -238,6 +241,9 @@ function applySession(s, input) {
     s.policy = initialPolicy();
   } else if (input.kind === "intent_done") {
     s.intent = null;
+    // The day has started: the goal_done word asks what's next, and a greeting would
+    // replace it. Matters after a restart, which wipes sessionDay but not the goal (#73).
+    s.sessionDay = dayKey(input.ts, cfg);
     s.budgetSec = 0;
     s.waited = {};
     s.policy.episode = null;
@@ -275,11 +281,15 @@ function applyResponse(s, input, cfg) {
 // Whose turn it is in a coding agent (bridge/). A word when it stops, once.
 function applyAgent(s, input, candidates, cfg) {
   const before = s.agent?.status;
-  s.agent = { status: input.status, ts: input.ts, session: input.session ?? null, done: !!input.turnEnd };
+  // What the bridge knows of the turn, for the words (#67): the folder's name, minutes, a tool.
+  const facts = Object.fromEntries(
+    ["folder", "minutes", "tool"].filter((k) => input[k] != null).map((k) => [k, input[k]]),
+  );
+  s.agent = { status: input.status, ts: input.ts, session: input.session ?? null, done: !!input.turnEnd, ...facts };
   // The same news: a word still waiting keeps waiting. A turn's end is always news: after
   // an approval, Muse may run the command under another session, so the person's session
   // never says working again before the turn ends with the same waiting_for_user.
-  if (before === input.status && !input.turnEnd) return;
+  if (before === input.status && !input.turnEnd) return [];
   s.agentPending = false;
   // Asking again whether it still waits is for an approval in the middle of a turn; a
   // turn that ended (with a question or not) is done, and is said once.
@@ -287,11 +297,15 @@ function applyAgent(s, input, candidates, cfg) {
     input.status === "waiting_for_user" && !input.turnEnd
       ? { afterSec: cfg.agentAskAgainSec, inBrowserSec: 0, again: false }
       : null;
-  if (!AGENT_STOPS.includes(input.status)) return;
+  // Working again after a wait: the person answered it in the terminal, so a word about
+  // the wait is old news (#66). The worker takes it down if it is still open.
+  if (before === "waiting_for_user" && input.status === "working") return [{ type: "agent_resumed", ts: input.ts }];
+  if (!AGENT_STOPS.includes(input.status)) return [];
   // Time to take it in: a drift word right after this one would drown it.
   s.budgetSec = 0;
   if (s.away || onBreak(s, input.ts)) s.agentPending = true;
   else candidates.push("agent");
+  return [];
 }
 
 // ---- The second look -------------------------------------------------------
@@ -398,10 +412,10 @@ export function step(prev, input, cfg = DEFAULTS) {
   // 2. The input itself.
   if (input.type === "context") out.push(...applyContext(s, input, candidates, cfg));
   else if (input.type === "relevance") applyRelevance(s, input);
-  else if (input.type === "session") applySession(s, input);
+  else if (input.type === "session") applySession(s, input, cfg);
   else if (input.type === "response") applyResponse(s, input, cfg);
   else if (input.type === "second_look") applySecondLook(s, input, cfg);
-  else if (input.type === "agent") applyAgent(s, input, candidates, cfg);
+  else if (input.type === "agent") out.push(...applyAgent(s, input, candidates, cfg));
 
   if (s.breakUntil != null && ts >= s.breakUntil) {
     s.breakUntil = null;

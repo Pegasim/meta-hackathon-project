@@ -4,7 +4,8 @@
 // for my task" silences that page, for a while → the second look (issue #5): a work
 // chat on a social page is not a drift, typing holds the nudge, a chat box left
 // focused does not speak for the feed but typing in it does, a page with a password
-// field is not read → the exported event log holds it all.
+// field is not read → a goal that ran out is summed up in memory and in the next
+// greeting (#46) → the exported event log holds it all.
 // Saves screenshots of the popup and settings page to SCREENSHOT_DIR when set.
 import { createRequire } from "node:module";
 import http from "node:http";
@@ -21,7 +22,12 @@ const shots = process.env.SCREENSHOT_DIR;
 // calls the video unrelated and everything else related.
 const calls = [];
 const nudgeCalls = [];
+const greetCalls = [];
+const agentCalls = [];
 const taskCalls = [];
+const pairCalls = []; // which open loops are one commitment (#47)
+const loopCalls = []; // the agent loop's requests, with their tools (#81)
+let loopSlowMs = 0; // how long the fake model takes to answer the agent loop
 let tasksCut = false; // the task node's replies are cut at the token limit (#43)
 // Typed into a reply box, then left: form values are never read, so it must never
 // reach the model. Not secret-shaped, so redaction alone would not hide it.
@@ -171,10 +177,31 @@ const server = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", () => {
-    const { messages } = JSON.parse(body);
+    const { messages, tools } = JSON.parse(body);
     res.setHeader("Content-Type", "application/json");
+    // The agent loop (#81): it reads first, then finishes with the moment's tool.
+    if (tools?.length) {
+      loopCalls.push({ messages, tools: tools.map((t) => t.function.name) });
+      return setTimeout(() => res.end(JSON.stringify(agentReply(messages))), loopSlowMs);
+    }
     // Tuck's words (agent/nudge.js).
     if (/You are Tuck/.test(messages[0].content)) {
+      // The greeting after a goal (#46) takes a while, so a greeting right at a restart
+      // cannot wait for it.
+      if (/new session/.test(messages.at(-1).content)) {
+        greetCalls.push(messages);
+        const message = "Two hours on the launch plan last time. Pick it up?";
+        const body = JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] });
+        return setTimeout(() => res.end(body), 2000);
+      }
+      // Tuck's words about Muse (#67), said only when written ahead of the word.
+      if (/Situation: Muse/.test(messages.at(-1).content)) {
+        agentCalls.push(messages);
+        const message = /may still be waiting/.test(messages.at(-1).content)
+          ? "Muse may still need you. Want to check?"
+          : "Muse finished. Back to the failing test?";
+        return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] }));
+      }
       nudgeCalls.push(messages);
       const message = "Still on the video? Back to the failing test.";
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message }) } }] }));
@@ -206,6 +233,20 @@ const server = http.createServer((req, res) => {
           };
         });
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ items }) } }] }));
+    }
+    // Which tasks are one commitment (agent/tasks.js, #47): the same place on both sides.
+    if (/same commitment/.test(messages[0].content)) {
+      pairCalls.push(messages);
+      const pairs = messages
+        .at(-1)
+        .content.split("\n\n")
+        .filter((b) => /^\d+\.\n/.test(b))
+        .map((b) => {
+          const [a, c] = b.split(/\n {3}B: /);
+          const place = (t) => (/lyon/i.test(t) ? "lyon" : /rome/i.test(t) ? "rome" : null);
+          return { n: Number(b.match(/^\d+/)[0]), same: !!place(a) && place(a) === place(c) };
+        });
+      return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ pairs }) } }] }));
     }
     calls.push(messages);
     // A page for something else on the to-do list.
@@ -256,6 +297,56 @@ const server = http.createServer((req, res) => {
     );
   });
 });
+// The fake model's turn in the agent loop: one tool call per reply, by the moment's prompt.
+function agentReply(messages) {
+  const system = messages[0].content;
+  const results = messages.filter((m) => m.role === "tool").map((m) => JSON.parse(m.content));
+  const goal = (messages[1].content.match(/^[^:\n]+: (.*)$/m)?.[1] ?? "").toLowerCase();
+  const call = (name, args = {}) => ({
+    choices: [
+      {
+        message: {
+          content: null,
+          tool_calls: [
+            { id: `t${messages.length}`, type: "function", function: { name, arguments: JSON.stringify(args) } },
+          ],
+        },
+        finish_reason: "tool_calls",
+      },
+    ],
+  });
+  if (/just set a goal/.test(system)) {
+    if (!results.length) return call("recall_notes", { query: goal });
+    const notes = results.flatMap((r) => r.notes ?? []);
+    if (!notes.length) return call("no_plan", { reason: "nothing in the notes" });
+    const rules = notes.some((n) => /Demo video rules/.test(n.title));
+    return call("make_plan", {
+      steps: rules
+        ? [
+            { step: "Write a 3-minute demo script", minutes: 30 },
+            { step: "Record the demo video in one take", minutes: 30 },
+            { step: "Check no API key is on screen", minutes: 10 },
+          ]
+        : [
+            { step: `Open the notes on ${goal}`, minutes: 10 },
+            { step: `Do the first part of ${goal}`, minutes: 30 },
+            { step: `Check ${goal} works`, minutes: 15 },
+          ],
+      ...(rules && { watch_out: "Never show the API key on screen" }),
+    });
+  }
+  if (/stuck on their goal/.test(system)) {
+    if (!results.length) return call("goal");
+    if (results.length === 1) return call("recent_activity");
+    return call("propose_step", {
+      step: `Write the first lines of the ${goal.split(" ").slice(-2).join(" ")}`,
+      minutes: 10,
+    });
+  }
+  if (!results.length) return call("list_tasks");
+  return call("suggest_next", { message: "Nice work. On to the next thing?" });
+}
+
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;
 const repo = `http://127.0.0.1:${port}/repo`;
@@ -308,12 +399,35 @@ await settingsPage.evaluate(async (baseUrl) => {
   });
 }, `http://127.0.0.1:${port}/v1`);
 
+// Waits for the goal box in Tuck's greeting. Under CPU load the greeting still shows within
+// about a second (issue #52, 10 of 10 runs beside 16 busy cores), so a timeout here means a
+// greeting that never came, not a slow one: it then says what the worker held.
+async function greetingShown(tuck) {
+  try {
+    await tuck.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
+  } catch (err) {
+    const held = await settingsPage
+      .evaluate(async () => {
+        const { openStore } = await import("/attention/store.js");
+        const { pendingGreeting, engine } = await chrome.storage.session.get(["pendingGreeting", "engine"]);
+        const events = (await (await openStore()).eventsSince(Date.now() - 60000)).slice(-12);
+        return {
+          pendingGreeting,
+          engine: engine && { state: engine.state, intent: engine.intent?.title, url: engine.current?.url },
+          events: events.map((e) => [e.type, e.kind ?? e.label ?? e.to ?? "", e.url ?? ""].join(" ")),
+        };
+      })
+      .catch((e) => String(e));
+    throw new Error(`${err.message}\nno greeting; the worker held: ${JSON.stringify(held, null, 1)}`);
+  }
+}
+
 // Getting started on the page: the settings page took the day's first look (Tuck
 // cannot appear there), so Tuck greets on the first normal page and asks for the goal.
 const repoTab = await ctx.newPage();
 await repoTab.goto(repo);
 const tuck = repoTab.locator("#tuck-companion");
-await tuck.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
+await greetingShown(tuck);
 const greeting = await tuck.locator(".bubble .text").textContent();
 const greetState = await tuck.locator("svg.tuck").getAttribute("data-pose");
 // The default skin is the pastel kitten, a sprite skin: its greeting plays the waving strip.
@@ -944,11 +1058,35 @@ const agentPopup = {
   forTask: await popup.isVisible("#for-my-task"),
 };
 // Still waiting: Tuck asks again, on the page in front, with no new status from the agent.
+// Its line is the model's, written when the first wait was said (#67).
 await agentTab.bringToFront();
 await agentTab
-  .locator("#tuck-companion .bubble", { hasText: "Is Muse still waiting on you?" })
+  .locator("#tuck-companion .bubble", { hasText: "Muse may still need you. Want to check?" })
   .waitFor({ timeout: 10000 });
 await agentTab.close();
+await agentSays("unknown");
+
+// Muse back at work: the person answered it in the terminal, so the word about the wait
+// comes down, on a work page too, where no change of state would take it down (#66).
+const resumeTab = await ctx.newPage();
+await resumeTab.goto(repo);
+await resumeTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await agentSays("working");
+await agentSays("waiting_for_user");
+const waitBubble = resumeTab.locator("#tuck-companion .bubble", { hasText: "Muse is waiting on you." });
+await waitBubble.waitFor({ timeout: 8000 });
+await agentSays("working");
+const waitGone = await resumeTab
+  .locator("#tuck-companion .bubble")
+  .waitFor({ state: "hidden", timeout: 3000 })
+  .then(
+    () => true,
+    () => false,
+  );
+const resumedWord = await lastTrigger();
+const resumedBadge = await popup.evaluate(() => chrome.action.getBadgeText({}));
+await resumeTab.close();
 await agentSays("unknown");
 
 // A stop on a page Tuck cannot draw on is said on the next page it can.
@@ -957,6 +1095,11 @@ await noDrawTab.goto("chrome://version");
 await noDrawTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 await agentSays("working");
+// The bridge holds a turn's end and says so at once: Tuck writes the word meanwhile (#67).
+await popup.evaluate(() =>
+  chrome.runtime.sendMessage({ type: "agent-status", status: "completed", session: "s1", preview: true }),
+);
+await noDrawTab.waitForTimeout(500);
 await agentSays("completed");
 await noDrawTab.waitForTimeout(500);
 const drawTab = await ctx.newPage();
@@ -1151,6 +1294,9 @@ await awayBack
   .locator("#tuck-companion .dock.in")
   .waitFor({ state: "detached", timeout: 5000 })
   .catch(() => {});
+// Done on a goal of its own, so the checkout goal is replaced, not finished (the day
+// summary below says so).
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Try Tuck away" }));
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
 // A look at the page with no goal (the heartbeat's): the day's greeting was had before
 // the restart above, so it does not come again.
@@ -1275,7 +1421,7 @@ await setMode("off");
 await setMode("focus");
 const switchedOnGreeting = await chatTab
   .locator("#tuck-companion .dock.in .bubble:not([hidden])", { has: chatTab.locator("input[name=goal]") })
-  .locator(".text", { hasText: "today" })
+  .locator(".text")
   .textContent({ timeout: 5000 })
   .catch(() => null);
 
@@ -1387,6 +1533,201 @@ await reread();
 const taskTextAfter = await settingsPage.locator("#task-list").innerText();
 const askedAgain = taskCalls.length - askedTasks;
 
+// Issue #47: one commitment, one row. Two notes and a notes-folder checkbox about the same
+// train tickets are one row that names where they came from, and Done on it takes all
+// three off. Two trip tasks the model wrongly called one are split with Not the same, and
+// stay apart. A re-import with nothing new asks about no pair.
+const pairNotes = [
+  ["lyon1", "todo", 5, "Train tickets to Lyon", "Buy the train tickets"],
+  ["lyon2", "event", 3, "Lyon train tickets still to buy", "Buy them"],
+  ["rome1", "todo", 4, "Rome trip: hotel", "Find a hotel"],
+  ["rome2", "todo", 4, "Rome trip: flights", "Find the flights"],
+].map(([id, kind, ago, title, next]) => ({
+  path: `notes/log/2026/${id}.md`,
+  text: [
+    "---",
+    `title: "${title}"`,
+    `kind: ${kind}`,
+    "topic: trip",
+    `date: ${new Date(Date.now() - ago * 86400000).toISOString().slice(0, 10)}`,
+    "source: test",
+    `id: ${id}`,
+    "---",
+    "",
+    "- **Context:** Invented for the test.",
+    "- **Decision/Result:** Noted.",
+    "- **Evidence:** none",
+    `- **Next action:** ${next}`,
+  ].join("\n"),
+}));
+const importTrip = () =>
+  settingsPage.evaluate(async (files) => {
+    const { Memory } = await import("/memory/index.js");
+    const { fromMarkdownFolder } = await import("/memory/markdown.js");
+    const memory = await Memory.open();
+    await memory.importFiles(files);
+    const vault = fromMarkdownFolder([{ path: "todo.md", text: "- [ ] train tickets to Lyon" }], {
+      folderName: "Vault",
+    });
+    await memory.importEntries({ origin: "md:Vault", name: "Vault", ...vault });
+  }, pairNotes);
+await importTrip();
+await reread();
+const groupedText = await settingsPage.locator("#task-list").innerText();
+const groupedRows = await settingsPage.locator("#task-list .row").count();
+const askedPairs = pairCalls.length;
+await settingsPage
+  .locator("#task-list .row", { hasText: "Rome" })
+  .getByRole("button", { name: "Not the same" })
+  .click();
+await settingsPage.waitForTimeout(300);
+const splitRows = await settingsPage.locator("#task-list .row").count();
+await settingsPage.locator("#task-list .row", { hasText: /Lyon/i }).getByRole("button", { name: "Done" }).click();
+await settingsPage.waitForTimeout(300);
+await importTrip();
+await reread();
+const tripTextAfter = await settingsPage.locator("#task-list").innerText();
+const pairsAgain = pairCalls.length - askedPairs;
+const tripLoops = await settingsPage.evaluate(async () => (await chrome.storage.local.get("loops")).loops);
+
+// Issue #46: a goal that ran out while the browser was closed is summed up at the next
+// start: one entry in memory, with no page title, and the greeting says how it went, in
+// the template while the model's line is not ready, then in the model's words. The day
+// is seeded into the log: a test cannot wait two hours.
+const launch = await settingsPage.evaluate(async () => {
+  const { openStore } = await import("/attention/store.js");
+  const { makeIntent, dayKey } = await import("/attention/intents.js");
+  const { relevanceKey, hostOf } = await import("/attention/relevance.js");
+  const { DEFAULTS } = await import("/attention/config.js");
+  const st = await openStore();
+  const t0 = Date.now() - 24 * 3600 * 1000;
+  const intent = makeIntent({ title: "Plan the launch" }, t0);
+  await st.putIntent(intent);
+  const url = "https://github.com/acme/launch";
+  const title = "launch-plan.md · acme/launch";
+  const events = [
+    {
+      type: "session",
+      ts: t0,
+      kind: "intent_set",
+      payload: { id: intent.id, title: intent.title, topic: intent.topic },
+    },
+    {
+      type: "context",
+      ts: t0 + 1000,
+      tabId: 1,
+      url,
+      host: hostOf(url),
+      title,
+      key: relevanceKey(intent.id, url, title),
+      label: "related",
+      confidence: 0.9,
+      source: "llm",
+      audible: false,
+      browserFocused: true,
+      idleState: "active",
+      surface: { kind: "page", labels: [] },
+    },
+  ];
+  for (let ts = t0 + 30000; ts <= t0 + 130 * 60000; ts += 30000) events.push({ type: "tick", ts });
+  for (const e of events) await st.appendEvent(e);
+  return { id: intent.id, date: dayKey(t0, DEFAULTS) };
+});
+const dayEntries = (query) =>
+  settingsPage.evaluate(async (query) => {
+    const { Memory } = await import("/memory/index.js");
+    const hits = await (await Memory.open()).recall(query, { limit: 50 });
+    return hits
+      .map((h) => h.item)
+      .filter((e) => e.topic === "focus" && /^Day /.test(e.title ?? "") && e.title.includes(`: ${query}: `));
+  }, query);
+const greetAfterRestart = async () => {
+  await settingsPage.evaluate(() => chrome.storage.session.clear());
+  const tab = await ctx.newPage();
+  await tab.goto(repo);
+  const t = tab.locator("#tuck-companion");
+  await greetingShown(t);
+  const said = await t.locator(".bubble .text").textContent();
+  await tab.close();
+  return said;
+};
+const morning = await greetAfterRestart();
+const launchEntries = await dayEntries("Plan the launch");
+await settingsPage.evaluate(async (id) => {
+  for (let i = 0; i < 100; i++) {
+    const { greetingLine } = await chrome.storage.local.get("greetingLine");
+    if (greetingLine?.intentId === id) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error("the greeting's line never came");
+}, launch.id);
+const nextMorning = await greetAfterRestart();
+const launchEntriesLater = await dayEntries("Plan the launch");
+const checkoutEntries = await dayEntries("Fix the checkout bug");
+
+// #81, #78: setting a goal starts the agent. It reads the person's notes and makes a plan;
+// its first step becomes the goal's step, so the next drift word is written with it.
+// "I'm stuck" gets one step, and Settings lists the tools the agent called.
+await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  await (
+    await Memory.open()
+  ).add({
+    kind: "fact",
+    topic: "demo",
+    title: "Demo video rules",
+    context: "The hackathon wants a demo video.",
+    result: "The demo video is at most 3 minutes. Never show the API key on screen.",
+    next: "none",
+  });
+  await chrome.runtime.sendMessage({ type: "memory-changed" });
+});
+// A slow model first: neither setting the goal nor finishing it waits for the loop.
+loopSlowMs = 8000;
+const slowStart = Date.now();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Record the demo video" }));
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+const slowMs = Date.now() - slowStart;
+loopSlowMs = 0;
+const loopsBefore = loopCalls.length;
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Record the demo video" }));
+const demoTab = await ctx.newPage();
+await demoTab.goto(repo);
+await demoTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+const planned = await popup.evaluate(async () => {
+  for (let i = 0; i < 100; i++) {
+    const { intent } = await chrome.runtime.sendMessage({ type: "get-status" });
+    if (intent?.plan) return intent;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+});
+const planCalls = loopCalls.slice(loopsBefore).filter((c) => /just set a goal/.test(c.messages[0].content));
+await demoTab.locator("#tuck-companion .avatar").click();
+const demoCard = demoTab.locator("#tuck-companion .bubble");
+await demoCard.locator(".plan").waitFor({ timeout: 5000 });
+const demoCardText = await demoCard.innerText();
+const beforeDemoDrift = await lastTrigger();
+const demoVideo = await ctx.newPage();
+await demoVideo.goto(video);
+await demoVideo.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await waitForNewDrift(beforeDemoDrift?.id);
+const demoWord = nudgeCalls.findLast((m) => /Their task: Record the demo video/.test(m[1].content));
+await demoTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+const stuckReply = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "stuck" }));
+await popup.evaluate((step) => chrome.runtime.sendMessage({ type: "start-step", step }), stuckReply.step);
+const afterStart = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).intent;
+await settingsPage.bringToFront();
+await settingsPage.reload();
+await settingsPage.locator("#agent-runs .agent-run").first().waitFor({ timeout: 5000 });
+const trailText = await settingsPage.locator("#agent-runs").innerText();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+await demoVideo.close();
+await demoTab.close();
+
 // The exported event log.
 await settingsPage.bringToFront();
 const log = await settingsPage.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }));
@@ -1399,9 +1740,51 @@ if (shots) {
 
 await ctx.close();
 server.close();
+
+// The agent loop (#81, #78).
+assert.ok(slowMs < 3000, `setting and finishing a goal never wait for the agent (${slowMs} ms)`);
+assert.ok(planCalls.length >= 2, "the plan took a lookup, then a finish");
+assert.ok(planCalls[0].tools.includes("recall_notes") && planCalls[0].tools.includes("make_plan"));
+assert.match(planCalls[1].messages.find((m) => m.role === "tool").content, /Demo video rules/, "the notes are read");
+assert.deepEqual(
+  planned?.plan?.steps.map((x) => x.step),
+  ["Write a 3-minute demo script", "Record the demo video in one take", "Check no API key is on screen"],
+);
+assert.equal(planned.steps[0], "Write a 3-minute demo script", "the plan's first step is the goal's step");
+assert.match(demoCardText, /Record the demo video in one take/, "the plan is on Tuck's card");
+assert.match(demoCardText, /Watch out: Never show the API key on screen/);
+assert.match(demoWord?.[1].content ?? "", /Next step: Write a 3-minute demo script/, "the drift word has the step");
+assert.equal(stuckReply.source, "agent");
+assert.equal(stuckReply.step, "Write the first lines of the demo video");
+assert.equal(afterStart.steps[0], stuckReply.step, "Start this makes it the next step");
+assert.match(trailText, /Planned the goal/);
+assert.match(trailText, /recall_notes "record the demo video" → \d+ notes?/);
+assert.match(trailText, /You were stuck/);
+assert.match(trailText, /recent_activity → \d+ pages?/);
+assert.doesNotMatch(trailText, /at most 3 minutes/, "the trail never shows a note's text");
+assert.ok(types.has("agent"), "agent runs are in the event log");
 fs.rmSync(profile, { recursive: true, force: true });
 
 assert.deepEqual(errors, []);
+// Issue #46: one entry per goal, in the record format, with no page title in it.
+assert.equal(launchEntries.length, 1, JSON.stringify(launchEntries));
+assert.equal(launchEntries[0].title, `Day ${launch.date}: Plan the launch: 2h10 on goal, 0 drifts`);
+assert.equal(launchEntries[0].kind, "event");
+assert.equal(launchEntries[0].next, "none");
+assert.match(launchEntries[0].result, /Last work on github\.com\./);
+assert.doesNotMatch(JSON.stringify(launchEntries[0]), /launch-plan|acme/);
+assert.equal(launchEntriesLater.length, 1, "a later start writes no second entry");
+assert.equal(morning, "Yesterday: 2h 10m on plan the launch, last on GitHub.");
+assert.equal(nextMorning, "Two hours on the launch plan last time. Pick it up?");
+const launchPrompt = greetCalls.map((m) => m.at(-1).content).find((c) => /Their task: Plan the launch/.test(c));
+assert.match(launchPrompt, /Last time: 130 minutes on it, not finished, last on GitHub/);
+assert.match(launchPrompt, /Last work page: launch-plan\.md · acme\/launch/);
+// The goal the test worked on all along, closed when another replaced it.
+assert.equal(checkoutEntries.length, 1, JSON.stringify(checkoutEntries));
+assert.match(checkoutEntries[0].title, /^Day \d{4}-\d{2}-\d{2}: Fix the checkout bug: \dh\d\d on goal, \d+ drifts?$/);
+assert.ok(!/ 0 drifts$/.test(checkoutEntries[0].title), checkoutEntries[0].title);
+assert.match(checkoutEntries[0].result, /^Not finished; another goal replaced it\./);
+assert.doesNotMatch(JSON.stringify(checkoutEntries[0]), /cart\.js|F1 crashes|Social|Messages|acme/);
 assert.match(failedRows, /Water the plants/);
 assert.doesNotMatch(failedRows, /Errand|Cart conversion/, "a failed run lists no raw note as a task");
 for (const status of [failedStatus, failedStatusLater]) {
@@ -1462,7 +1845,8 @@ assert.equal(nudgeState, "drift");
 assert.equal(paperIcon, "tuck/skins/paper/icons/16.png", "the toolbar icon follows the skin");
 assert.ok(paperKeepsBubble, "a new skin keeps the word on screen, buttons and all");
 assert.ok(frisbeeKeepsBubble, "a new item keeps the word on screen");
-assert.equal(switchedOnGreeting, "Hi. What are we working on today?", "switched on with no goal, Tuck asks for one");
+// The day's greeting with the goal form; its line is how the last goal went when there was one (#46).
+assert.ok(switchedOnGreeting, "switched on with no goal, Tuck greets with the goal form");
 assert.equal(popupFallback, 1, "the popup draws the default skin when the stored one is unknown");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
 const looks = calls.filter((m) => /excerpt/.test(m[0].content));
@@ -1582,10 +1966,27 @@ assert.equal(waitStatus.engine.state, "agent_working");
 assert.equal(waitBadge, "", "waiting for the agent: no drift badge left behind");
 assert.ok(duringWait.respondedAt || duringWait.resolvedAt, "nor a drift word left open");
 assert.deepEqual(agentPopup, { gotIt: true, back: false, forTask: false });
-assert.match(heldBubble, /Muse is done\./);
+assert.match(heldBubble, /Muse finished\. Back to the failing test\?/, "a finished turn's word is the model's (#67)");
 assert.equal(afterOff.engine.agent.status, "completed");
 assert.equal(agentWord.kind, "agent");
-assert.match(agentBubble, /Muse is waiting on you\./);
+assert.match(agentBubble, /Muse is waiting on you\./, "a first wait has no line written ahead: the template, at once");
+const agentPrompts = agentCalls.map((m) => m.at(-1).content);
+assert.ok(agentPrompts.some((c) => /may still be waiting on them/.test(c) && /Their task: /.test(c)));
+assert.ok(agentPrompts.some((c) => /just finished its turn/.test(c)));
+assert.ok(
+  agentPrompts.every((c) => !/Away from work|is waiting on them/.test(c)),
+  "a first wait asks no model",
+);
+assert.ok(waitGone, "Muse back at work: the word about the wait comes down (#66)");
+assert.equal(resumedWord.evidence.agent, "waiting_for_user");
+assert.equal(resumedWord.resolvedBy, "agent", "taken back because Muse works again");
+assert.equal(resumedBadge, "", "and no badge left behind");
+assert.ok(
+  log.events.some(
+    (e) => e.type === "feedback" && e.kind === "agent_resumed" && e.payload?.triggerId === resumedWord.id,
+  ),
+  "the log says the word was taken back, and why",
+);
 assert.equal(workPose, "work", "while the agent works, Tuck on the page works");
 assert.equal(workBubble, false, "quietly");
 assert.equal(waitPose, "wait", "the agent waiting on you: Tuck waits, with the word");
@@ -1614,7 +2015,7 @@ assert.ok(loopsAfterSaid.visa01.saidOn, "said once it is on screen");
 assert.ok(loopsAfterDone.visa01.doneAt, "Done is remembered");
 assert.equal(reminderAgain, 0, "and it does not come back");
 assert.equal(driftMaybe.evidence.unsure, true, "Tuck asks on a page it is unsure about");
-assert.equal(askedTasks, 1, "eleven open loops, one call");
+assert.equal(askedTasks, 2, "eleven open loops, two calls of at most 10");
 assert.equal(taskRows, 7, "the first 7 in sight");
 assert.match(showAllLabel, /Show all 9/, "the rest behind Show all");
 assert.match(allTaskText, /Run errand 1\b[\s\S]*Run errand 9/, "the node's titles, newest first");
@@ -1622,9 +2023,25 @@ assert.doesNotMatch(allTaskText, /conversion|venue|Book the/i, "no watch note, a
 assert.doesNotMatch(taskTextAfter, /Run errand 1\b/, "Not a task holds over a re-import");
 assert.match(taskTextAfter, /Run errand 2/);
 assert.equal(askedAgain, 0, "a re-import with nothing new asks nothing");
+assert.equal(groupedRows, 2, "the Lyon tickets and the Rome trip: one row each");
+assert.match(groupedText, /Lyon[^\n]*\(brain ×2, Vault\)/i, "the row names its sources");
+assert.equal(askedPairs, 1, "four candidate pairs, one call");
+assert.equal(splitRows, 3, "Not the same: the Rome tasks apart");
+assert.doesNotMatch(tripTextAfter, /Lyon/i, "Done on the row took every entry in it off, over a re-import");
+assert.match(tripTextAfter, /Rome trip: hotel[\s\S]*Rome trip: flights|Rome trip: flights[\s\S]*Rome trip: hotel/);
+const lyonDone = tripLoops.lyon1?.doneAt;
+assert.ok(lyonDone && tripLoops.lyon2?.doneAt === lyonDone, "both notes marked");
+assert.equal(Object.values(tripLoops).filter((l) => l.doneAt === lyonDone).length, 3, "and the checkbox");
+assert.equal(pairsAgain, 0, "a re-import with nothing new asks about no pair");
 assert.ok(
   taskCalls.every((m) => !m.at(-1).content.includes(DRAFT)),
-  "the task node sees only notes",
+  "the task node sees notes and page titles, never what was typed",
+);
+assert.ok(
+  taskCalls.some((m) =>
+    /^Their browsing over the last day, for still_open only:\nLast \d+ min/m.test(m.at(-1).content),
+  ),
+  "the task node gets the day's browsing (#76)",
 );
 const no = learned.find((l) => l.label === "unrelated");
 assert.equal(no?.host, "localhost", "the no is remembered");

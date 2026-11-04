@@ -22,6 +22,7 @@ export function nudgeText(t) {
     agent: e.agent,
     again: !!e.agentAgain,
     done: !!e.agentDone,
+    agentFacts: { folder: e.agentFolder, minutes: e.agentMin, tool: e.agentTool },
     task: { title: t.intentTitle, step: t.intentStep },
   });
 }
@@ -131,8 +132,17 @@ export function present({ trigger, loops = [], event, intent, agent }) {
       // Asleep on the page for the whole break.
       return { pose: "sleep", bubble: null, quiet: true };
     case "card":
+      // The plan the agent made from the person's notes (#78), when it made one.
       return intent
-        ? { pose: "hello", bubble: { kind: "card", text: intent.title, next: intent.steps?.[0] ?? "" } }
+        ? {
+            pose: "hello",
+            bubble: {
+              kind: "card",
+              text: intent.title,
+              next: intent.steps?.[0] ?? "",
+              ...(intent.plan && { plan: intent.plan.steps.map((s) => s.step), watchOut: intent.plan.watchOut }),
+            },
+          }
         : { pose: "hello", bubble: goalForm("What are we working on?") };
     default:
       return null;

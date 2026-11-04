@@ -69,12 +69,18 @@
 
   <section class="card stack">
     <h2>Other memory</h2>
-    <p class="small muted">Notes that live somewhere else. A notes folder (Obsidian or plain Markdown) is read in the browser and never written to; its unchecked <code>- [ ]</code> items become tasks. A pasted memory is sent once, with secrets removed, to Muse Spark 1.3 (not Contributor) and turned into entries.</p>
+    <p class="small muted">Notes that live somewhere else. A notes folder (Obsidian or plain Markdown) is read in the browser and never written to; its unchecked <code>- [ ]</code> items become tasks. A pasted memory is sent once, with secrets removed, to Muse Spark 1.3 (not Contributor) and turned into entries. An export file (Claude's <code>conversations.json</code>, or Gemini's <code>MyActivity.json</code> from Google Takeout) is read in the browser; only conversations from the last 30 days in which you name a date or a to-do are sent, at most 50, after you see how many.</p>
     <div class="stack" id="source-list"></div>
     <div class="row">
       <button id="add-folder">Add a notes folder</button>
+      <button id="add-export">Add an export file</button>
+      <input type="file" id="export-file" accept=".json,application/json" hidden>
     </div>
     <p class="status small" id="source-status"></p>
+    <p class="status small" id="export-status"></p>
+    <div class="row">
+      <button class="primary" id="import-export" hidden>Import from the export</button>
+    </div>
     <p class="small"><strong>Paste what your assistant knows</strong></p>
     <p class="small muted">Ask Claude, ChatGPT or Gemini this, then paste its answer below.</p>
     <p class="note" id="ask-text"></p>
@@ -104,6 +110,13 @@
     <div class="row"><button id="all-tasks" hidden>Show all</button></div>
     <p class="small"><strong>Learned from your answers</strong></p>
     <div class="stack" id="label-list"></div>
+  </section>
+
+  <section class="card stack">
+    <h2>What Tuck looked at</h2>
+    <p class="small muted">When you set or finish a goal, or say you are stuck, Tuck looks things up before it answers. These are its last lookups: what it searched for and how much it found, never your notes' text.</p>
+    <div class="stack" id="agent-runs"></div>
+    <div class="row"><button id="refresh-runs">Refresh</button></div>
   </section>
 
   <section class="card stack">
