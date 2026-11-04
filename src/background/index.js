@@ -28,6 +28,7 @@ import {
   markAll,
   splitRow,
   taskList,
+  noteAnswer,
 } from "../attention/reminders.js";
 import { ENDS_DETOUR, initialState, step, nextWakeAt } from "../attention/engine.js";
 import { makeIntent, isExpired, dayKey } from "../attention/intents.js";
@@ -712,6 +713,12 @@ async function reminderAnswer({ id, title, choice }, sender) {
   await log({ type: "feedback", ts: Date.now(), kind: "reminder", payload: { id, choice } });
   const row = choice === "switch" ? null : await rowOf(id);
   if (choice === "done") await saveLoops(markAll(markDone, await loadLoops(), row, Date.now()));
+  // Done also goes to the brain's inbox (#95). A failed write leaves the answer as it is.
+  await memory
+    .then((m) => noteAnswer(m, row, choice, localDate()))
+    .catch((err) =>
+      log({ type: "feedback", ts: Date.now(), kind: "done_note_failed", payload: { id, error: String(err) } }),
+    );
   if (choice === "not_task") await saveLoops(markAll(markNotTask, await loadLoops(), row, Date.now()));
   if (choice === "not_same") {
     const { taskSplits = {} } = await chrome.storage.local.get("taskSplits");
