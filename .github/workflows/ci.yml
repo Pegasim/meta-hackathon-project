@@ -2,10 +2,14 @@ name: ci
 
 # Runs the local test tiers only. Never test:live or eval*: they call the
 # paid Meta API with a key, and this workflow has no secrets.
+# Unit tests run on every PR and push to main. The browser tiers are slow and timing-
+# sensitive, so they run locally with the change (.agents/skills/test) and here only when
+# started by hand (Actions → ci → Run workflow).
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,6 +36,7 @@ jobs:
       - run: npm test
 
   browser:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
