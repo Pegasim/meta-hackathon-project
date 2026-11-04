@@ -319,6 +319,15 @@ function agentReply(messages) {
     if (!results.length) return call("recall_notes", { query: goal });
     const notes = results.flatMap((r) => r.notes ?? []);
     if (!notes.length) return call("no_plan", { reason: "nothing in the notes" });
+    // #91: a plan naming a merged PR (41) and an open one (12) of the listed repository.
+    if (notes.some((n) => /Shop release/.test(n.title)))
+      return call("make_plan", {
+        steps: [
+          { step: "Review PR #41 for the shop release", minutes: 15 },
+          { step: "Review PR #12 for the shop release", minutes: 15 },
+          { step: "Write the shop release notes", minutes: 20 },
+        ],
+      });
     const rules = notes.some((n) => /Demo video rules/.test(n.title));
     return call("make_plan", {
       steps: rules
@@ -1750,6 +1759,85 @@ await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" 
 await demoVideo.close();
 await demoTab.close();
 
+// #91: with a repository listed in Settings, a plan step naming a PR merged on GitHub is
+// left out before it lands, and "What Tuck looked at" says so. GitHub is faked here; the
+// worker's fetch reaching it shows the extension's CSP lets it through.
+const githubAsked = [];
+await ctx.route("https://api.github.com/**", (route) => {
+  const url = new URL(route.request().url());
+  githubAsked.push(url.pathname);
+  const n = Number(url.pathname.match(/\/issues\/(\d+)$/)?.[1]);
+  const issue =
+    n === 41
+      ? {
+          number: 41,
+          title: "Fix the checkout total",
+          state: "closed",
+          closed_at: "2026-11-02T10:00:00Z",
+          pull_request: { merged_at: "2026-11-02T10:00:00Z" },
+        }
+      : n === 12
+        ? {
+            number: 12,
+            title: "Add the cart badge",
+            state: "open",
+            created_at: "2026-11-03T10:00:00Z",
+            pull_request: { merged_at: null },
+          }
+        : null;
+  return route.fulfill({
+    status: issue ? 200 : 404,
+    contentType: "application/json",
+    body: JSON.stringify(issue ?? { message: "Not Found" }),
+  });
+});
+await settingsPage.bringToFront();
+await settingsPage.reload();
+// Settings fills its fields as it loads: Page reading's list comes after this one.
+await settingsPage.waitForFunction(() => document.getElementById("never-read").value !== "");
+await settingsPage.fill("#github-repos", "https://github.com/acme-demo/shop\nnot a repo");
+await settingsPage.click("#save-github");
+const githubBad = await settingsPage.locator("#github-status").innerText();
+await settingsPage.fill("#github-repos", "acme-demo/shop");
+await settingsPage.click("#save-github");
+const githubSaved = await settingsPage.locator("#github-status").innerText();
+const githubStored = await settingsPage.evaluate(
+  async () => (await chrome.storage.local.get("githubRepos")).githubRepos,
+);
+if (shots)
+  await settingsPage
+    .locator("#github-repos")
+    .locator("xpath=ancestor::section")
+    .screenshot({ path: path.join(shots, "settings-github.png") });
+await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  await (
+    await Memory.open()
+  ).add({
+    kind: "decision",
+    topic: "shop",
+    title: "Shop release",
+    context: "The shop ships on Friday.",
+    result: "Review PR #41 and PR #12 before the release.",
+    next: "none",
+  });
+  await chrome.runtime.sendMessage({ type: "memory-changed" });
+});
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Ship the shop release" }));
+const shopPlanned = await popup.evaluate(async () => {
+  for (let i = 0; i < 100; i++) {
+    const { intent } = await chrome.runtime.sendMessage({ type: "get-status" });
+    if (intent?.plan) return intent;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+});
+await settingsPage.reload();
+await settingsPage.locator("#agent-runs .agent-run").first().waitFor({ timeout: 5000 });
+const githubTrail = await settingsPage.locator("#agent-runs").innerText();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+await settingsPage.evaluate(() => chrome.storage.local.remove("githubRepos"));
+
 // The exported event log.
 await settingsPage.bringToFront();
 const log = await settingsPage.evaluate(() => chrome.runtime.sendMessage({ type: "export-log" }));
@@ -1785,6 +1873,17 @@ assert.match(trailText, /You were stuck/);
 assert.match(trailText, /recent_activity → \d+ pages?/);
 assert.doesNotMatch(trailText, /at most 3 minutes/, "the trail never shows a note's text");
 assert.ok(types.has("agent"), "agent runs are in the event log");
+// #91: the GitHub check.
+assert.match(githubBad, /Not a repository: not a repo/);
+assert.match(githubSaved, /Saved\. 1 repository is checked/);
+assert.deepEqual(githubStored, ["acme-demo/shop"]);
+assert.ok(githubAsked.includes("/repos/acme-demo/shop/issues/41"), JSON.stringify(githubAsked));
+assert.deepEqual(
+  shopPlanned?.plan?.steps.map((x) => x.step),
+  ["Review PR #12 for the shop release", "Write the shop release notes"],
+  "the step naming the merged PR is left out",
+);
+assert.match(githubTrail, /github_check "acme-demo\/shop#41" → merged, left out/);
 fs.rmSync(profile, { recursive: true, force: true });
 
 assert.deepEqual(errors, []);

@@ -5,6 +5,7 @@
 // and the caller keeps its template.
 import { runAgent } from "./loop.js";
 import { readTools, planTools, stuckTools, nextTools } from "./tools.js";
+import { closedRefs } from "./github.js";
 import { MAX_WORDS } from "../tuck/voice.js";
 
 const VOICE = [
@@ -61,6 +62,22 @@ const tools = (deps, finishing, without = []) => {
   return { ...read, ...finishing };
 };
 
+// #91: a step or line naming a PR or issue that is merged or closed is left out before it
+// is shown, in code: whether a PR is merged is a fact to look up, not a judgement. The
+// trail says what was left out. texts(value): the texts to check; keep(value, closed): the
+// value without them, or null.
+async function withoutClosed(r, github, texts, keep) {
+  if (!r.value) return r;
+  const closed = await closedRefs(github, texts(r.value)).catch(() => new Map());
+  if (!closed.size) return r;
+  const left = [...closed.values()].map(({ ref, state }) => ({
+    tool: "github_check",
+    args: { ref },
+    result: `${state}, left out`,
+  }));
+  return { ...r, value: keep(r.value, closed), trail: [...r.trail, ...left] };
+}
+
 // chat: toolClient's chat. deps: readTools' (agent/tools.js). The goal is known before any
 // tool runs, so a step may be built from its words alone.
 export const planFor = (chat, deps, { title, due } = {}, opts = {}) =>
@@ -70,7 +87,18 @@ export const planFor = (chat, deps, { title, due } = {}, opts = {}) =>
     tools: tools(deps, planTools, ["look_at_page"]),
     ctx: { goal: { title } },
     ...opts,
-  });
+  }).then((r) =>
+    withoutClosed(
+      r,
+      deps.github,
+      (v) => [...v.steps.map((s) => s.step), v.watchOut ?? ""],
+      // Every step left out: no plan, as if the model had said no_plan.
+      (v, closed) => {
+        const steps = v.steps.filter((_, i) => !closed.has(i));
+        return steps.length ? { steps, watchOut: closed.has(v.steps.length) ? null : v.watchOut } : null;
+      },
+    ),
+  );
 
 export const stuckStep = (chat, deps, { title, step } = {}, opts = {}) =>
   runAgent(chat, {
@@ -81,7 +109,14 @@ export const stuckStep = (chat, deps, { title, step } = {}, opts = {}) =>
     tools: tools(deps, stuckTools),
     ctx: { goal: { title, step } },
     ...opts,
-  });
+  }).then((r) =>
+    withoutClosed(
+      r,
+      deps.github,
+      (v) => [v.step],
+      () => null,
+    ),
+  );
 
 export const nextAfter = (chat, deps, { title } = {}, opts = {}) =>
   runAgent(chat, {
@@ -90,4 +125,12 @@ export const nextAfter = (chat, deps, { title } = {}, opts = {}) =>
     tools: tools(deps, nextTools, ["look_at_page"]),
     ctx: { goal: { title } },
     ...opts,
-  });
+  }).then((r) =>
+    withoutClosed(
+      r,
+      deps.github,
+      (v) => [v.message, v.task?.title ?? ""],
+      // A closed one in the line: the template says it. In the task offered: no task.
+      (v, closed) => (closed.has(0) ? null : { ...v, task: null }),
+    ),
+  );
