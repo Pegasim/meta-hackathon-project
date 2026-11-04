@@ -190,3 +190,18 @@ test("asking again about the agent is a question: it may be running what was app
     ["Got it", "5-min break"],
   );
 });
+
+test("the goal card carries the plan from the person's notes, when there is one (#78)", () => {
+  const plan = {
+    steps: [
+      { step: "Write the demo script", minutes: 30 },
+      { step: "Record it in one take", minutes: 30 },
+      { step: "Check no key is on screen", minutes: 10 },
+    ],
+    watchOut: "The video is at most 3 minutes",
+  };
+  const v = present({ event: "card", intent: { title: "Record the demo", steps: ["Write the demo script"], plan } });
+  assert.deepEqual(v.bubble.plan, ["Write the demo script", "Record it in one take", "Check no key is on screen"]);
+  assert.equal(v.bubble.watchOut, "The video is at most 3 minutes");
+  assert.equal(v.bubble.next, "Write the demo script");
+});

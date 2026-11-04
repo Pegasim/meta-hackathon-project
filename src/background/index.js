@@ -3,7 +3,7 @@
 // chrome.storage.session (the worker can stop at any moment); every input and
 // output goes to the event log; unknown pages are judged by the model (LLM#1).
 import { Memory, redact, entryKey } from "../memory/index.js";
-import { modelClient, loadModelSettings } from "../memory/model.js";
+import { modelClient, toolClient, loadModelSettings } from "../memory/model.js";
 import { withOverrides } from "../attention/config.js";
 import {
   hostOf,
@@ -38,6 +38,7 @@ import { classifyRelevance, privateSettings } from "../agent/relevance.js";
 import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks } from "../agent/tasks.js";
+import { planFor, stuckStep, nextAfter } from "../agent/moments.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine, templateGreeting, toolKind, whenSaid } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
@@ -1155,10 +1156,214 @@ async function writeGreeting(sum) {
   if (r.message) await chrome.storage.local.set({ greetingLine: { intentId: sum.intentId, message: r.message } });
 }
 
+// ---- The agent loop (#81) ------------------------------------------------
+
+// At a moment the engine or the person chose, the model looks things up with the tools in
+// agent/tools.js and proposes words, a plan or a step (agent/moments.js). Always outside
+// the queue: no moment waits for it (#67). Only a short write of what it found goes in.
+
+// A note as the agent reads it, redacted and cut. Tuck's own records (goals and how their
+// days went, topic "focus") are not the person's notes.
+const NOTE_CHARS = 600;
+const ACTIVITY_MIN = 30;
+function noteOf({ title, item }) {
+  const body =
+    typeof item.text === "string"
+      ? item.text
+      : [item.context, item.result, item.next !== "none" && item.next].filter(Boolean).join(" ");
+  return {
+    title: redact(title ?? "").text,
+    topic: item.topic ?? "notes",
+    text: redact(body.replace(/\s+/g, " ")).text.slice(0, NOTE_CHARS),
+  };
+}
+
+// The pages of the last ACTIVITY_MIN minutes, newest first, with what each was judged.
+async function recentPages() {
+  const events = await (await store).eventsSince(Date.now() - ACTIVITY_MIN * 60000);
+  const labels = new Map(events.filter((e) => e.type === "relevance").map((e) => [e.key, e.label]));
+  const seen = new Set();
+  const pages = [];
+  for (const e of events.reverse()) {
+    if (e.type !== "context" || !e.title || seen.has(e.title)) continue;
+    seen.add(e.title);
+    pages.push({
+      title: redact(e.title).text,
+      host: e.host,
+      label: e.label ?? labels.get(e.key) ?? "unknown",
+      minutesAgo: Math.round((Date.now() - e.ts) / 60000),
+    });
+  }
+  return pages;
+}
+
+// The last work page's excerpt, as the second look reads it: never on the never-read
+// sites or a page with a password field, and only where the tab still shows that page.
+async function lastWorkExcerpt() {
+  const last = (await loadEngine()).lastRelevant;
+  if (!last) return { skipped: "no work page yet" };
+  if (!mayRead(last.url, await readingNow())) return { skipped: "settings" };
+  const tab = await chrome.tabs.get(last.tabId).catch(() => null);
+  if (!tab || !sameDocument(tab.url, last.url)) return { skipped: "closed" };
+  const page = await inPage(last.tabId, readExcerpt, [last.url, EXCERPT_CHARS, EXCERPT_MIN_CHARS, false]);
+  if (!page) return { skipped: "unreadable" };
+  if (page.password) return { skipped: "password" };
+  return { title: redact(last.title ?? "").text, excerpt: redact(page.text).text };
+}
+
+// What the agent's read tools see, through code that already exists.
+function agentDeps(intent) {
+  return {
+    recall: async (query) =>
+      (await (await memory).recall(query, { limit: NOTES_SEARCHED }).catch(() => []))
+        .filter((h) => h.item && h.item.topic !== "focus")
+        .slice(0, 5)
+        .map(noteOf),
+    tasks: async () =>
+      stillOpen(await toDo(), await loadLoops())
+        .filter((e) => e.id && e.title !== intent?.title)
+        .map((e) => ({
+          id: e.id,
+          title: redact(e.title).text,
+          when: e.daysLeft != null ? dueLabel(e.daysLeft) : null,
+        })),
+    activity: recentPages,
+    page: lastWorkExcerpt,
+    goal: async () => {
+      const i = (await (await store).activeIntent()) ?? intent;
+      return i ? { title: i.title, step: i.steps?.[0] ?? null, plan: i.plan?.steps?.map((s) => s.step) ?? null } : null;
+    },
+  };
+}
+
+// The model, through privateSettings: the agent reads the person's notes (AGENTS rule 5).
+async function agentChat() {
+  const settings = await loadModelSettings();
+  if (!settings) return null;
+  const used = privateSettings(settings);
+  try {
+    return { chat: toolClient(used), model: used.model ?? used.provider ?? null };
+  } catch {
+    return null;
+  }
+}
+
+// One record per run: the tools it called, with short arguments and results, never a
+// note's text. Settings shows these as "What Tuck looked at".
+const logRun = (moment, r, model, said) =>
+  log({
+    type: "agent",
+    ts: Date.now(),
+    moment,
+    model,
+    source: r.source,
+    steps: r.steps,
+    latencyMs: r.latencyMs,
+    trail: r.trail,
+    ...(said && { said }),
+    ...(r.error && { error: r.error }),
+  });
+
+// #78: a plan for the goal just set, from the person's notes. Its first step becomes the
+// goal's step unless the person gave one, so drift words say "Next up: <step>".
+function planAhead(intent) {
+  writePlan(intent).catch((err) =>
+    log({ type: "agent", ts: Date.now(), moment: "plan", source: "fallback", error: String(err) }),
+  );
+}
+
+async function writePlan(intent) {
+  const agent = await agentChat();
+  if (!agent) return;
+  const r = await planFor(agent.chat, agentDeps(intent), { title: intent.title });
+  await logRun("plan", r, agent.model, r.value && r.value.steps.map((s) => s.step));
+  if (!r.value) return;
+  // The goal may have ended or changed while the model worked.
+  await enqueue(async () => {
+    const st = await store;
+    const now = await st.activeIntent();
+    if (now?.id !== intent.id) return;
+    await st.putIntent({ ...now, plan: r.value, steps: now.steps?.length ? now.steps : [r.value.steps[0].step] });
+  });
+}
+
+// #61: one small next step, asked for by the person ("I'm stuck"). It may take the model
+// a few seconds; the template answers when there is no model or the loop finds nothing.
+// Returns {step, minutes, source}.
+async function stuck() {
+  const st = await store;
+  const intent = await st.activeIntent();
+  if (!intent) return { ok: false, reason: "no goal" };
+  const last = (await loadEngine()).lastRelevant;
+  const template = { step: stuckTemplate(last?.title, intent.title), minutes: 10, source: "template" };
+  const agent = await agentChat();
+  if (!agent) return { ok: true, ...template };
+  const r = await stuckStep(agent.chat, agentDeps(intent), { title: intent.title, step: intent.steps?.[0] });
+  await logRun("stuck", r, agent.model, r.value?.step);
+  return r.value ? { ok: true, ...r.value, source: "agent" } : { ok: true, ...template };
+}
+
+// "Open cart.js · acme/shop and do one line of it", at most 12 words.
+function stuckTemplate(lastTitle, goal) {
+  const short = (t, n) => t.split(/\s+/).slice(0, n).join(" ");
+  return lastTitle ? `Open ${short(lastTitle, 4)} and do one line of it` : `Do one small piece of ${short(goal, 6)}`;
+}
+
+// "Start this": the step becomes the goal's next step, and the person goes back to work.
+async function startStep({ step }) {
+  const text = String(step ?? "")
+    .trim()
+    .slice(0, 200);
+  if (!text) return { ok: false };
+  const s = await enqueue(async () => {
+    const st = await store;
+    const intent = await st.activeIntent();
+    if (intent) await st.putIntent({ ...intent, steps: [text, ...(intent.steps ?? []).filter((x) => x !== text)] });
+    await log({ type: "feedback", ts: Date.now(), kind: "stuck_start", payload: { intentId: intent?.id ?? null } });
+    return loadEngine();
+  });
+  await restTuck();
+  if (s.lastRelevant) await takeMeBack(s.lastRelevant);
+  return { ok: true };
+}
+
+// What to say when the goal is done, drafted while the person works on it: at Done the
+// line is used only if it is ready, and its task only if still open. Nothing waits for it
+// and nothing is redrawn later, so a goal being typed in the form is never wiped (#67).
+const nextDrafts = new Map(); // intent id → {message, task}
+
+function nextAhead(intent) {
+  writeNext(intent).catch((err) =>
+    log({ type: "agent", ts: Date.now(), moment: "next", source: "fallback", error: String(err) }),
+  );
+}
+
+async function writeNext(intent) {
+  const agent = await agentChat();
+  if (!agent) return;
+  const r = await nextAfter(agent.chat, agentDeps(intent), { title: intent.title });
+  await logRun("next", r, agent.model, r.value?.message);
+  if (!r.value) return;
+  nextDrafts.set(intent.id, r.value);
+  if (nextDrafts.size > 4) nextDrafts.delete(nextDrafts.keys().next().value);
+}
+
+// The goal-done view: the agent's line and task when drafted, else the template.
+async function goalDoneView(intent) {
+  const view = present({ event: "goal_done" });
+  const next = nextDrafts.get(intent.id);
+  if (!next) return view;
+  const open = next.task && stillOpen(await toDo(), await loadLoops()).some((e) => e.id === next.task.id);
+  return {
+    ...view,
+    bubble: { ...view.bubble, text: next.message, ...(open && { pickUp: [next.task.title] }) },
+  };
+}
+
 // ---- Goals and modes -----------------------------------------------------
 
 async function setIntent({ title, next, from, fromLoopId }, sender) {
-  return enqueue(async () => {
+  const intent = await enqueue(async () => {
     const st = await store;
     const previous = await st.activeIntent();
     if (previous) {
@@ -1181,6 +1386,10 @@ async function setIntent({ title, next, from, fromLoopId }, sender) {
     if (from === "tuck") await showTuck(sender?.tab?.id, present({ event: "goal_set" }));
     return intent;
   });
+  // After the queue: the goal is set; the plan and the word for its end come when they come.
+  planAhead(intent);
+  nextAhead(intent);
+  return intent;
 }
 
 async function completeIntent() {
@@ -1194,8 +1403,8 @@ async function completeIntent() {
       await saveLoops(markAll(markDone, await loadLoops(), await rowOf(intent.fromLoopId), Date.now()));
     await process({ type: "session", ts: Date.now(), kind: "intent_done", payload: { id: intent.id } });
     await summarizeEnded();
-    // Tuck asks what's next, on the page in front.
-    await showWithReminder((await loadEngine()).current?.tabId, present({ event: "goal_done" }), intent.title);
+    // Tuck asks what's next, on the page in front, in the agent's words when they are ready.
+    await showWithReminder((await loadEngine()).current?.tabId, await goalDoneView(intent), intent.title);
     return intent;
   });
 }
@@ -1267,6 +1476,15 @@ const HANDLERS = {
   },
   "refresh-profile": refreshProfile,
   "reminder-answer": reminderAnswer,
+  // The agent (#81): "I'm stuck" asks for one step; "Start this" makes it the next step.
+  stuck,
+  "start-step": startStep,
+  // What Tuck looked at, for settings: the last agent runs, newest first.
+  "agent-runs": async () =>
+    (await (await store).eventsSince(Date.now() - 24 * 3600 * 1000))
+      .filter((e) => e.type === "agent")
+      .slice(-5)
+      .reverse(),
   "agent-status": agentStatus,
   // What Tuck has learned from answers, for settings. Forgetting one has the page in
   // front judged again.

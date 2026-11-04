@@ -45,32 +45,53 @@ function emptyReply({ choices, usage }) {
   return Object.assign(new Error(why + spent), { cut });
 }
 
+async function post(fetchImpl, { baseUrl, model, apiKey }, messages, opts, extra = {}) {
+  const { maxTokens = 4000, temperature = 0.2, reasoningEffort } = opts;
+  const res = await fetchImpl(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(apiKey && { Authorization: `Bearer ${apiKey}` }) },
+    body: JSON.stringify({
+      model,
+      messages,
+      max_tokens: maxTokens,
+      temperature,
+      ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+      ...extra,
+    }),
+  });
+  if (!res.ok) throw new Error(`model call failed: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
+  return res.json();
+}
+
 // Returns complete(messages, opts) -> reply text. reasoningEffort is sent only when set,
 // since not every provider takes it. whole: a reply cut at the limit is an error even if
 // it has some text, for a caller that can only use all of it.
 export function modelClient(settings, fetchImpl = globalThis.fetch) {
-  const { baseUrl, model, apiKey } = resolveConfig(settings);
-  return async function complete(
-    messages,
-    { maxTokens = 4000, temperature = 0.2, reasoningEffort, whole = false } = {},
-  ) {
-    const res = await fetchImpl(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(apiKey && { Authorization: `Bearer ${apiKey}` }) },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: maxTokens,
-        temperature,
-        ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-      }),
-    });
-    if (!res.ok) throw new Error(`model call failed: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
-    const data = await res.json();
+  const config = resolveConfig(settings);
+  return async function complete(messages, opts = {}) {
+    const data = await post(fetchImpl, config, messages, opts);
+    const { whole = false } = opts;
     const text = data.choices?.[0]?.message?.content;
     const cut = data.choices?.[0]?.finish_reason === "length";
     if (typeof text !== "string" || (cut && (whole || !text))) throw emptyReply(data);
     return text;
+  };
+}
+
+// For the agent loop (agent/loop.js): returns chat(messages, {tools, ...opts}) -> the
+// assistant message, {role, content, tool_calls}, as the provider sent it (OpenAI-style
+// `tools`). A reply with neither text nor a tool call is an error.
+export function toolClient(settings, fetchImpl = globalThis.fetch) {
+  const config = resolveConfig(settings);
+  return async function chat(messages, { tools, ...opts } = {}) {
+    const data = await post(fetchImpl, config, messages, opts, tools?.length ? { tools, tool_choice: "auto" } : {});
+    const message = data.choices?.[0]?.message;
+    if (!message || (!message.tool_calls?.length && typeof message.content !== "string")) throw emptyReply(data);
+    return {
+      role: "assistant",
+      content: message.content ?? null,
+      ...(message.tool_calls && { tool_calls: message.tool_calls }),
+    };
   };
 }
 
