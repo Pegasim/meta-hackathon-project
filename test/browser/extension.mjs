@@ -1203,10 +1203,29 @@ await awayOlder.goto(repo);
 await awayOlder.bringToFront();
 await awayOlder.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
 await awayOlder.evaluate(() => (document.title = "Tuck away: older tab"));
+// #87: a tab in another window, with Tuck drawn on it. Closed after each check, with focus
+// back where it was: headless Chromium keeps the newest window the last focused, whichever
+// tab comes to the front, and opens new pages in it.
+async function otherWindow() {
+  const back = await popup.evaluate(async () => (await chrome.windows.getLastFocused()).id);
+  const [page] = await Promise.all([
+    ctx.waitForEvent("page"),
+    popup.evaluate((url) => chrome.windows.create({ url }), repo),
+  ]);
+  await page.waitForLoadState();
+  await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+  await page.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
+  return { page, back };
+}
+async function closeOtherWindow({ page, back }) {
+  await page.close();
+  await popup.evaluate((id) => chrome.windows.update(id, { focused: true }), back);
+}
 const awayTab = await ctx.newPage();
 await awayTab.goto(repo);
 await awayTab.bringToFront();
 await awayTab.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
+let awayWindow = await otherWindow();
 await awayTab.locator("#tuck-companion .avatar").click();
 const tuckAwayButton = awayTab.locator("#tuck-companion .bubble button", { hasText: "Tuck away" });
 await tuckAwayButton.waitFor({ timeout: 5000 });
@@ -1223,6 +1242,8 @@ await awayTab
   .catch(() => {});
 away.here = await settledDockCount(awayTab, 800);
 away.flag = await tuckAwayNow();
+away.otherWindow = await dockCount(awayWindow.page);
+await closeOtherWindow(awayWindow);
 // Every tab lets Tuck go, not just the one clicked: the older tab shows no Tuck in front.
 await awayOlder.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
@@ -1290,6 +1311,52 @@ await awayAvatarTab.locator("#tuck-companion .avatar").click();
 away.afterAvatarClick = await settledDockCount(awayAvatarTab, 1500);
 away.avatarAnswer = (await lastTrigger())?.choice;
 await awayAvatarTab.close();
+// #87: × on the drift word, a break from it, and "This is for my task": Tuck leaves each
+// time, and stays away through the break and its end.
+async function awayDrift(answer) {
+  const before = await lastTrigger();
+  const tab = await ctx.newPage();
+  await tab.goto(dockedSocial);
+  await tab.bringToFront();
+  await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+  await waitForNewDrift(before?.id ?? null);
+  const button = tab.locator(`#tuck-companion .bubble ${answer}`);
+  await button.waitFor({ timeout: 15000 });
+  await button.click();
+  return tab;
+}
+const awayCloseTab = await awayDrift(".close");
+away.afterClose = await settledDockCount(awayCloseTab, 1500);
+away.closeAnswer = (await lastTrigger())?.choice;
+await awayCloseTab.close();
+await settingsPage.evaluate(async () => {
+  const { attentionConfig } = await chrome.storage.local.get("attentionConfig");
+  await chrome.storage.local.set({ attentionConfig: { ...attentionConfig, breakMin: 0.25 } }); // 15 s
+});
+const awayBreakTab = await awayDrift("button[data-choice=break]");
+away.afterBreakAnswer = await settledDockCount(awayBreakTab, 1500);
+await awayBreakTab.close();
+const awayOnBreak = await ctx.newPage();
+await awayOnBreak.goto(repo);
+await awayOnBreak.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.onBreakPage = await settledDockCount(awayOnBreak);
+const awayBreak = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).engine;
+away.breakState = awayBreak.state;
+await awayOnBreak.waitForTimeout(Math.max(0, awayBreak.breakUntil - Date.now()) + 250);
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.afterBreakEnds = await settledDockCount(awayOnBreak);
+away.breakOver =
+  (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).engine.state !== "break";
+await awayOnBreak.close();
+await settingsPage.evaluate(async () => {
+  const { attentionConfig } = await chrome.storage.local.get("attentionConfig");
+  delete attentionConfig.breakMin;
+  await chrome.storage.local.set({ attentionConfig });
+});
+const awayRelatedTab = await awayDrift("button[data-choice=related]");
+away.afterRelated = await settledDockCount(awayRelatedTab, 1500);
+await awayRelatedTab.close();
 // An agent's word comes, and Got it sends Tuck away again.
 await awayNext.bringToFront();
 await agentSays("working");
@@ -1341,13 +1408,31 @@ away.backInPlace = await awayHeld
   .then(() => 1)
   .catch(() => 0);
 away.popupAfterBack = { card: await popup.isVisible("#away-card"), awayButton: await popup.isVisible("#tuck-away") };
-// The popup's Tuck away hides Tuck on the page in front; Bring Tuck back again for what follows.
+// The popup's Tuck away hides Tuck on the page in front, and in the other window (#87).
+awayWindow = await otherWindow();
 await popup.click("#tuck-away");
 await popup.waitForTimeout(300);
 away.popupAwayFlag = await tuckAwayNow();
 away.afterPopupAway = await settledDockCount(awayHeld, 800);
+away.afterPopupAwayOtherWindow = await dockCount(awayWindow.page);
+await closeOtherWindow(awayWindow);
+// Bring Tuck back again for what follows, from a new tab, where Tuck cannot be drawn: it
+// comes on the next page (#87).
+const awayNewTab = await ctx.newPage();
+await awayNewTab.goto("chrome://newtab");
+await awayNewTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 await popup.click("#bring-back");
-await awayHeld.locator("#tuck-companion .dock.in").waitFor({ timeout: 5000 });
+await popup.waitForTimeout(300);
+away.flagBackOnNewTab = await tuckAwayNow();
+await awayHeld.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.backAfterNewTab = await awayHeld
+  .locator("#tuck-companion .dock.in")
+  .waitFor({ timeout: 5000 })
+  .then(() => 1)
+  .catch(() => 0);
+await awayNewTab.close();
 const awayBack = await ctx.newPage();
 await awayBack.goto(repo);
 await awayBack.bringToFront();
@@ -1362,6 +1447,18 @@ await awayBack
   .locator("#tuck-companion .dock.in")
   .waitFor({ state: "detached", timeout: 5000 })
   .catch(() => {});
+// #87: still away after Chrome stops the idle service worker.
+away.stoppedWhileAway = await stopWorker();
+const awayAfterStop = await ctx.newPage();
+await awayAfterStop.goto(repo);
+await awayAfterStop.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.afterStop = await settledDockCount(awayAfterStop);
+away.freshAfterStop = await workerIsFresh();
+away.flagAfterStop = await tuckAwayNow();
+await awayAfterStop.close();
+await awayBack.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 // Done on a goal of its own, so the checkout goal is replaced, not finished (the day
 // summary below says so).
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Try Tuck away" }));
@@ -2277,6 +2374,7 @@ assert.deepEqual(
     parting: "Okay. Click the toolbar icon to bring me back.",
     flag: true,
     here: 0,
+    otherWindow: 0,
     olderTab: 0,
     staleDrawn: 1,
     staleOnSwitch: 0,
@@ -2287,6 +2385,14 @@ assert.deepEqual(
     afterDrift: 0,
     afterAvatarClick: 0,
     avatarAnswer: "dismiss",
+    afterClose: 0,
+    closeAnswer: "dismiss",
+    afterBreakAnswer: 0,
+    onBreakPage: 0,
+    breakState: "break",
+    afterBreakEnds: 0,
+    breakOver: true,
+    afterRelated: 0,
     agentPose: "wait",
     afterAgent: 0,
     heldCount: 1,
@@ -2298,8 +2404,15 @@ assert.deepEqual(
     popupAfterBack: { card: false, awayButton: true },
     popupAwayFlag: true,
     afterPopupAway: 0,
+    afterPopupAwayOtherWindow: 0,
+    flagBackOnNewTab: false,
+    backAfterNewTab: 1,
     restingAgain: "rest",
     hiddenAgain: true,
+    stoppedWhileAway: true,
+    afterStop: 0,
+    freshAfterStop: true,
+    flagAfterStop: true,
     afterDoneWhileAway: 0,
     flagAfterGreeting: false,
     goalSetWhileWorking: "work",
