@@ -313,7 +313,7 @@ await repoTab.goto(repo);
 const tuck = repoTab.locator("#tuck-companion");
 await tuck.locator(".bubble input[name=goal]").waitFor({ timeout: 10000 });
 const greeting = await tuck.locator(".bubble .text").textContent();
-const greetState = await tuck.locator("svg.tuck").getAttribute("data-state");
+const greetState = await tuck.locator("svg.tuck").getAttribute("data-pose");
 if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-greeting.png") });
 // Drag Tuck to the left: the bubble then opens rightwards.
 await repoTab.waitForTimeout(600); // the slide-in
@@ -330,12 +330,12 @@ await tuck.locator("input[name=goal]").fill("Fix the checkout bug");
 await tuck.locator("input[name=step]").fill("Write the failing test");
 await tuck.locator("button.start").click();
 await tuck.locator(".bubble .text", { hasText: "Got it" }).waitFor();
-// Tuck stays, resting; a click is a check-in wave with the goal card.
+// Tuck stays, resting; a click is a hello with the goal card.
 await repoTab.waitForTimeout(2500);
-const restState = await tuck.locator("svg.tuck").getAttribute("data-state");
+const restState = await tuck.locator("svg.tuck").getAttribute("data-pose");
 await tuck.locator(".avatar").click();
 await tuck.locator(".bubble .text", { hasText: "Fix the checkout bug" }).waitFor();
-const clickState = await tuck.locator("svg.tuck").getAttribute("data-state");
+const clickState = await tuck.locator("svg.tuck").getAttribute("data-pose");
 await tuck.locator(".bubble .close").click();
 await repoTab.waitForTimeout(1500);
 
@@ -344,7 +344,7 @@ await repoTab.waitForTimeout(1500);
 await repoTab.reload();
 await tuck.waitFor({ state: "attached", timeout: 10000 });
 const afterReload = {
-  state: await tuck.locator("svg.tuck").getAttribute("data-state"),
+  state: await tuck.locator("svg.tuck").getAttribute("data-pose"),
   formOpen: await tuck.locator("input[name=goal]").isVisible(),
   shown: await tuck.locator(".dock.in").count(),
   hosts: await repoTab.locator("#tuck-companion").count(),
@@ -378,6 +378,35 @@ async function clickOnCard(button) {
   await popup.waitForTimeout(500);
   return text;
 }
+// Tuck's pose on a page (spec pose table), and waiting for one: the last pose seen.
+const poseOf = (page) => page.locator("#tuck-companion svg.tuck").getAttribute("data-pose", { timeout: 2000 });
+async function waitForPose(page, pose, poke = false) {
+  let seen = null;
+  for (let i = 0; i < 40 && seen !== pose; i++) {
+    if (i) await page.waitForTimeout(250);
+    if (poke) await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+    seen = await poseOf(page).catch(() => null);
+  }
+  return seen;
+}
+// Stops the extension's service worker the way Chrome stops an idle one (its Stop button in
+// chrome://serviceworker-internals; Playwright has no call for it). A mark set in the worker
+// through the test's handle tells that the worker came back fresh.
+async function stopWorker() {
+  await worker.evaluate(() => (globalThis.__beforeStop = true));
+  const internals = await ctx.newPage();
+  await internals.goto("chrome://serviceworker-internals/");
+  const registration = internals.locator(".serviceworker-registration", { hasText: ext });
+  await registration.getByRole("button", { name: "Stop" }).first().click();
+  let stopped = false;
+  for (let i = 0; i < 40 && !stopped; i++) {
+    stopped = /Running Status: STOPPED/.test(await registration.innerText());
+    if (!stopped) await internals.waitForTimeout(100);
+  }
+  await internals.close();
+  return stopped;
+}
+const workerIsFresh = () => worker.evaluate(() => globalThis.__beforeStop === undefined);
 
 // Browse: the repo, then the video. The model judges each page once.
 await repoTab.bringToFront();
@@ -387,15 +416,21 @@ await videoTab.goto(video);
 await videoTab.bringToFront();
 const drift1 = await waitForNewDrift(null);
 const badge = await popup.evaluate(() => chrome.action.getBadgeText({}));
-// Tuck on the video speaks at the first detection (L1): a check-in wave with the
-// message. Still drifting, it turns to thinking (L2).
+// Tuck on the video speaks at the first detection (L1), in the drift pose, with the
+// message. Still drifting, the L2 word comes, in the drift pose too. Both say the same
+// drafted line, so the L2 bubble is known by its text being drawn anew.
 const onVideo = videoTab.locator("#tuck-companion");
 await onVideo.locator(".bubble button[data-choice=back]").waitFor({ timeout: 2500 });
-const firstState = await onVideo.locator("svg.tuck").getAttribute("data-state");
+const firstState = await onVideo.locator("svg.tuck").getAttribute("data-pose");
 const firstText = await onVideo.locator(".bubble .text").textContent();
-for (let i = 0; i < 40 && (await onVideo.locator("svg.tuck").getAttribute("data-state")) !== "thinking"; i++)
-  await videoTab.waitForTimeout(250);
-const nudgeState = await onVideo.locator("svg.tuck").getAttribute("data-state");
+const firstLine = await onVideo.locator(".bubble .text").elementHandle();
+let secondWord = false;
+for (let i = 0; i < 60 && !secondWord; i++) {
+  const t = await lastTrigger();
+  secondWord = t?.id !== drift1.id && t?.level >= 2 && !(await firstLine.evaluate((e) => e.isConnected));
+  if (!secondWord) await videoTab.waitForTimeout(250);
+}
+const nudgeState = await onVideo.locator("svg.tuck").getAttribute("data-pose");
 const videoAvatar = await onVideo.locator(".avatar").boundingBox();
 const cardText = await onVideo.locator(".bubble .text").textContent();
 if (shots) await videoTab.screenshot({ path: path.join(shots, "tuck-nudge.png") });
@@ -704,10 +739,84 @@ await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 const driftOff = await waitForNewDrift(driftSlowFeed.id);
 
-// Whose turn it is in a coding agent (#11): while it works the same drifting page is a
-// wait; when it stops Tuck says so, once.
+// A coding agent's status, as the bridge sends it (#11).
 const agentSays = (status) =>
   popup.evaluate((s) => chrome.runtime.sendMessage({ type: "agent-status", status: s, session: "s1" }), status);
+
+// A break from the nudge: Tuck stays on the page, asleep, for the whole break (spec pose
+// table). Review Focus 1: the service worker stops during the break; a page opened then is
+// drawn from the state kept in storage, still asleep. The break ends on a work page with
+// nothing to say, and Tuck wakes there quietly. While the agent works, the page in front
+// shows Tuck working, also on a fresh page after another stop.
+await settingsPage.evaluate(async () => {
+  const { attentionConfig } = await chrome.storage.local.get("attentionConfig");
+  await chrome.storage.local.set({ attentionConfig: { ...attentionConfig, breakMin: 0.25 } }); // 15 s
+});
+await chatTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+const breakButton = chatTab.locator("#tuck-companion .bubble button[data-choice=break]");
+await breakButton.waitFor({ timeout: 15000 });
+const breakFrom = await lastTrigger();
+await breakButton.click();
+const onBreak = {
+  pose: await waitForPose(chatTab, "sleep"),
+  bubble: await chatTab.locator("#tuck-companion .bubble").isVisible(),
+  shown: await chatTab.locator("#tuck-companion .dock.in").count(),
+};
+const stoppedOnBreak = await stopWorker();
+const breakPage = await ctx.newPage();
+await breakPage.goto(compose); // not the video: its judgments are counted below
+await breakPage.bringToFront();
+await breakPage.locator("#tuck-companion").waitFor({ state: "attached", timeout: 10000 });
+const afterStopOnBreak = {
+  pose: await waitForPose(breakPage, "sleep"),
+  bubble: await breakPage.locator("#tuck-companion .bubble").isVisible(),
+  fresh: await workerIsFresh(),
+};
+// The goal card on a break: Tuck says hello, and goes back to sleep when it closes.
+await breakPage.locator("#tuck-companion .avatar").click();
+await breakPage.locator("#tuck-companion .bubble .text", { hasText: "Fix the checkout bug" }).waitFor();
+const cardOnBreak = await poseOf(breakPage);
+await breakPage.locator("#tuck-companion .bubble .close").click();
+const afterCardOnBreak = await waitForPose(breakPage, "sleep");
+await breakPage.close();
+const wakeTab = await ctx.newPage();
+await wakeTab.goto(repo);
+await wakeTab.bringToFront();
+await wakeTab.locator("#tuck-companion").waitFor({ state: "attached", timeout: 10000 });
+const asleepAtWork = await waitForPose(wakeTab, "sleep");
+// Until the break runs out, then a look at the page in front.
+const { breakUntil } = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).engine;
+await wakeTab.waitForTimeout(Math.max(0, breakUntil - Date.now()) + 250);
+const wokePose = await waitForPose(wakeTab, "rest", true);
+const afterBreak = {
+  bubble: await wakeTab.locator("#tuck-companion .bubble").isVisible(),
+  trigger: (await lastTrigger())?.kind,
+  state: (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).engine.state,
+};
+await agentSays("working");
+const agentWorkPose = await waitForPose(wakeTab, "work");
+const agentWorkBubble = await wakeTab.locator("#tuck-companion .bubble").isVisible();
+const stoppedWhileWorking = await stopWorker();
+const workPage = await ctx.newPage();
+await workPage.goto(repo);
+await workPage.bringToFront();
+await workPage.locator("#tuck-companion").waitFor({ state: "attached", timeout: 10000 });
+const afterStopWorking = { pose: await waitForPose(workPage, "work"), fresh: await workerIsFresh() };
+await agentSays("unknown");
+const afterAgentStops = await waitForPose(workPage, "rest");
+await workPage.close();
+await wakeTab.close();
+await settingsPage.evaluate(async () => {
+  const { attentionConfig } = await chrome.storage.local.get("attentionConfig");
+  delete attentionConfig.breakMin;
+  await chrome.storage.local.set({ attentionConfig });
+});
+await chatTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+
+// Whose turn it is in a coding agent (#11): while it works the same drifting page is a
+// wait; when it stops Tuck says so, once.
 const agentTab = await ctx.newPage();
 await agentTab.goto(dockedSocial);
 await agentTab.bringToFront();
@@ -717,6 +826,8 @@ await agentTab.waitForTimeout(500);
 const beforeWait = await lastTrigger();
 await agentTab.waitForTimeout(6000);
 const duringWait = await lastTrigger();
+const workPose = await waitForPose(agentTab, "work");
+const workBubble = await agentTab.locator("#tuck-companion .bubble").isVisible();
 const waitStatus = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }));
 const waitBadge = await popup.evaluate(() => chrome.action.getBadgeText({}));
 await agentSays("waiting_for_user");
@@ -725,6 +836,7 @@ await agentTab.locator("#tuck-companion").waitFor({ state: "attached" });
 await agentTab.waitForTimeout(500);
 const agentWord = await lastTrigger();
 const agentBubble = await agentTab.locator("#tuck-companion .bubble").innerText();
+const waitPose = await poseOf(agentTab);
 // The popup answers an agent's word as the bubble does: nothing teaches about the page.
 await popup.reload();
 await popup.waitForSelector("#trigger:not([hidden])");
@@ -993,26 +1105,27 @@ assert.match(partialRows, /Run errand/);
 assert.doesNotMatch(partialRows, /Rent went up/, "with some entries judged, an unread one is still not listed");
 assert.match(partialStatus, /1 note with a next action/);
 assert.equal(greeting, "Hi. What are we working on today?");
-assert.equal(greetState, "checkin");
-assert.equal(restState, "resting", "Tuck rests on the page once the goal is set");
+assert.equal(greetState, "hello");
+assert.equal(restState, "rest", "Tuck rests on the page once the goal is set");
 assert.deepEqual(
   afterReload,
-  { state: "resting", formOpen: false, shown: 1, hosts: 1 },
+  { state: "rest", formOpen: false, shown: 1, hosts: 1 },
   "after a reload Tuck is back on the page, resting, once",
 );
-assert.equal(clickState, "checkin", "clicking Tuck is a check-in");
+assert.equal(clickState, "hello", "clicking Tuck is a hello");
 assert.ok(dragged.x < 100, `dragged to the left: ${dragged.x}`);
 assert.ok(bubbleAfterDrag.x >= dragged.x, "on the left, the bubble opens rightwards");
 assert.ok(formStillOpen, "a drag is not a click");
 assert.ok(videoAvatar.x < 100, `Tuck remembers where it was put: ${videoAvatar.x}`);
 assert.equal(intentShown, "Fix the checkout bug");
 assert.equal(drift1.level, 1);
-assert.equal(firstState, "checkin", "the first detection is a visible wave");
+assert.equal(firstState, "drift", "the first detection is a visible drift pose");
 assert.equal(firstText, "Still on the video? Back to the failing test.", "Tuck says the model's line");
 assert.ok(nudgeCalls.length >= 1);
 assert.match(nudgeCalls[0][1].content, /Site now: localhost/);
 assert.match(nudgeCalls[0][1].content, /Next step: Write the failing test/);
-assert.equal(nudgeState, "thinking");
+assert.ok(secondWord, "the L2 word was drawn");
+assert.equal(nudgeState, "drift");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
 const looks = calls.filter((m) => /excerpt/.test(m[0].content));
 const judged = calls.filter((m) => !/excerpt/.test(m[0].content));
@@ -1135,6 +1248,27 @@ assert.match(heldBubble, /Muse is done\./);
 assert.equal(afterOff.engine.agent.status, "completed");
 assert.equal(agentWord.kind, "agent");
 assert.match(agentBubble, /Muse is waiting on you\./);
+assert.equal(workPose, "work", "while the agent works, Tuck on the page works");
+assert.equal(workBubble, false, "quietly");
+assert.equal(waitPose, "wait", "the agent waiting on you: Tuck waits, with the word");
+assert.equal(breakFrom.kind, "drift", "the break is taken from a drift nudge");
+assert.deepEqual(onBreak, { pose: "sleep", bubble: false, shown: 1 }, "on a break Tuck stays on the page, asleep");
+assert.ok(stoppedOnBreak, "the service worker stopped during the break");
+assert.deepEqual(
+  afterStopOnBreak,
+  { pose: "sleep", bubble: false, fresh: true },
+  "a page opened after the worker stopped still shows the break",
+);
+assert.equal(cardOnBreak, "hello", "the goal card on a break is a hello");
+assert.equal(afterCardOnBreak, "sleep", "closing it, Tuck sleeps again: the break goes on");
+assert.equal(asleepAtWork, "sleep", "asleep on a work page too, for the whole break");
+assert.equal(wokePose, "rest", "the break over on a work page: Tuck wakes quietly");
+assert.deepEqual(afterBreak, { bubble: false, trigger: breakFrom.kind, state: "focused" });
+assert.equal(agentWorkPose, "work", "the agent starts working: the page in front shows it");
+assert.equal(agentWorkBubble, false, "with no bubble");
+assert.ok(stoppedWhileWorking, "the service worker stopped while the agent works");
+assert.deepEqual(afterStopWorking, { pose: "work", fresh: true }, "a fresh page after the stop shows Tuck working");
+assert.equal(afterAgentStops, "rest", "the agent stops: Tuck rests again");
 assert.equal(afterDone.intent, null, "no stale goal after change + done");
 assert.match(reminderText, /Due today\. Still on your list\?/, "the deadline in Tuck's words");
 assert.match(reminderText, /Send the visa papers/);
