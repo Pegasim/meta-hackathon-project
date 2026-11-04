@@ -7,6 +7,8 @@ const ANSWERS = {
   back: { choice: "back", label: "Take me back", primary: true },
   related: { choice: "related", label: "This is for my task" },
   break: { choice: "break", label: "5-min break" },
+  // #61: asks the agent for one small step instead of answering the word (stuckView).
+  stuck: { choice: "stuck", label: "I'm stuck", msg: { type: "stuck-tuck" } },
 };
 
 // The model's line when it is ready (agent/nudge.js), else the template in Tuck's voice.
@@ -33,6 +35,21 @@ const WHILE_AWAY = new Set(["drift", "fragmentation", "agent", "session_start"])
 export const comesWhileAway = (kind) => WHILE_AWAY.has(kind);
 
 const goalForm = (text, pickUp = []) => ({ kind: "goal", text, pickUp });
+
+// "I'm stuck" (#61): Tuck waits while the agent looks (up to 20 s), then shows the one step
+// with its minutes. "Another one" asks once more at most: the second step has no such button.
+// Closing it closes it; while Tuck is tucked away, Tuck leaves with it.
+export function stuckView({ step, minutes, again = false, away = false }) {
+  if (!step)
+    return { pose: "wait", bubble: { kind: "note", text: "Let me find one small step…" }, ...(away && { away }) };
+  const buttons = [{ choice: "start", label: "Start this", primary: true, msg: { type: "start-step", step } }];
+  if (!again) buttons.push({ choice: "another", label: "Another one", msg: { type: "stuck-tuck", again: true } });
+  return {
+    pose: "hello",
+    bubble: { kind: "step", text: step, next: minutes ? `About ${minutes} min` : "", buttons, dismissable: true },
+    ...(away && { away }),
+  };
+}
 
 // input: {trigger, loops} for an engine trigger, or {event, intent, agent} for
 // "goal_set" | "goal_done" | "resolved" | "back" | "presence" | "break" | "card" | "away". Returns null when
@@ -86,7 +103,7 @@ export function present({ trigger, loops = [], event, intent, agent }) {
         : {
             kind: "nudge",
             text: nudgeText(trigger),
-            buttons: [ANSWERS.back, ANSWERS.related, ANSWERS.break],
+            buttons: [ANSWERS.back, ANSWERS.stuck, ANSWERS.related, ANSWERS.break],
             dismissable: true,
           };
       return { pose: "drift", bubble, triggerId: id };
@@ -96,7 +113,7 @@ export function present({ trigger, loops = [], event, intent, agent }) {
       bubble: {
         kind: "nudge",
         text: nudgeText(trigger),
-        buttons: [ANSWERS.back, ANSWERS.related, ANSWERS.break],
+        buttons: [ANSWERS.back, ANSWERS.stuck, ANSWERS.related, ANSWERS.break],
         dismissable: true,
       },
       triggerId: id,

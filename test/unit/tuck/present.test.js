@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { present, nudgeText, comesWhileAway } from "../../../src/tuck/present.js";
+import { present, nudgeText, comesWhileAway, stuckView } from "../../../src/tuck/present.js";
 import { followsVoice } from "../../../src/tuck/voice.js";
 
 const evidence = {
@@ -28,7 +28,7 @@ test("L1 drift speaks right away: the drift pose with the message and the answer
   assert.equal(v.bubble.text, "Still on YouTube? Next up: write the failing test.");
   assert.deepEqual(
     v.bubble.buttons.map((b) => b.choice),
-    ["back", "related", "break"],
+    ["back", "stuck", "related", "break"],
   );
   assert.equal(v.triggerId, "drift-1");
 });
@@ -47,7 +47,7 @@ test("on a page the model is unsure about, L1 asks instead", () => {
   );
 });
 
-test("L2 and L3 drift: the drift pose, with the message and the three answers", () => {
+test("L2 and L3 drift: the drift pose, with the message and the answers", () => {
   for (const level of [2, 3]) {
     const v = present({ trigger: trigger("drift", level) });
     assert.equal(v.pose, "drift");
@@ -55,7 +55,7 @@ test("L2 and L3 drift: the drift pose, with the message and the three answers", 
     assert.equal(v.bubble.text, "Still on YouTube. Want to get back to it?");
     assert.deepEqual(
       v.bubble.buttons.map((b) => b.choice),
-      ["back", "related", "break"],
+      ["back", "stuck", "related", "break"],
     );
     assert.equal(v.bubble.dismissable, true);
   }
@@ -243,4 +243,53 @@ test("the goal card carries the plan from the person's notes, when there is one 
   assert.deepEqual(v.bubble.plan, ["Write the demo script", "Record it in one take", "Check no key is on screen"]);
   assert.equal(v.bubble.watchOut, "The video is at most 3 minutes");
   assert.equal(v.bubble.next, "Write the demo script");
+});
+
+test('a drift word offers "I\'m stuck" next to Take me back; the unsure question does not (#61)', () => {
+  for (const level of [1, 2]) {
+    const stuck = present({ trigger: trigger("drift", level) }).bubble.buttons[1];
+    assert.equal(stuck.label, "I'm stuck");
+    assert.deepEqual(stuck.msg, { type: "stuck-tuck" }, "it asks for a step, it does not answer the word");
+  }
+  const unsure = { ...trigger("drift", 1), evidence: { ...evidence, unsure: true } };
+  assert.ok(!present({ trigger: unsure }).bubble.buttons.some((b) => b.choice === "stuck"));
+  assert.ok(!present({ trigger: trigger("return", 1) }).bubble.buttons.some((b) => b.choice === "stuck"));
+});
+
+test("while the agent looks, Tuck waits with a short line (#61)", () => {
+  const v = stuckView({});
+  assert.equal(v.pose, "wait");
+  assert.equal(v.bubble.kind, "note");
+  assert.equal(v.bubble.text, "Let me find one small step…");
+});
+
+test("the stuck step shows with its minutes, Start this and Another one (#61)", () => {
+  const v = stuckView({ step: "Write the failing test", minutes: 10 });
+  assert.equal(v.bubble.kind, "step");
+  assert.equal(v.bubble.text, "Write the failing test");
+  assert.equal(v.bubble.next, "About 10 min");
+  assert.equal(v.bubble.dismissable, true);
+  assert.deepEqual(
+    v.bubble.buttons.map((b) => [b.label, b.msg]),
+    [
+      ["Start this", { type: "start-step", step: "Write the failing test" }],
+      ["Another one", { type: "stuck-tuck", again: true }],
+    ],
+  );
+  assert.equal(v.away, undefined);
+});
+
+test("the second step has no Another one: one more ask at most (#61)", () => {
+  const v = stuckView({ step: "Open cart.js and do one line of it", minutes: 10, again: true });
+  assert.deepEqual(
+    v.bubble.buttons.map((b) => b.label),
+    ["Start this"],
+  );
+});
+
+test("asked for while Tuck is tucked away, the step still shows and is marked to leave on close (#61)", () => {
+  assert.equal(stuckView({ away: true }).away, true);
+  const v = stuckView({ step: "Write the failing test", minutes: 10, away: true });
+  assert.equal(v.away, true);
+  assert.equal(v.bubble.text, "Write the failing test");
 });

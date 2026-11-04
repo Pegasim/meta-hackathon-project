@@ -106,6 +106,33 @@ $("change").onclick = () => {
   $("title").focus();
 };
 
+// "I'm stuck" (#61): the step shows here, in the card, so it works on any page in front
+// (Tuck cannot draw on chrome:// pages). The agent may take up to 20 s. "Another one" asks
+// once more at most.
+let stuckStep = null;
+async function askStuck(again) {
+  $("stuck").disabled = true;
+  $("stuck-view").hidden = false;
+  $("stuck-answers").hidden = true;
+  $("stuck-text").textContent = "Let me find one small step…";
+  $("stuck-min").textContent = "";
+  const r = await send("stuck");
+  $("stuck").disabled = false;
+  if (!r?.ok) return void ($("stuck-view").hidden = true);
+  stuckStep = r.step;
+  $("stuck-text").textContent = r.step;
+  $("stuck-min").textContent = r.minutes ? `About ${r.minutes} min` : "";
+  $("stuck-answers").hidden = false;
+  $("another-step").hidden = again;
+}
+$("stuck").onclick = () => askStuck(false);
+$("another-step").onclick = () => askStuck(true);
+$("start-step").onclick = async () => {
+  $("stuck-view").hidden = true;
+  await send("start-step", { step: stuckStep });
+  render();
+};
+
 $("mode").onchange = async () => {
   await send("set-mode", { mode: $("mode").value });
   render();

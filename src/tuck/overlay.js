@@ -228,6 +228,7 @@
       else if (current?.bubble) {
         if (current.bubble.kind === "goal") send({ type: "goal-form-closed" });
         closeBubble();
+        if (current?.away) leave(); // tucked away, Tuck came for this word alone
       } else send({ type: "tuck-click" });
     });
   }
@@ -351,13 +352,16 @@
       );
       box.append(part);
     }
-    if (b.kind === "nudge") {
+    // A stuck step (#61): its minutes under it.
+    if (b.kind === "step" && b.next) box.append(el("p", { className: "next", textContent: b.next }));
+    if (b.buttons) {
       const row = el("div", { className: "row" });
       for (const btn of b.buttons) {
         const button = el("button", {
           className: `b${btn.primary ? " primary" : ""}`,
           textContent: btn.label,
-          onclick: () => send({ type: "respond", choice: btn.choice }),
+          // A nudge's answer, or the message the button names ("I'm stuck", "Start this").
+          onclick: () => send(btn.msg ?? { type: "respond", choice: btn.choice }),
         });
         button.dataset.choice = btn.choice;
         row.append(button);
@@ -421,6 +425,7 @@
             // Closing the goal form without a goal: Tuck stops offering it on new pages for a while.
             if (b.kind === "goal") send({ type: "goal-form-closed" });
             closeBubble();
+            if (current?.away) leave(); // tucked away, Tuck came for this word alone
           },
         }),
       );

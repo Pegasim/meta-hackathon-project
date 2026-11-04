@@ -1752,11 +1752,32 @@ await demoVideo.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 await waitForNewDrift(beforeDemoDrift?.id);
 const demoWord = nudgeCalls.findLast((m) => /Their task: Record the demo video/.test(m[1].content));
-await demoTab.bringToFront();
-await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
-const stuckReply = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "stuck" }));
-await popup.evaluate((step) => chrome.runtime.sendMessage({ type: "start-step", step }), stuckReply.step);
+// #61: "I'm stuck" in the drift bubble. Tuck shows one step; Start this makes it the next
+// step and brings the work tab to the front.
+const stuckBubble = demoVideo.locator("#tuck-companion .bubble");
+await stuckBubble.locator("button[data-choice=stuck]").click();
+await stuckBubble.locator("button[data-choice=start]").waitFor({ timeout: 25000 });
+const stuckShown = await stuckBubble.innerText();
+await stuckBubble.locator("button[data-choice=start]").click();
+await popup.waitForTimeout(800);
+const stuckBackTo = await activeUrl();
 const afterStart = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).intent;
+// The popup's card: the step shows inline; Another one once, then it is gone.
+await popup.bringToFront();
+await popup.reload();
+await popup.click("#stuck");
+await popup.locator("#stuck-answers:not([hidden])").waitFor({ timeout: 25000 });
+await popup.click("#another-step");
+await popup.locator("#stuck-answers:not([hidden])").waitFor({ timeout: 25000 });
+const popupStuck = await popup.evaluate(() => ({
+  text: document.getElementById("stuck-text").textContent,
+  minutes: document.getElementById("stuck-min").textContent,
+  another: !document.getElementById("another-step").hidden,
+}));
+await popup.click("#start-step");
+await popup.waitForTimeout(800);
+const popupBackTo = await activeUrl();
+const afterPopupStart = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).intent;
 await settingsPage.bringToFront();
 await settingsPage.reload();
 await settingsPage.locator("#agent-runs .agent-run").first().waitFor({ timeout: 5000 });
@@ -1907,9 +1928,15 @@ assert.equal(planned.steps[0], "Write a 3-minute demo script", "the plan's first
 assert.match(demoCardText, /Record the demo video in one take/, "the plan is on Tuck's card");
 assert.match(demoCardText, /Watch out: Never show the API key on screen/);
 assert.match(demoWord?.[1].content ?? "", /Next step: Write a 3-minute demo script/, "the drift word has the step");
-assert.equal(stuckReply.source, "agent");
-assert.equal(stuckReply.step, "Write the first lines of the demo video");
-assert.equal(afterStart.steps[0], stuckReply.step, "Start this makes it the next step");
+assert.match(stuckShown, /Write the first lines of the demo video/, "I'm stuck shows the agent's step");
+assert.match(stuckShown, /About 10 min/);
+assert.equal(afterStart.steps[0], "Write the first lines of the demo video", "Start this makes it the next step");
+assert.equal(stuckBackTo, repo, "Start this brings the work tab to the front");
+assert.equal(popupStuck.text, "Write the first lines of the demo video", "the popup shows the step inline");
+assert.equal(popupStuck.minutes, "About 10 min");
+assert.equal(popupStuck.another, false, "Another one asks once more at most");
+assert.equal(afterPopupStart.steps[0], popupStuck.text, "the popup's Start this makes it the next step");
+assert.equal(popupBackTo, repo, "the popup's Start this brings the work tab to the front");
 assert.match(trailText, /Planned the goal/);
 assert.match(trailText, /recall_notes "record the demo video" → \d+ notes?/);
 assert.match(trailText, /You were stuck/);

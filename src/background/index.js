@@ -47,7 +47,7 @@ import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine, templateGreeting, toolKind, whenSaid } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
 import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
-import { present, comesWhileAway } from "../tuck/present.js";
+import { present, comesWhileAway, stuckView } from "../tuck/present.js";
 import "../tuck/skins.js";
 
 const memory = Memory.open();
@@ -1434,6 +1434,18 @@ async function stuck() {
   return r.value ? { ok: true, ...r.value, source: "agent" } : { ok: true, ...template };
 }
 
+// "I'm stuck" in Tuck's bubble: Tuck waits on that page while the agent looks, then shows
+// the step there. The person asked for it, so it shows while Tuck is tucked away too.
+async function stuckOnPage({ again }, sender) {
+  const tabId = sender?.tab?.id;
+  const away = await isAway();
+  await showTuck(tabId, stuckView({ away }));
+  const r = await stuck();
+  if (!r.ok) return (away ? await hideTuck() : await restTuck(), r);
+  await showTuck(tabId, stuckView({ ...r, again: !!again, away }));
+  return r;
+}
+
 // "Open cart.js · acme/shop and do one line of it", at most 12 words.
 function stuckTemplate(lastTitle, goal) {
   const short = (t, n) => t.split(/\s+/).slice(0, n).join(" ");
@@ -1453,7 +1465,9 @@ async function startStep({ step }) {
     await log({ type: "feedback", ts: Date.now(), kind: "stuck_start", payload: { intentId: intent?.id ?? null } });
     return loadEngine();
   });
-  await restTuck();
+  // Tucked away, Tuck came for the step alone: it leaves with it.
+  if (await isAway()) await hideTuck();
+  else await restTuck();
   if (s.lastRelevant) await takeMeBack(s.lastRelevant);
   return { ok: true };
 }
@@ -1633,6 +1647,7 @@ const HANDLERS = {
   "reminder-answer": reminderAnswer,
   // The agent (#81): "I'm stuck" asks for one step; "Start this" makes it the next step.
   stuck,
+  "stuck-tuck": stuckOnPage,
   "start-step": startStep,
   // What Tuck looked at, for settings: the last agent runs, newest first.
   "agent-runs": async () => recentRuns(await (await store).eventsSince(Date.now() - 24 * 3600 * 1000)),
