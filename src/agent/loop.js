@@ -132,3 +132,11 @@ export async function runAgent(
     return done({ value: null, source: "fallback", error: err.message ?? String(err) });
   }
 }
+
+// The last runs for "What Tuck looked at", newest first. events: the event log, oldest
+// first. Coding-agent status events share the type "agent" but have no moment (#93).
+export const recentRuns = (events, n = 5) =>
+  events
+    .filter((e) => e.type === "agent" && e.moment)
+    .slice(-n)
+    .reverse();

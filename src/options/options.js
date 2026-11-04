@@ -652,7 +652,7 @@ async function showAgentRuns() {
               ? `${r.steps} step${r.steps === 1 ? "" : "s"}`
               : `fell back: ${r.error ?? "no answer"}`;
           box.append(
-            p(`${when} · ${MOMENTS[r.moment] ?? r.moment} · ${outcome}`),
+            p(`${when} · ${MOMENTS[r.moment] ?? r.moment ?? "Looked up"} · ${outcome}`),
             ...(r.trail ?? []).map((t) => p(toolLine(t), "small muted")),
           );
           const said = Array.isArray(r.said) ? r.said.join(" / ") : r.said;
