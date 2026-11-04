@@ -177,6 +177,7 @@ async function apply(s, input, cfg) {
     else {
       await log(o);
       if (o.type === "trigger") await showTrigger(o, r.state);
+      if (o.type === "agent_resumed") await agentResumed(o.ts);
       // Tuck's words take the model a few seconds: start writing them before they are needed.
       if (o.type === "state" && o.to === "detour") draftNudge(r.state, 1, cfg);
       if (o.type === "trigger" && o.kind === "drift" && o.level >= 1 && !o.suppressedBy)
@@ -862,6 +863,23 @@ async function selfReturn(ts) {
     type: "feedback",
     ts,
     kind: "self_return",
+    payload: { triggerId: lastTrigger.id, afterMs: ts - lastTrigger.ts },
+  });
+}
+
+// Muse works again: the person answered it in the terminal, so its waiting word is over
+// (#66). A word since about something else stays.
+async function agentResumed(ts) {
+  const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
+  if (lastTrigger?.kind !== "agent" || lastTrigger.evidence?.agent !== "waiting_for_user") return;
+  if (lastTrigger.respondedAt || lastTrigger.resolvedAt) return;
+  await chrome.storage.local.set({ lastTrigger: { ...lastTrigger, resolvedAt: ts, resolvedBy: "agent" } });
+  await setBadge(null);
+  await restTuck();
+  await log({
+    type: "feedback",
+    ts,
+    kind: "agent_resumed",
     payload: { triggerId: lastTrigger.id, afterMs: ts - lastTrigger.ts },
   });
 }

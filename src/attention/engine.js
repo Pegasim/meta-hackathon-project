@@ -267,15 +267,19 @@ function applyResponse(s, input, cfg) {
 function applyAgent(s, input, candidates, cfg) {
   const before = s.agent?.status;
   s.agent = { status: input.status, ts: input.ts, session: input.session ?? null };
-  if (before === input.status) return; // the same news: a word still waiting keeps waiting
+  if (before === input.status) return []; // the same news: a word still waiting keeps waiting
   s.agentPending = false;
   s.agentAsk =
     input.status === "waiting_for_user" ? { afterSec: cfg.agentAskAgainSec, inBrowserSec: 0, again: false } : null;
-  if (!AGENT_STOPS.includes(input.status)) return;
+  // Working again after a wait: the person answered it in the terminal, so a word about
+  // the wait is old news (#66). The worker takes it down if it is still open.
+  if (before === "waiting_for_user" && input.status === "working") return [{ type: "agent_resumed", ts: input.ts }];
+  if (!AGENT_STOPS.includes(input.status)) return [];
   // Time to take it in: a drift word right after this one would drown it.
   s.budgetSec = 0;
   if (s.away || onBreak(s, input.ts)) s.agentPending = true;
   else candidates.push("agent");
+  return [];
 }
 
 // ---- The second look -------------------------------------------------------
@@ -384,7 +388,7 @@ export function step(prev, input, cfg = DEFAULTS) {
   else if (input.type === "session") applySession(s, input);
   else if (input.type === "response") applyResponse(s, input, cfg);
   else if (input.type === "second_look") applySecondLook(s, input, cfg);
-  else if (input.type === "agent") applyAgent(s, input, candidates, cfg);
+  else if (input.type === "agent") out.push(...applyAgent(s, input, candidates, cfg));
 
   if (s.breakUntil != null && ts >= s.breakUntil) {
     s.breakUntil = null;

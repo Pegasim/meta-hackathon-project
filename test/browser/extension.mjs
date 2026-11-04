@@ -789,6 +789,29 @@ await agentTab
 await agentTab.close();
 await agentSays("unknown");
 
+// Muse back at work: the person answered it in the terminal, so the word about the wait
+// comes down, on a work page too, where no change of state would take it down (#66).
+const resumeTab = await ctx.newPage();
+await resumeTab.goto(repo);
+await resumeTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await agentSays("working");
+await agentSays("waiting_for_user");
+const waitBubble = resumeTab.locator("#tuck-companion .bubble", { hasText: "Muse is waiting on you." });
+await waitBubble.waitFor({ timeout: 8000 });
+await agentSays("working");
+const waitGone = await resumeTab
+  .locator("#tuck-companion .bubble")
+  .waitFor({ state: "hidden", timeout: 3000 })
+  .then(
+    () => true,
+    () => false,
+  );
+const resumedWord = await lastTrigger();
+const resumedBadge = await popup.evaluate(() => chrome.action.getBadgeText({}));
+await resumeTab.close();
+await agentSays("unknown");
+
 // A stop on a page Tuck cannot draw on is said on the next page it can.
 const noDrawTab = await ctx.newPage();
 await noDrawTab.goto("chrome://version");
@@ -1334,6 +1357,16 @@ assert.match(heldBubble, /Muse is done\./);
 assert.equal(afterOff.engine.agent.status, "completed");
 assert.equal(agentWord.kind, "agent");
 assert.match(agentBubble, /Muse is waiting on you\./);
+assert.ok(waitGone, "Muse back at work: the word about the wait comes down (#66)");
+assert.equal(resumedWord.evidence.agent, "waiting_for_user");
+assert.equal(resumedWord.resolvedBy, "agent", "taken back because Muse works again");
+assert.equal(resumedBadge, "", "and no badge left behind");
+assert.ok(
+  log.events.some(
+    (e) => e.type === "feedback" && e.kind === "agent_resumed" && e.payload?.triggerId === resumedWord.id,
+  ),
+  "the log says the word was taken back, and why",
+);
 assert.equal(afterDone.intent, null, "no stale goal after change + done");
 assert.match(reminderText, /Due today\. Still on your list\?/, "the deadline in Tuck's words");
 assert.match(reminderText, /Send the visa papers/);
