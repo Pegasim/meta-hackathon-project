@@ -2,6 +2,10 @@
 // prompt, a tool's input or a message. Events and fields were checked on Muse Code
 // 1.4.14; see docs/plans/2026-11-01-muse-bridge.md.
 
+// Notification types that wait on the person: an approval, and a question (named in Muse's
+// binary, not yet seen in a run).
+const WAITS = ["permission_prompt", "question_prompt"];
+
 // One line for ~/.tuck/agent.jsonl, or null when the event says nothing about whose turn it is.
 export function lineFor(event, ts) {
   const session = event?.session_id;
@@ -12,8 +16,11 @@ export function lineFor(event, ts) {
       return line("working", { prompt: true });
     case "PostToolUse":
       return line("working");
-    case "PermissionRequest":
-      return line("waiting_for_user");
+    case "Notification":
+      // Muse's approval judge decides most approvals itself, in 2 to 10 s, and
+      // PermissionRequest fires for those too. This comes about 6 s on, and only while the
+      // person still has to answer.
+      return WAITS.includes(event.notification_type) ? line("waiting_for_user") : null;
     case "Stop":
       // A question in plain text also ends a turn. Only this yes or no leaves the script.
       return line(/\?\s*$/.test(event.last_assistant_message ?? "") ? "waiting_for_user" : "completed", {
@@ -65,11 +72,4 @@ export function latestPromptSession(text) {
   return null;
 }
 
-export const HOOK_EVENTS = [
-  "UserPromptSubmit",
-  "PostToolUse",
-  "PermissionRequest",
-  "Stop",
-  "StopFailure",
-  "SessionEnd",
-];
+export const HOOK_EVENTS = ["UserPromptSubmit", "PostToolUse", "Notification", "Stop", "StopFailure", "SessionEnd"];
