@@ -351,7 +351,7 @@ function agentReply(messages) {
     if (!results.length) return call("recall_notes", { query: goal });
     return call("propose_goal", { title: "Fix the checkout bug", step: "Write the failing checkout test" });
   }
-  if (/just wrote to you/.test(system)) {
+  if (/just wrote\s+to you/.test(system)) {
     const wrote = messages[1].content.match(/They wrote: (.*)$/m)?.[1] ?? "";
     return call("propose_step", { step: wrote, minutes: 10 });
   }
