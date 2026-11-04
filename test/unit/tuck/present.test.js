@@ -108,6 +108,19 @@ test("goal set, nudge resolved and Take me back: happy, then Tuck rests on the p
   assert.deepEqual(present({ event: "back" }), { pose: "happy", settle: "rest", bubble: null });
 });
 
+test("tucked away from the card, Tuck says how to bring it back, then leaves", () => {
+  const v = present({ event: "away" });
+  assert.deepEqual(v, {
+    pose: "hello",
+    bubble: { kind: "note", text: "Okay. Click the toolbar icon to bring me back." },
+    leaveAfterMs: 2500,
+  });
+  // Tuck's voice: at most 12 words, no exclamation marks, no buttons.
+  assert.ok(v.bubble.text.split(/\s+/).length <= 12);
+  assert.doesNotMatch(v.bubble.text, /!/);
+  assert.equal(v.bubble.buttons, undefined);
+});
+
 test("while the coding agent works, a happy hop settles to work, not rest", () => {
   for (const event of ["goal_set", "resolved", "back"])
     assert.equal(present({ event, agent: "working" }).settle, "work", event);

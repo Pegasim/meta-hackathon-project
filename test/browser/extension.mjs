@@ -943,8 +943,8 @@ await agentSays("unknown");
 await chatTab.bringToFront();
 
 // Tuck away (spec "Tuck away"): one click on the card hides Tuck; it then comes only for a drift
-// or an agent word, and leaves again after the answer. The popup switch brings it back, and so
-// does the day's session start.
+// or an agent word, and leaves again after the answer. The popup's Bring Tuck back brings it
+// back, and so does the day's session start.
 const tuckAwayNow = () => popup.evaluate(async () => (await chrome.storage.local.get("tuckAway")).tuckAway === true);
 const dockCount = (page) => page.locator("#tuck-companion .dock.in").count();
 async function settledDockCount(page, wait = 1500) {
@@ -966,6 +966,15 @@ const tuckAwayButton = awayTab.locator("#tuck-companion .bubble button", { hasTe
 await tuckAwayButton.waitFor({ timeout: 5000 });
 await tuckAwayButton.click();
 const away = { flag: undefined, here: undefined, next: undefined };
+// Tuck says how to come back, then leaves.
+away.parting = await awayTab
+  .locator("#tuck-companion .dock.in .bubble:not([hidden]) .text", { hasText: "bring me back" })
+  .textContent({ timeout: 3000 })
+  .catch(() => null);
+await awayTab
+  .locator("#tuck-companion .dock.in")
+  .waitFor({ state: "detached", timeout: 5000 })
+  .catch(() => {});
 away.here = await settledDockCount(awayTab, 800);
 away.flag = await tuckAwayNow();
 // Every tab lets Tuck go, not just the one clicked: the older tab shows no Tuck in front.
@@ -1064,14 +1073,19 @@ const awayLater = await ctx.newPage();
 await awayLater.goto(repo);
 await awayLater.bringToFront();
 away.later = await settledDockCount(awayLater);
-// The popup switch is the way back. In front: a page Tuck was drawn on and left (a page
+// The popup's card is the way back. In front: a page Tuck was drawn on and left (a page
 // that never had Tuck gets it from any look at it, as after a reload).
 await awayHeld.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 await awayHeld.waitForTimeout(500);
 await popup.reload();
-away.switchWhileAway = await popup.isChecked("#show-tuck");
-await popup.check("#show-tuck");
+await popup.locator("#bring-back").waitFor({ timeout: 5000 });
+away.popupWhileAway = {
+  card: await popup.isVisible("#away-card"),
+  text: await popup.locator("#away-card span").textContent(),
+  awayButton: await popup.isVisible("#tuck-away"),
+};
+await popup.click("#bring-back");
 await popup.waitForTimeout(300);
 away.flagAfterSwitch = await tuckAwayNow();
 // Tuck is back at once on the page in front, without a page change.
@@ -1080,6 +1094,14 @@ away.backInPlace = await awayHeld
   .waitFor({ timeout: 5000 })
   .then(() => 1)
   .catch(() => 0);
+away.popupAfterBack = { card: await popup.isVisible("#away-card"), awayButton: await popup.isVisible("#tuck-away") };
+// The popup's Tuck away hides Tuck on the page in front; Bring Tuck back again for what follows.
+await popup.click("#tuck-away");
+await popup.waitForTimeout(300);
+away.popupAwayFlag = await tuckAwayNow();
+away.afterPopupAway = await settledDockCount(awayHeld, 800);
+await popup.click("#bring-back");
+await awayHeld.locator("#tuck-companion .dock.in").waitFor({ timeout: 5000 });
 const awayBack = await ctx.newPage();
 await awayBack.goto(repo);
 await awayBack.bringToFront();
@@ -1092,7 +1114,7 @@ await awayBack.waitForTimeout(500);
 away.hiddenAgain = await tuckAwayNow();
 await awayBack
   .locator("#tuck-companion .dock.in")
-  .waitFor({ state: "detached", timeout: 3000 })
+  .waitFor({ state: "detached", timeout: 5000 })
   .catch(() => {});
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
 // A look at the page with no goal (the heartbeat's): the day's greeting was had before
@@ -1210,6 +1232,17 @@ await lastingRow.locator("button").click();
 await settingsPage.waitForTimeout(300);
 const forgotten = await preferences(lastingKey);
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+
+// Switched on with no goal: Tuck asks for one at once (the day's greeting went by while off).
+await chatTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await setMode("off");
+await setMode("focus");
+const switchedOnGreeting = await chatTab
+  .locator("#tuck-companion .dock.in .bubble:not([hidden])", { has: chatTab.locator("input[name=goal]") })
+  .locator(".text", { hasText: "today" })
+  .textContent({ timeout: 5000 })
+  .catch(() => null);
 
 // Issue #29: the to-do list is what the task node kept from the open loops, the first 7 in
 // sight. A note to keep watching and a task a later note closed are not on it, and Not a
@@ -1386,6 +1419,7 @@ assert.equal(nudgeState, "drift");
 assert.equal(paperIcon, "tuck/skins/paper/icons/16.png", "the toolbar icon follows the skin");
 assert.ok(paperKeepsBubble, "a new skin keeps the word on screen, buttons and all");
 assert.ok(frisbeeKeepsBubble, "a new item keeps the word on screen");
+assert.equal(switchedOnGreeting, "Hi. What are we working on today?", "switched on with no goal, Tuck asks for one");
 assert.equal(popupFallback, 1, "the popup draws the default skin when the stored one is unknown");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
 const looks = calls.filter((m) => /excerpt/.test(m[0].content));
@@ -1566,6 +1600,7 @@ assert.equal(cardAfterSelfReturn, false, "no stale card in the popup");
 assert.deepEqual(
   away,
   {
+    parting: "Okay. Click the toolbar icon to bring me back.",
     flag: true,
     here: 0,
     olderTab: 0,
@@ -1583,9 +1618,12 @@ assert.deepEqual(
     heldCount: 1,
     afterHeld: 0,
     later: 0,
-    switchWhileAway: false,
+    popupWhileAway: { card: true, text: "Tuck is tucked away.", awayButton: false },
     flagAfterSwitch: false,
     backInPlace: 1,
+    popupAfterBack: { card: false, awayButton: true },
+    popupAwayFlag: true,
+    afterPopupAway: 0,
     restingAgain: "rest",
     hiddenAgain: true,
     afterDoneWhileAway: 0,

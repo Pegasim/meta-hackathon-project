@@ -12,6 +12,8 @@
   a { color: var(--text); }
   #mode { width: auto; }
   .brand { display: flex; align-items: center; gap: 8px; }
+  #tuck-away { border: none; background: none; padding: 7px 4px; color: var(--muted); text-decoration: underline; }
+  #tuck-away:hover { color: var(--text); }
   .brand .tuck { width: 36px; height: 36px; --tuck-accent: var(--tk-accent, #94BFAE); }
   .sites { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
   .site { min-width: 0; } /* long titles must not widen the row */
@@ -28,6 +30,11 @@
     <a href="#" id="open-settings" class="small">Settings</a>
   </div>
 
+  <section class="card row between" id="away-card" hidden>
+    <span>Tuck is tucked away.</span>
+    <button class="primary" id="bring-back">Bring Tuck back</button>
+  </section>
+
   <p id="setup" class="card small" hidden></p>
 
   <section class="card" id="intent-card">
@@ -38,6 +45,7 @@
       <div class="row" style="margin-top:10px">
         <button id="done">Done</button>
         <button id="change">Change</button>
+        <button id="tuck-away">Tuck away</button>
       </div>
     </div>
     <form id="intent-form" class="stack">
@@ -73,10 +81,6 @@
         <button id="give-me-5">5-min break</button>
       </div>
     </div>
-  </section>
-
-  <section class="card">
-    <label class="row"><input type="checkbox" id="show-tuck" style="width:auto"> Show Tuck on pages</label>
   </section>
 
   <section class="card">

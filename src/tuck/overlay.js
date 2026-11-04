@@ -373,6 +373,7 @@
         current.settle = null;
       });
     if (v.closeBubbleAfterMs) later(v.closeBubbleAfterMs, closeBubble);
+    if (v.leaveAfterMs) later(v.leaveAfterMs, leave);
   }
 
   chrome.runtime.onMessage.addListener((msg) => {

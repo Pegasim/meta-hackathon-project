@@ -25,7 +25,7 @@ export function nudgeText(t) {
   });
 }
 
-// While Tuck is hidden (the "Tuck away" switch), these are the only words that still come:
+// While Tuck is hidden ("Tuck away"), these are the only words that still come:
 // a drift (fragmentation counts as one), the coding agent's word, and the day's goal form.
 const WHILE_AWAY = new Set(["drift", "fragmentation", "agent", "session_start"]);
 export const comesWhileAway = (kind) => WHILE_AWAY.has(kind);
@@ -33,7 +33,7 @@ export const comesWhileAway = (kind) => WHILE_AWAY.has(kind);
 const goalForm = (text, pickUp = []) => ({ kind: "goal", text, pickUp });
 
 // input: {trigger, loops} for an engine trigger, or {event, intent, agent} for
-// "goal_set" | "goal_done" | "resolved" | "back" | "presence" | "break" | "card". Returns null when
+// "goal_set" | "goal_done" | "resolved" | "back" | "presence" | "break" | "card" | "away". Returns null when
 // Tuck stays away. Poses follow the spec's pose table (2026-11-04-tuck-v1-skins-design.md).
 export function present({ trigger, loops = [], event, intent, agent }) {
   if (trigger) {
@@ -109,6 +109,13 @@ export function present({ trigger, loops = [], event, intent, agent }) {
         settle: resting,
         bubble: { kind: "note", text: "Got it. Let's go." },
         closeBubbleAfterMs: 2000,
+      };
+    case "away":
+      // Tucked away from the card: one line on the way out, so the way back is known.
+      return {
+        pose: "hello",
+        bubble: { kind: "note", text: "Okay. Click the toolbar icon to bring me back." },
+        leaveAfterMs: 2500,
       };
     case "goal_done":
       return { pose: "hello", bubble: goalForm("Nice work. What's next?") };

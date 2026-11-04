@@ -92,8 +92,15 @@ Changes from today's behaviour (spec addendum §12, design doc 2026-10-31):
 
 ## Tuck away
 
-- One click hides Tuck: a small "Tuck away" text button in the goal card (click on Tuck),
-  and a "Show Tuck on pages" switch in the popup to bring it back. No confirmation.
+- One click hides Tuck, with no confirmation: a small "Tuck away" text button in the goal
+  card (click on Tuck), or the same small text button in the popup's "Working on" card,
+  next to Done and Change. From the goal card Tuck first says one line, so the way back
+  is known: `Okay. Click the toolbar icon to bring me back.` (a `note` bubble, no
+  buttons, about 2.5 s), then leaves. Other tabs let Tuck go at once.
+- While away, the popup opens with a card at the top, under the header: `Tuck is tucked
+  away.` and a primary button `Bring Tuck back`. It clears the flag, and Tuck is on the
+  page in front at once. Not away, the popup shows no card, and offers "Tuck away"
+  instead (İrem, after her manual test).
 - Stored as `tuckAway: true` in `chrome.storage.local`. It clears itself at the day's
   session start, so a new day starts with Tuck visible (Claude's call, İrem agreed in
   chat).
@@ -106,7 +113,10 @@ Changes from today's behaviour (spec addendum §12, design doc 2026-10-31):
   that would ride on one of those waits for the next visible moment (Claude's call,
   from İrem's "only when the agent waits or something goes wrong"). Gate it in one
   place in the background, by trigger kind. The goal card cannot be opened while away
-  (there is no Tuck to click); the popup is the way back.
+  (there is no Tuck to click); the popup's `Bring Tuck back` is the way back.
+- Switching the mode on (from Off or Do not disturb) with no goal greets on the page in
+  front at once, with the session-start goal form: the day's greeting may have gone by
+  unseen while Tuck was off.
 - Coming back is never framed as a reproach.
 
 ## The skin system (canonical form)

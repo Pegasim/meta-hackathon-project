@@ -776,7 +776,7 @@ async function showTuck(tabId, view) {
   }
 }
 
-// The person tucked Tuck away (card button); the popup switch brings it back.
+// The person tucked Tuck away (card or popup button); Bring Tuck back in the popup undoes it.
 const isAway = async () => (await chrome.storage.local.get({ tuckAway: false })).tuckAway === true;
 
 async function hideTuck(type = "tuck-hide") {
@@ -796,8 +796,8 @@ function restingView(s) {
 
 const pageChanged = (prev, s) => prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
 
-// Back from tucked away (the popup switch): Tuck is on the page in front at once, as presence
-// would draw it there.
+// Back from tucked away (Bring Tuck back in the popup): Tuck is on the page in front at
+// once, as presence would draw it there.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || changes.tuckAway?.newValue !== false || changes.tuckAway.oldValue !== true) return;
   enqueue(async () => {
@@ -1095,9 +1095,15 @@ async function completeIntent() {
 
 const setMode = ({ mode }) =>
   enqueue(async () => {
+    const quiet = (m) => m === "dnd" || m === "off";
+    const { mode: was } = await chrome.storage.local.get({ mode: "focus" });
     await chrome.storage.local.set({ mode });
-    if (mode === "dnd" || mode === "off") await hideTuck();
-    return process({ type: "session", ts: Date.now(), kind: "mode", payload: { mode } });
+    if (quiet(mode)) await hideTuck();
+    const s = await process({ type: "session", ts: Date.now(), kind: "mode", payload: { mode } });
+    // Switched on with no goal: Tuck asks for one now. The day's greeting may have passed
+    // unseen while it was off; a page that cannot hold Tuck passes it to the next one.
+    if (quiet(was) && !quiet(mode) && !s.intent) await greet(s.current?.tabId);
+    return s;
   });
 
 const status = () =>
@@ -1143,11 +1149,14 @@ const HANDLERS = {
     (await isAway())
       ? chrome.tabs.sendMessage(sender?.tab?.id, { type: "tuck-hide" }).catch(() => {})
       : showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
-  // Every tab lets Tuck go, not just the one in front.
-  "tuck-away": async () => {
+  // Every tab lets Tuck go, not just the one in front. From the card, Tuck says how to
+  // bring it back and then leaves that page too (the popup's button has its own way back).
+  "tuck-away": async (_msg, sender) => {
     await chrome.storage.local.set({ tuckAway: true });
-    const tabs = await chrome.tabs.query({});
+    const from = sender?.tab?.id;
+    const tabs = (await chrome.tabs.query({})).filter((t) => t.id !== from);
     await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, { type: "tuck-hide" }).catch(() => {})));
+    if (from != null) await showTuck(from, present({ event: "away" }));
   },
   "tuck-change": async (_msg, sender) => showTuck(sender?.tab?.id, present({ event: "card", intent: null })),
   maintain,
