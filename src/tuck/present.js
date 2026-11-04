@@ -25,6 +25,11 @@ export function nudgeText(t) {
   });
 }
 
+// While Tuck is hidden (the "Tuck away" switch), these are the only words that still come:
+// a drift (fragmentation counts as one), the coding agent's word, and the day's goal form.
+const WHILE_AWAY = new Set(["drift", "fragmentation", "agent", "session_start"]);
+export const comesWhileAway = (kind) => WHILE_AWAY.has(kind);
+
 const goalForm = (text, pickUp = []) => ({ kind: "goal", text, pickUp });
 
 // input: {trigger, loops} for an engine trigger, or {event, intent, agent} for

@@ -288,6 +288,7 @@
             onclick: () => send({ type: "complete-intent", from: "tuck" }),
           }),
           el("button", { className: "b", textContent: "Change", onclick: () => send({ type: "tuck-change" }) }),
+          el("button", { className: "b", textContent: "Tuck away", onclick: () => send({ type: "tuck-away" }) }),
         ),
       );
     }

@@ -143,7 +143,18 @@ async function renderMark() {
   root.dataset.item = manifest.items?.includes(tuckItem) ? tuckItem : "none";
 }
 
+// Tuck away: the card's button hides Tuck on pages; this brings it back.
+async function renderShowTuck() {
+  $("show-tuck").checked = !(await chrome.storage.local.get({ tuckAway: false })).tuckAway;
+}
+$("show-tuck").onchange = () =>
+  $("show-tuck").checked ? chrome.storage.local.set({ tuckAway: false }) : send("tuck-away");
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.tuckAway) renderShowTuck();
+});
+
 render();
+renderShowTuck();
 renderMark();
 renderActivity();
 renderSetup();

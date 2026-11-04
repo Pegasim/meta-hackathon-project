@@ -31,7 +31,7 @@ import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
 import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
-import { present } from "../tuck/present.js";
+import { present, comesWhileAway } from "../tuck/present.js";
 import "../tuck/skins.js";
 
 const memory = Memory.open();
@@ -601,6 +601,12 @@ async function setBadge(kind) {
 // Level 0 (do not disturb) is logged only; everything else is shown.
 async function showTrigger(t, s) {
   if (t.level < 1) return;
+  // Tuck away: only a drift, the agent's word and the greeting come. A reminder that would
+  // have ridden on the others waits for the next visible moment.
+  if ((await isAway()) && !comesWhileAway(t.kind)) {
+    await log({ type: "feedback", ts: Date.now(), kind: "away_held", payload: { trigger: t.kind } });
+    return;
+  }
   const intent = await (await store).activeIntent();
   const shown = {
     ...t,
@@ -750,6 +756,9 @@ async function showTuck(tabId, view) {
   }
 }
 
+// The person tucked Tuck away (card button); the popup switch brings it back.
+const isAway = async () => (await chrome.storage.local.get({ tuckAway: false })).tuckAway === true;
+
 async function hideTuck(type = "tuck-hide") {
   const { tuckTab } = await chrome.storage.session.get("tuckTab");
   if (tuckTab != null) await chrome.tabs.sendMessage(tuckTab, { type }).catch(() => {});
@@ -767,7 +776,7 @@ function restingView(s) {
 
 // While there is a goal, Tuck is on every page (not paused or off), asleep on a break.
 async function presence(prev, s, input) {
-  if (!s.current?.url) return;
+  if (!s.current?.url || (await isAway())) return;
   const changed = prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
   const view = restingView(s);
   // A reload keeps the tab and URL but wipes Tuck from the page: it comes back at once,
@@ -784,7 +793,7 @@ async function presence(prev, s, input) {
 // the Tuck on the page changes pose quietly (no bubble, no entrance; a word on screen stays).
 async function restingPoseChanged(prev, s) {
   const [was, now] = [restingView(prev), restingView(s)];
-  if (!was || !now || was.pose === now.pose) return;
+  if (!was || !now || was.pose === now.pose || (await isAway())) return;
   const { tuckTab } = await chrome.storage.session.get("tuckTab");
   await showTuck(tuckTab, now);
 }
@@ -792,6 +801,8 @@ async function restingPoseChanged(prev, s) {
 // The day's greeting with the goal form. If the first page cannot hold Tuck (a new
 // tab, settings), the greeting waits for the next page that can.
 async function greet(tabId) {
+  // A new day starts with Tuck visible.
+  await chrome.storage.local.set({ tuckAway: false });
   const st = await store;
   const expired = await st.latestIntent();
   // The goal form offers what is running out first. The title stays exactly as it is
@@ -837,7 +848,9 @@ async function respond({ choice }) {
     await chrome.storage.local.set({ lastTrigger: lastTrigger ? { ...lastTrigger, respondedAt: ts, choice } : null });
     await setBadge(null);
     const agent = s.agent?.status;
-    if (choice === "related") await showTuck(before.current?.tabId, present({ event: "resolved", agent }));
+    // Tuck came for this word alone: it leaves with the answer.
+    if (await isAway()) await hideTuck();
+    else if (choice === "related") await showTuck(before.current?.tabId, present({ event: "resolved", agent }));
     // A break or "Take me back" closes the word first: their pose is quiet, or comes after it.
     else if (choice === "break") (await restTuck(), await showTuck(before.current?.tabId, present({ event: "break" })));
     else if (choice === "back")
@@ -855,9 +868,12 @@ async function selfReturn(ts) {
   const { lastTrigger } = await chrome.storage.local.get("lastTrigger");
   if (!lastTrigger || lastTrigger.respondedAt || lastTrigger.resolvedAt) return;
   await chrome.storage.local.set({ lastTrigger: { ...lastTrigger, resolvedAt: ts, resolvedBy: "self" } });
-  await restTuck();
-  const s = await loadEngine();
-  await showTuck(s.current?.tabId, present({ event: "resolved", agent: s.agent?.status }));
+  if (await isAway()) await hideTuck();
+  else {
+    await restTuck();
+    const s = await loadEngine();
+    await showTuck(s.current?.tabId, present({ event: "resolved", agent: s.agent?.status }));
+  }
   await log({
     type: "feedback",
     ts,
@@ -1020,7 +1036,9 @@ async function setIntent({ title, next, from, fromLoopId }, sender) {
       payload: { id: intent.id, title, topic: intent.topic },
     });
     await chrome.storage.session.set({ pendingGreeting: false });
-    if (from === "tuck")
+    // The greeting's goal form can come while Tuck is away; the "Got it" note does not.
+    if (from === "tuck" && (await isAway())) await hideTuck();
+    else if (from === "tuck")
       await showTuck(sender?.tab?.id, present({ event: "goal_set", agent: (await loadEngine()).agent?.status }));
     return intent;
   });
@@ -1088,6 +1106,7 @@ const HANDLERS = {
   // Clicking Tuck with no nudge: the goal card (or the goal form when there is none).
   "tuck-click": async (_msg, sender) =>
     showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
+  "tuck-away": async () => (await chrome.storage.local.set({ tuckAway: true }), hideTuck()),
   "tuck-change": async (_msg, sender) => showTuck(sender?.tab?.id, present({ event: "card", intent: null })),
   maintain,
   // The brain, then every other connected folder (read only); none of them asks for

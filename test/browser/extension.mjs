@@ -878,6 +878,102 @@ await setMode("focus");
 const afterOff = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }));
 await agentSays("unknown");
 await chatTab.bringToFront();
+
+// Tuck away (spec "Tuck away"): one click on the card hides Tuck; it then comes only for a drift
+// or an agent word, and leaves again after the answer. The popup switch brings it back, and so
+// does the day's session start.
+const tuckAwayNow = () => popup.evaluate(async () => (await chrome.storage.local.get("tuckAway")).tuckAway === true);
+const dockCount = (page) => page.locator("#tuck-companion .dock.in").count();
+async function settledDockCount(page, wait = 1500) {
+  await page.waitForTimeout(wait);
+  return dockCount(page);
+}
+const awayTab = await ctx.newPage();
+await awayTab.goto(repo);
+await awayTab.bringToFront();
+await awayTab.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
+await awayTab.locator("#tuck-companion .avatar").click();
+const tuckAwayButton = awayTab.locator("#tuck-companion .bubble button", { hasText: "Tuck away" });
+await tuckAwayButton.waitFor({ timeout: 5000 });
+await tuckAwayButton.click();
+const away = { flag: undefined, here: undefined, next: undefined };
+away.here = await settledDockCount(awayTab, 800);
+away.flag = await tuckAwayNow();
+const awayNext = await ctx.newPage();
+await awayNext.goto(repo);
+await awayNext.bringToFront();
+away.next = await settledDockCount(awayNext);
+// A drift still comes, with its bubble, and the answer sends Tuck away again.
+const beforeAwayDrift = await lastTrigger();
+const awayDriftTab = await ctx.newPage();
+await awayDriftTab.goto(dockedSocial);
+await awayDriftTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await waitForNewDrift(beforeAwayDrift?.id ?? null);
+await awayDriftTab.locator("#tuck-companion .bubble button[data-choice=back]").waitFor({ timeout: 8000 });
+away.driftPose = await poseOf(awayDriftTab);
+await awayDriftTab.locator("#tuck-companion .bubble button[data-choice=back]").click();
+away.afterDrift = await settledDockCount(awayDriftTab, 2500);
+await awayDriftTab.close();
+// An agent's word comes, and Got it sends Tuck away again.
+await awayNext.bringToFront();
+await agentSays("working");
+await agentSays("waiting_for_user");
+await awayNext.locator("#tuck-companion .bubble button[data-choice=dismiss]").waitFor({ timeout: 8000 });
+away.agentPose = await poseOf(awayNext);
+await awayNext.locator("#tuck-companion .bubble button[data-choice=dismiss]").click();
+away.afterAgent = await settledDockCount(awayNext, 1500);
+await agentSays("unknown");
+// Review Focus 5: the word met a page Tuck cannot draw on; it comes once, on the next page that can.
+const awayNoDraw = await ctx.newPage();
+await awayNoDraw.goto("chrome://version");
+await awayNoDraw.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await agentSays("working");
+await agentSays("waiting_for_user");
+await awayNoDraw.waitForTimeout(500);
+const awayHeld = await ctx.newPage();
+await awayHeld.goto(repo);
+await awayHeld.bringToFront();
+await awayHeld.locator("#tuck-companion .bubble button[data-choice=dismiss]").waitFor({ timeout: 8000 });
+away.heldCount = await awayHeld.locator("#tuck-companion .bubble").count();
+await awayHeld.locator("#tuck-companion .bubble button[data-choice=dismiss]").click();
+away.afterHeld = await settledDockCount(awayHeld, 1500);
+await agentSays("unknown");
+const awayLater = await ctx.newPage();
+await awayLater.goto(repo);
+await awayLater.bringToFront();
+away.later = await settledDockCount(awayLater);
+// The popup switch is the way back.
+await popup.reload();
+away.switchWhileAway = await popup.isChecked("#show-tuck");
+await popup.check("#show-tuck");
+await popup.waitForTimeout(300);
+away.flagAfterSwitch = await tuckAwayNow();
+const awayBack = await ctx.newPage();
+await awayBack.goto(repo);
+await awayBack.bringToFront();
+await awayBack.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
+away.restingAgain = await poseOf(awayBack);
+// A new day's session start clears it.
+await awayBack.locator("#tuck-companion .avatar").click();
+await awayBack.locator("#tuck-companion .bubble button", { hasText: "Tuck away" }).click();
+await awayBack.waitForTimeout(500);
+away.hiddenAgain = await tuckAwayNow();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+await popup.evaluate(() => chrome.storage.session.set({ pendingGreeting: true }));
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+await awayBack.locator("#tuck-companion .bubble input[name=goal]").waitFor({ timeout: 10000 });
+away.flagAfterGreeting = await tuckAwayNow();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Fix the checkout bug" }));
+// The greeting named the due to-do item (once a day); let the reminder test below hear it fresh.
+await popup.evaluate(async () => {
+  const { loops } = await chrome.storage.local.get("loops");
+  for (const l of Object.values(loops ?? {})) delete l.saidOn;
+  await chrome.storage.local.set({ loops });
+});
+for (const page of [awayTab, awayNext, awayNoDraw, awayHeld, awayLater, awayBack]) await page.close();
+await chatTab.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 
 // A page for something else on the to-do list is not drift (#8), and is no place to go back to.
@@ -1302,6 +1398,27 @@ assert.deepEqual(forgotten.titles, [], "and the preference: recall no longer fin
 assert.equal(selfReturn.id, drift5.id);
 assert.equal(selfReturn.resolvedBy, "self", "a drift ends on its own when you go back to work");
 assert.equal(cardAfterSelfReturn, false, "no stale card in the popup");
+assert.deepEqual(
+  away,
+  {
+    flag: true,
+    here: 0,
+    next: 0,
+    driftPose: "drift",
+    afterDrift: 0,
+    agentPose: "wait",
+    afterAgent: 0,
+    heldCount: 1,
+    afterHeld: 0,
+    later: 0,
+    switchWhileAway: false,
+    flagAfterSwitch: false,
+    restingAgain: "rest",
+    hiddenAgain: true,
+    flagAfterGreeting: false,
+  },
+  "Tuck away",
+);
 for (const t of ["context", "relevance", "llm", "state", "trigger", "response", "feedback", "session"])
   assert.ok(types.has(t), `log has ${t}: ${[...types]}`);
 assert.ok(!log.events.some((e) => String(e.url ?? "").startsWith("chrome-extension:")), "no extension URLs in the log");

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { present, nudgeText } from "../../../src/tuck/present.js";
+import { present, nudgeText, comesWhileAway } from "../../../src/tuck/present.js";
 
 const evidence = {
   url: "https://www.youtube.com/watch?v=a",
@@ -175,4 +175,10 @@ test("asking again about the agent is a question: it may be running what was app
     present({ trigger }).bubble.buttons.map((b) => b.label),
     ["Got it", "5-min break"],
   );
+});
+
+test("while Tuck is away only a drift, fragmentation, agent word or the session start comes", () => {
+  for (const kind of ["drift", "fragmentation", "agent", "session_start"])
+    assert.equal(comesWhileAway(kind), true, kind);
+  for (const kind of ["return", "break_over", "checkin"]) assert.equal(comesWhileAway(kind), false, kind);
 });
