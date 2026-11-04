@@ -339,8 +339,8 @@
         return button;
       };
       part.append(
-        el("p", { className: "text", textContent: line }),
-        el("p", { className: "next", textContent: title }),
+        el("p", { className: "text", textContent: title }),
+        el("p", { className: "next", textContent: line }),
         el(
           "div",
           { className: "row" },

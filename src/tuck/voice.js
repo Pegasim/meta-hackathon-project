@@ -121,9 +121,12 @@ export function whenSaid(date, today) {
   return date === yesterday.toISOString().slice(0, 10) ? "Yesterday" : "Last time";
 }
 
-// A deadline said aloud at a natural moment. when: "today", "tomorrow", "3 days ago".
+// A deadline said aloud at a natural moment, under the task's title (tuck/overlay.js).
+// when: "today", "tomorrow", "3 days ago". A passed one never reads as today's (#92).
 export function reminderLine(when) {
-  return /ago|yesterday/.test(when) ? `That was due ${when}. Still on your list?` : `Due ${when}. Still on your list?`;
+  return /ago|yesterday/.test(when)
+    ? `Deadline passed ${when}. Still on your list?`
+    : `Due ${when}. Still on your list?`;
 }
 
 const EMOJI = /\p{Extended_Pictographic}/u;

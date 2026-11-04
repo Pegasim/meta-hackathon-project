@@ -1592,14 +1592,18 @@ const importTrip = () =>
 await importTrip();
 await reread();
 const groupedText = await settingsPage.locator("#task-list").innerText();
-const groupedRows = await settingsPage.locator("#task-list .row").count();
+// The checkbox is the person's own, so the notes' Rome row sits under the fold (#92).
+const allRows = "#task-list .row, #task-suggested .row";
+const groupedRows = await settingsPage.locator(allRows).count();
+const romeFolded = await settingsPage.locator("#task-suggested .row", { hasText: "Rome" }).count();
 const askedPairs = pairCalls.length;
+await settingsPage.click("#task-suggested summary");
 await settingsPage
-  .locator("#task-list .row", { hasText: "Rome" })
+  .locator("#task-suggested .row", { hasText: "Rome" })
   .getByRole("button", { name: "Not the same" })
   .click();
 await settingsPage.waitForTimeout(300);
-const splitRows = await settingsPage.locator("#task-list .row").count();
+const splitRows = await settingsPage.locator(allRows).count();
 await settingsPage.locator("#task-list .row", { hasText: /Lyon/i }).getByRole("button", { name: "Done" }).click();
 await settingsPage.waitForTimeout(300);
 await importTrip();
@@ -2029,7 +2033,7 @@ assert.deepEqual(afterStopWorking, { pose: "work", fresh: true }, "a fresh page 
 assert.equal(afterAgentStops, "rest", "the agent stops: Tuck rests again");
 assert.equal(afterDone.intent, null, "no stale goal after change + done");
 assert.match(reminderText, /Due today\. Still on your list\?/, "the deadline in Tuck's words");
-assert.match(reminderText, /Send the visa papers/);
+assert.match(reminderText, /Send the visa papers[\s\S]*Due today/, "the task named before its deadline (#92)");
 assert.ok(loopsAfterSaid.visa01.saidOn, "said once it is on screen");
 assert.ok(loopsAfterDone.visa01.doneAt, "Done is remembered");
 assert.equal(reminderAgain, 0, "and it does not come back");
@@ -2043,6 +2047,7 @@ assert.doesNotMatch(taskTextAfter, /Run errand 1\b/, "Not a task holds over a re
 assert.match(taskTextAfter, /Run errand 2/);
 assert.equal(askedAgain, 0, "a re-import with nothing new asks nothing");
 assert.equal(groupedRows, 2, "the Lyon tickets and the Rome trip: one row each");
+assert.equal(romeFolded, 1, "a row only the notes hold is suggested, below the person's own");
 assert.match(groupedText, /Lyon[^\n]*\(brain ×2, Vault\)/i, "the row names its sources");
 assert.equal(askedPairs, 1, "four candidate pairs, one call");
 assert.equal(splitRows, 3, "Not the same: the Rome tasks apart");

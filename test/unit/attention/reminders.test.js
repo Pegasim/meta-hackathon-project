@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   pickReminder,
@@ -172,7 +172,8 @@ test("Not the same splits every pair in the row", () => {
   assert.equal(pairKey("b", "a"), pairKey("a", "b"), "a pair is the same both ways");
 });
 
-test("Settings splits the list into Today, Coming up and the rest (#77)", () => {
+// Spec change (#92): a missed deadline is no longer in Today, it has its own view.
+test("Settings splits the list into Today, Missed, Coming up and the rest (#77, #92)", () => {
   const list = [
     task("missed", -3),
     task("long-missed", -9),
@@ -185,11 +186,12 @@ test("Settings splits the list into Today, Coming up and the rest (#77)", () => 
     { ...task("goal", 30), members: ["goal", "goal-note"] },
   ];
   const ids = (rows) => rows.map((e) => e.id);
-  const { today, comingUp, rest } = splitTasks(list, { goalFrom: "goal-note" });
-  assert.deepEqual(ids(today), ["goal", "missed", "today", "tomorrow"], "the goal's row first, then what is close");
+  const { today, missed, comingUp, rest } = splitTasks(list, { goalFrom: "goal-note" });
+  assert.deepEqual(ids(today), ["goal", "today", "tomorrow"], "the goal's row first, then what is due");
+  assert.deepEqual(ids(missed), ["missed"], "a deadline passed within the week");
   assert.deepEqual(ids(comingUp), ["soon", "later"], "dated after tomorrow, within 60 days, soonest first");
   assert.deepEqual(ids(rest), ["long-missed", "far", "undated"], "the rest keeps the list's order");
-  assert.deepEqual(ids(splitTasks(list).today), ["missed", "today", "tomorrow"], "no goal, no goal row");
+  assert.deepEqual(ids(splitTasks(list).today), ["today", "tomorrow"], "no goal, no goal row");
   assert.deepEqual(ids(splitTasks(list).comingUp), ["soon", "later", "goal"]);
 });
 
@@ -205,4 +207,57 @@ test("Today holds at most 5 rows; what does not fit stays in the list, not lost"
     rest.map((e) => e.id),
     ["e", "f"],
   );
+});
+
+describe("Settings' views: Missed and the person's own rows first (#92)", () => {
+  const ids = (rows) => rows.map((e) => e.id);
+  const own = (id, daysLeft) => ({ ...task(id, daysLeft), writer: "own" });
+  const agent = (id, daysLeft) => ({ ...task(id, daysLeft), writer: "agent" });
+
+  test("missed 1 to 7 days ago is Missed; 8 days ago is Long run", () => {
+    const { today, missed, rest } = splitTasks([task("m1", -1), task("m8", -8), task("m7", -7), task("t", 0)]);
+    assert.deepEqual(ids(today), ["t"]);
+    assert.deepEqual(ids(missed), ["m1", "m7"], "in the list's order");
+    assert.deepEqual(ids(rest), ["m8"]);
+  });
+
+  test("the goal's row stays in Today even when its deadline passed", () => {
+    const { today, missed } = splitTasks([task("goal", -2), task("m", -3)], { goalFrom: "goal" });
+    assert.deepEqual(ids(today), ["goal"]);
+    assert.deepEqual(ids(missed), ["m"]);
+  });
+
+  test("Today's cap of 5 leaves Missed whole", () => {
+    const due = ["a", "b", "c", "d", "e", "f"].map((id) => task(id, 0));
+    const missedRows = ["x", "y", "z", "w", "v", "u"].map((id) => task(id, -2));
+    const { today, missed, rest } = splitTasks([...missedRows, ...due]);
+    assert.deepEqual(ids(today), ["a", "b", "c", "d", "e"]);
+    assert.deepEqual(ids(missed), ["x", "y", "z", "w", "v", "u"]);
+    assert.deepEqual(ids(rest), ["f"], "what does not fit in Today stays in the list");
+  });
+
+  test("with own rows, an agent's rows go under the fold, in the list's order", () => {
+    const list = [agent("a-today", 0), own("o-missed", -2), agent("a-goal", null), own("o-undated", null)];
+    list.push(agent("a-soon", 3), task("unknown", null));
+    const { today, missed, comingUp, rest, suggested } = splitTasks(list, { goalFrom: "a-goal" });
+    assert.deepEqual(ids(today), ["a-goal"], "the goal's row is never folded");
+    assert.deepEqual(ids(missed), ["o-missed"]);
+    assert.deepEqual(comingUp, []);
+    assert.deepEqual(ids(rest), ["o-undated"]);
+    assert.deepEqual(ids(suggested), ["a-today", "a-soon", "unknown"]);
+  });
+
+  test("a row grouped with an own entry is the person's", () => {
+    const row = { ...agent("lyon", null), members: ["lyon", "lyon-note"] };
+    const { rest, suggested } = splitTasks([row, agent("rome", null)], { ownKeys: new Set(["lyon-note"]) });
+    assert.deepEqual(ids(rest), ["lyon"]);
+    assert.deepEqual(ids(suggested), ["rome"]);
+  });
+
+  test("with no own rows, nothing is folded", () => {
+    const list = [agent("a", 0), agent("b", -2), agent("c", null)];
+    const { today, missed, rest, suggested } = splitTasks(list);
+    assert.deepEqual([ids(today), ids(missed), ids(rest)], [["a"], ["b"], ["c"]]);
+    assert.deepEqual(suggested, []);
+  });
 });

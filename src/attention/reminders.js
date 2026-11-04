@@ -105,21 +105,30 @@ export function pickReminder(queue, { goalTitle, loops = {}, today }) {
   return sayable(queue, loops, today).find((e) => e.id && e.title !== goalTitle) ?? null;
 }
 
-// Settings' views of the one list (#77). Today: the row the current goal came from, then
-// what is close (missed within a week, due today or tomorrow), at most 5. Coming up: dated
-// after tomorrow, within 60 days, soonest first. The rest keeps the list's order: undated,
-// further off, missed longer ago, and what did not fit in Today. goalFrom is the goal's
-// fromLoopId, which may name a row or one of its members.
+// Settings' views of the one list (#77, #92). Today: the row the current goal came from,
+// then what is due today or tomorrow, at most 5. Missed: a deadline that passed within the
+// last week, in the list's order. Coming up: dated after tomorrow, within 60 days, soonest
+// first. The rest (Long run) keeps the list's order: undated, further off, missed longer
+// ago, and what did not fit in Today. Once the person has rows of their own (a notes
+// folder, pasted to-dos: writer "own"), rows a coding agent or the distill wrote go to
+// suggested instead, in the list's order; with none, suggested is empty. A row grouped
+// from several entries is the person's if any of them is: ownKeys holds those entries'
+// taskKeys. goalFrom is the goal's fromLoopId, which may name a row or one of its members.
 const TODAY_MAX = 5;
 const AHEAD_DAYS = 60;
-export function splitTasks(list, { goalFrom = null } = {}) {
+export function splitTasks(list, { goalFrom = null, ownKeys = new Set() } = {}) {
   const isGoal = (e) => goalFrom != null && (e.id === goalFrom || !!e.members?.includes(goalFrom));
-  const today = [...list.filter(isGoal), ...list.filter((e) => !isGoal(e) && isClose(e))].slice(0, TODAY_MAX);
-  const comingUp = list
+  const isOwn = (e) => e.writer === "own" || !!e.members?.some((k) => ownKeys.has(k));
+  const suggested = list.some(isOwn) ? list.filter((e) => !isOwn(e) && !isGoal(e)) : [];
+  const shown = list.filter((e) => !suggested.includes(e));
+  const close = (e) => !isGoal(e) && isClose(e);
+  const today = [...shown.filter(isGoal), ...shown.filter((e) => close(e) && e.daysLeft >= 0)].slice(0, TODAY_MAX);
+  const missed = shown.filter((e) => close(e) && e.daysLeft < 0);
+  const comingUp = shown
     .filter((e) => !today.includes(e) && e.daysLeft > 1 && e.daysLeft <= AHEAD_DAYS)
     .sort((a, b) => a.daysLeft - b.daysLeft);
-  const rest = list.filter((e) => !today.includes(e) && !comingUp.includes(e));
-  return { today, comingUp, rest };
+  const rest = shown.filter((e) => !today.includes(e) && !missed.includes(e) && !comingUp.includes(e));
+  return { today, missed, comingUp, rest, suggested };
 }
 
 export const markSaid = (loops, id, today) => ({ ...loops, [id]: { ...loops[id], saidOn: today } });
