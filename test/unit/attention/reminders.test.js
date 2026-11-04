@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   pickReminder,
@@ -16,6 +16,9 @@ import {
   nextParked,
   unpark,
 } from "../../../src/attention/reminders.js";
+import { doneEntry, noteAnswer } from "../../../src/attention/reminders.js";
+import { laterOnTopic } from "../../../src/agent/tasks.js";
+import { makeEntry, toInboxMarkdown } from "../../../src/memory/entry.js";
 
 const today = "2026-11-02";
 const task = (id, daysLeft, title = id) => ({ id, title, daysLeft, due: daysLeft == null ? null : "x" });
@@ -102,7 +105,7 @@ const loop = (id, fields = {}) => ({
 });
 const yes = (task) => ({ isTask: true, open: true, task, who: null, personal: false });
 
-test("entries the node found to be one commitment are one row: newest title, earliest deadline, sources", () => {
+test("entries the node found to be one commitment are one row: newest title, a deadline, sources", () => {
   const q = [
     loop("ticket-md", { origin: "md:Vault", due: "2026-11-10", daysLeft: 7, date: "2026-10-18" }),
     loop("other", { due: "2026-11-12", daysLeft: 9 }),
@@ -126,7 +129,7 @@ test("entries the node found to be one commitment are one row: newest title, ear
   );
   const row = list[0];
   assert.equal(row.title, "Buy the train tickets to Lyon", "the newest member's words");
-  assert.equal(row.due, "2026-11-10", "the earliest deadline");
+  assert.equal(row.due, "2026-11-10", "the one member with a deadline");
   assert.equal(row.daysLeft, 7);
   assert.deepEqual(row.members.sort(), ["ticket-md", "ticket-new", "ticket-old"]);
   assert.equal(row.sources, "brain ×2, Vault");
@@ -175,7 +178,8 @@ test("Not the same splits every pair in the row", () => {
   assert.equal(pairKey("b", "a"), pairKey("a", "b"), "a pair is the same both ways");
 });
 
-test("Settings splits the list into Today, Coming up and the rest (#77)", () => {
+// Spec change (#92): a missed deadline is no longer in Today, it has its own view.
+test("Settings splits the list into Today, Missed, Coming up and the rest (#77, #92)", () => {
   const list = [
     task("missed", -3),
     task("long-missed", -9),
@@ -188,11 +192,12 @@ test("Settings splits the list into Today, Coming up and the rest (#77)", () => 
     { ...task("goal", 30), members: ["goal", "goal-note"] },
   ];
   const ids = (rows) => rows.map((e) => e.id);
-  const { today, comingUp, rest } = splitTasks(list, { goalFrom: "goal-note" });
-  assert.deepEqual(ids(today), ["goal", "missed", "today", "tomorrow"], "the goal's row first, then what is close");
+  const { today, missed, comingUp, rest } = splitTasks(list, { goalFrom: "goal-note" });
+  assert.deepEqual(ids(today), ["goal", "today", "tomorrow"], "the goal's row first, then what is due");
+  assert.deepEqual(ids(missed), ["missed"], "a deadline passed within the week");
   assert.deepEqual(ids(comingUp), ["soon", "later"], "dated after tomorrow, within 60 days, soonest first");
   assert.deepEqual(ids(rest), ["long-missed", "far", "undated"], "the rest keeps the list's order");
-  assert.deepEqual(ids(splitTasks(list).today), ["missed", "today", "tomorrow"], "no goal, no goal row");
+  assert.deepEqual(ids(splitTasks(list).today), ["today", "tomorrow"], "no goal, no goal row");
   assert.deepEqual(ids(splitTasks(list).comingUp), ["soon", "later", "goal"]);
 });
 
@@ -208,6 +213,187 @@ test("Today holds at most 5 rows; what does not fit stays in the list, not lost"
     rest.map((e) => e.id),
     ["e", "f"],
   );
+});
+
+describe("Settings' views: Missed and the person's own rows first (#92)", () => {
+  const ids = (rows) => rows.map((e) => e.id);
+  const own = (id, daysLeft) => ({ ...task(id, daysLeft), writer: "own" });
+  const agent = (id, daysLeft) => ({ ...task(id, daysLeft), writer: "agent" });
+
+  test("missed 1 to 7 days ago is Missed; 8 days ago is Long run", () => {
+    const { today, missed, rest } = splitTasks([task("m1", -1), task("m8", -8), task("m7", -7), task("t", 0)]);
+    assert.deepEqual(ids(today), ["t"]);
+    assert.deepEqual(ids(missed), ["m1", "m7"], "in the list's order");
+    assert.deepEqual(ids(rest), ["m8"]);
+  });
+
+  test("the goal's row stays in Today even when its deadline passed", () => {
+    const { today, missed } = splitTasks([task("goal", -2), task("m", -3)], { goalFrom: "goal" });
+    assert.deepEqual(ids(today), ["goal"]);
+    assert.deepEqual(ids(missed), ["m"]);
+  });
+
+  test("Today's cap of 5 leaves Missed whole", () => {
+    const due = ["a", "b", "c", "d", "e", "f"].map((id) => task(id, 0));
+    const missedRows = ["x", "y", "z", "w", "v", "u"].map((id) => task(id, -2));
+    const { today, missed, rest } = splitTasks([...missedRows, ...due]);
+    assert.deepEqual(ids(today), ["a", "b", "c", "d", "e"]);
+    assert.deepEqual(ids(missed), ["x", "y", "z", "w", "v", "u"]);
+    assert.deepEqual(ids(rest), ["f"], "what does not fit in Today stays in the list");
+  });
+
+  test("with own rows, an agent's rows go under the fold, in the list's order", () => {
+    const list = [agent("a-today", 0), own("o-missed", -2), agent("a-goal", null), own("o-undated", null)];
+    list.push(agent("a-soon", 3), task("unknown", null));
+    const { today, missed, comingUp, rest, suggested } = splitTasks(list, { goalFrom: "a-goal" });
+    assert.deepEqual(ids(today), ["a-goal"], "the goal's row is never folded");
+    assert.deepEqual(ids(missed), ["o-missed"]);
+    assert.deepEqual(comingUp, []);
+    assert.deepEqual(ids(rest), ["o-undated"]);
+    assert.deepEqual(ids(suggested), ["a-today", "a-soon", "unknown"]);
+  });
+
+  test("a row grouped with an own entry is the person's", () => {
+    const row = { ...agent("lyon", null), members: ["lyon", "lyon-note"] };
+    const { rest, suggested } = splitTasks([row, agent("rome", null)], { ownKeys: new Set(["lyon-note"]) });
+    assert.deepEqual(ids(rest), ["lyon"]);
+    assert.deepEqual(ids(suggested), ["rome"]);
+  });
+
+  test("with no own rows, nothing is folded", () => {
+    const list = [agent("a", 0), agent("b", -2), agent("c", null)];
+    const { today, missed, rest, suggested } = splitTasks(list);
+    assert.deepEqual([ids(today), ids(missed), ids(rest)], [["a"], ["b"], ["c"]]);
+    assert.deepEqual(suggested, []);
+  });
+});
+
+// #94: a grouped row's words and its date come from one note, not the newest note's words
+// with the oldest note's date.
+describe("a grouped row's deadline", () => {
+  const q = [
+    loop("old", { due: "2026-11-02", daysLeft: -1, date: "2026-10-10" }),
+    loop("mid", { due: "2026-11-20", daysLeft: 17, date: "2026-10-20" }),
+    loop("new", { date: "2026-10-30" }),
+  ];
+  const verdicts = { old: yes("Old words"), mid: yes("Mid words"), new: yes("New words") };
+  const all = {
+    [pairKey("old", "mid")]: { same: true },
+    [pairKey("mid", "new")]: { same: true },
+  };
+
+  test("is the newest member's, with its words", () => {
+    const dated = q.map((e) => (e.id === "new" ? { ...e, due: "2026-11-25", daysLeft: 22 } : e));
+    const [row] = taskList(dated, { verdicts, pairs: all });
+    assert.equal(row.title, "New words");
+    assert.equal(row.due, "2026-11-25");
+    assert.equal(row.daysLeft, 22);
+  });
+
+  test("is the latest among the members when the newest has none, not the earliest", () => {
+    const [row] = taskList(q, { verdicts, pairs: all });
+    assert.equal(row.title, "New words");
+    assert.equal(row.due, "2026-11-20");
+    assert.equal(row.daysLeft, 17, "the days left come from the same member");
+  });
+
+  test("is none when no member has one", () => {
+    const plain = q.map((e) => ({ ...e, due: null, daysLeft: null }));
+    const [row] = taskList(plain, { verdicts, pairs: all });
+    assert.equal(row.due, null);
+    assert.equal(row.daysLeft, null);
+  });
+});
+
+// Done in Tuck goes to the brain's inbox (#95). The fake stands in for Memory: add() makes
+// the entry the way Memory does, and a connected folder gets its inbox file.
+const fakeMemory = (folder) => {
+  const added = [];
+  return {
+    added,
+    brainState: async () => ({ connected: !!folder }),
+    add: async (fields) => {
+      const entry = makeEntry({ source: "extension", ...fields });
+      added.push(entry);
+      folder?.inbox.push(toInboxMarkdown(entry));
+      return entry;
+    },
+  };
+};
+const grantRow = {
+  id: "grant01",
+  topic: "grants",
+  title: "Send the grant form",
+  date: "2026-10-28",
+  members: ["grant01", "grant02"],
+};
+
+test("Done on a row writes one event to the brain's inbox, for the whole row", async () => {
+  const folder = { inbox: [] };
+  const memory = fakeMemory(folder);
+  const stored = await noteAnswer(memory, grantRow, "done", today);
+  assert.equal(folder.inbox.length, 1, "one entry, though the row groups two");
+  const { source, ...fields } = stored;
+  assert.equal(source, "extension");
+  assert.deepEqual(fields, {
+    kind: "event",
+    topic: "grants",
+    title: "Send the grant form — marked done in Tuck",
+    date: today,
+    context: "The person answered Done on this task in Tuck.",
+    result: `Marked done on ${today}. Entries: grant01, grant02.`,
+    evidence: "none",
+    next: "none",
+  });
+  assert.match(folder.inbox[0], /^kind: event$/m);
+  assert.match(folder.inbox[0], /^Next action: none$/m, "it never becomes a task itself");
+  const single = await noteAnswer(
+    fakeMemory({ inbox: [] }),
+    { id: "visa01", topic: "errands", title: "Post the visa papers" },
+    "done",
+    today,
+  );
+  assert.equal(single.result, `Marked done on ${today}. Entries: visa01.`);
+});
+
+test("Not a task, the other answers and a row with no title write nothing", async () => {
+  const folder = { inbox: [] };
+  const memory = fakeMemory(folder);
+  for (const choice of ["not_task", "not_same", "later", "switch"])
+    assert.equal(await noteAnswer(memory, grantRow, choice, today), null);
+  assert.equal(await noteAnswer(memory, { id: "gone" }, "done", today), null, "a row no longer on the list");
+  assert.deepEqual(memory.added, []);
+  assert.deepEqual(folder.inbox, []);
+});
+
+test("with no brain folder connected, Done writes nothing", async () => {
+  const memory = fakeMemory(null);
+  assert.equal(await noteAnswer(memory, grantRow, "done", today), null);
+  assert.deepEqual(memory.added, []);
+});
+
+test("a long task still makes a valid title", () => {
+  const e = makeEntry(doneEntry({ ...grantRow, title: "x".repeat(200) }, today));
+  assert.equal(e.title.length, 120);
+  assert.ok(e.title.endsWith(" — marked done in Tuck"));
+});
+
+test("the task node reads the Done note as a later note on each of the row's entries", () => {
+  const { kind: _, ...note } = doneEntry(grantRow, "2026-11-04");
+  // profileSample's shape, newest first.
+  const sample = [
+    note,
+    { topic: "grants", title: "Still need to send the grant form", date: "2026-11-01", next: "Send it" },
+    { topic: "grants", title: "Send the grant form", date: "2026-10-28", next: "Send it by Friday" },
+    { topic: "shop", title: "Fix the cart", date: "2026-11-03", next: "none" },
+  ];
+  for (const entry of sample.slice(1, 3)) {
+    const later = laterOnTopic(entry, sample);
+    assert.ok(
+      later.some((s) => s.title === note.title && s.result === note.result && s.date === "2026-11-04"),
+      `later notes for "${entry.title}" include the Done note`,
+    );
+  }
 });
 
 test("a parked thought is named oldest first, once: named, it leaves the list (#59)", () => {

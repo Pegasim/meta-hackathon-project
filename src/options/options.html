@@ -8,6 +8,10 @@
   body { max-width: 560px; margin: 24px auto; padding: 0 16px; }
   h1 { font-size: 20px; margin-bottom: 16px; }
   .status { margin-top: 8px; white-space: pre-line; }
+  summary { cursor: pointer; width: fit-content; }
+  summary:hover { color: var(--accent); }
+  summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  details > .stack { margin-top: 10px; }
 </style>
 </head>
 <body class="stack">
@@ -108,6 +112,7 @@
     <p class="status small" id="task-status"></p>
     <div class="stack" id="task-list"></div>
     <div class="row"><button id="all-tasks" hidden>Show all</button></div>
+    <details id="task-suggested" hidden><summary class="small">Suggested from your memory</summary><div class="stack"></div></details>
     <p class="small"><strong>Learned from your answers</strong></p>
     <div class="stack" id="label-list"></div>
   </section>
@@ -117,6 +122,17 @@
     <p class="small muted">When you set or finish a goal, or say you are stuck, Tuck looks things up before it answers. These are its last lookups: what it searched for and how much it found, never your notes' text.</p>
     <div class="stack" id="agent-runs"></div>
     <div class="row"><button id="refresh-runs">Refresh</button></div>
+  </section>
+
+  <section class="card stack">
+    <h2>GitHub repositories</h2>
+    <p class="note">Before Tuck names a PR or issue from your notes as a step, it checks on GitHub whether it is still open, and leaves it out if it was merged or closed. With one repository listed, "#12" means that one; with several, write "owner/name#12". Only public repositories, and only names, numbers, states and titles are read: no code, diffs or comments. Nothing is asked of GitHub while the list is empty.</p>
+    <div>
+      <label for="github-repos">Repositories (one owner/name per line)</label>
+      <textarea id="github-repos" rows="3" spellcheck="false" placeholder="owner/name"></textarea>
+    </div>
+    <div class="row"><button id="save-github">Save repositories</button></div>
+    <p class="status small" id="github-status"></p>
   </section>
 
   <section class="card stack">

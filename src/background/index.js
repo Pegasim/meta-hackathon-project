@@ -28,6 +28,7 @@ import {
   markAll,
   splitRow,
   taskList,
+  noteAnswer,
   park,
   nextParked,
   unpark,
@@ -42,11 +43,14 @@ import { composeNudge } from "../agent/nudge.js";
 import { buildProfile } from "../agent/profile.js";
 import { refreshTasks } from "../agent/tasks.js";
 import { planFor, stuckStep, nextAfter } from "../agent/moments.js";
+import { recentRuns } from "../agent/loop.js";
+import { noteOf } from "../agent/notes.js";
+import { githubLookup, closedRefs } from "../agent/github.js";
 import { dueLabel, localDate } from "../memory/due.js";
 import { siteName, reminderLine, templateGreeting, toolKind, whenSaid, PARKED_LINE } from "../tuck/voice.js";
 import { contextFlags, sameDocument } from "./sensor.js";
 import { watchTyping, tuckThere, watchRegion, readRegion, isComposing, readExcerpt } from "./page.js";
-import { present, comesWhileAway } from "../tuck/present.js";
+import { present, comesWhileAway, stuckView, stuckWanted } from "../tuck/present.js";
 import "../tuck/skins.js";
 
 const memory = Memory.open();
@@ -659,6 +663,12 @@ async function showTrigger(t, s) {
     await log({ type: "feedback", ts: Date.now(), kind: "away_held", payload: { trigger: t.kind } });
     return;
   }
+  // A stuck step, or its wait, on the page in front: a drift word does not replace it (#61),
+  // held as the away rule holds one. Closing it, a new goal or another tab ends the hold.
+  if (["drift", "fragmentation"].includes(t.kind) && stuckAsk?.tabId != null && (await stuckStillWanted(stuckAsk, s))) {
+    await log({ type: "feedback", ts: Date.now(), kind: "stuck_held", payload: { trigger: t.kind } });
+    return;
+  }
   const intent = await (await store).activeIntent();
   const shown = {
     ...t,
@@ -721,6 +731,12 @@ async function reminderAnswer({ id, title, choice }, sender) {
   await log({ type: "feedback", ts: Date.now(), kind: "reminder", payload: { id, choice } });
   const row = choice === "switch" ? null : await rowOf(id);
   if (choice === "done") await saveLoops(markAll(markDone, await loadLoops(), row, Date.now()));
+  // Done also goes to the brain's inbox (#95). A failed write leaves the answer as it is.
+  await memory
+    .then((m) => noteAnswer(m, row, choice, localDate()))
+    .catch((err) =>
+      log({ type: "feedback", ts: Date.now(), kind: "done_note_failed", payload: { id, error: String(err) } }),
+    );
   if (choice === "not_task") await saveLoops(markAll(markNotTask, await loadLoops(), row, Date.now()));
   if (choice === "not_same") {
     const { taskSplits = {} } = await chrome.storage.local.get("taskSplits");
@@ -1325,21 +1341,7 @@ async function writeGreeting(sum) {
 // agent/tools.js and proposes words, a plan or a step (agent/moments.js). Always outside
 // the queue: no moment waits for it (#67). Only a short write of what it found goes in.
 
-// A note as the agent reads it, redacted and cut. Tuck's own records (goals and how their
-// days went, topic "focus") are not the person's notes.
-const NOTE_CHARS = 600;
 const ACTIVITY_MIN = 30;
-function noteOf({ title, item }) {
-  const body =
-    typeof item.text === "string"
-      ? item.text
-      : [item.context, item.result, item.next !== "none" && item.next].filter(Boolean).join(" ");
-  return {
-    title: redact(title ?? "").text,
-    topic: item.topic ?? "notes",
-    text: redact(body.replace(/\s+/g, " ")).text.slice(0, NOTE_CHARS),
-  };
-}
 
 // The pages of the last ACTIVITY_MIN minutes, newest first, with what each was judged.
 async function recentPages() {
@@ -1374,14 +1376,33 @@ async function lastWorkExcerpt() {
   return { title: redact(last.title ?? "").text, excerpt: redact(page.text).text };
 }
 
+// #91: GitHub, for the repositories listed in Settings, or null when none is. One lookup
+// per list, so a rate limit holds across runs; answers are cached in session storage,
+// which outlives the worker.
+const githubCache = {
+  get: async (key) => (await chrome.storage.session.get(`gh:${key}`))[`gh:${key}`],
+  set: (key, value) => chrome.storage.session.set({ [`gh:${key}`]: value }),
+};
+let github = null;
+async function githubFor() {
+  const { githubRepos = [] } = await chrome.storage.local.get("githubRepos");
+  if (!githubRepos.length) return null;
+  if (github?.repos.join("\n") !== githubRepos.join("\n"))
+    github = githubLookup({ repos: githubRepos, cache: githubCache, clean: (t) => redact(t).text });
+  return github;
+}
+
 // What the agent's read tools see, through code that already exists.
-function agentDeps(intent) {
+async function agentDeps(intent) {
   return {
+    github: await githubFor(),
     recall: async (query) =>
       (await (await memory).recall(query, { limit: NOTES_SEARCHED }).catch(() => []))
+        // Tuck's own records (goals and how their days went, topic "focus") are not the
+        // person's notes. Each is dated by the person's day (agent/notes.js, #90).
         .filter((h) => h.item && h.item.topic !== "focus")
         .slice(0, 5)
-        .map(noteOf),
+        .map((h) => noteOf(h)),
     tasks: async () =>
       stillOpen(await toDo(), await loadLoops())
         .filter((e) => e.id && e.title !== intent?.title)
@@ -1438,7 +1459,7 @@ function planAhead(intent) {
 async function writePlan(intent) {
   const agent = await agentChat();
   if (!agent) return;
-  const r = await planFor(agent.chat, agentDeps(intent), { title: intent.title });
+  const r = await planFor(agent.chat, await agentDeps(intent), { title: intent.title });
   await logRun("plan", r, agent.model, r.value && r.value.steps.map((s) => s.step));
   if (!r.value) return;
   // The goal may have ended or changed while the model worked.
@@ -1452,18 +1473,68 @@ async function writePlan(intent) {
 
 // #61: one small next step, asked for by the person ("I'm stuck"). It may take the model
 // a few seconds; the template answers when there is no model or the loop finds nothing.
-// Returns {step, minutes, source}.
-async function stuck() {
-  const st = await store;
-  const intent = await st.activeIntent();
-  if (!intent) return { ok: false, reason: "no goal" };
+// Returns {step, minutes, source, intentId}. One ask at a time: a second while one runs is
+// turned away. onWait(ask) draws the wait, if the ask came from a page.
+let stuckRunning = false;
+let stuckAsk = null; // the live ask, {id, intentId, tabId}: running or on screen; null once closed or started
+async function stuck(_msg, _sender, { tabId = null, onWait } = {}) {
+  if (stuckRunning) return { ok: false, reason: "busy" };
+  stuckRunning = true;
+  try {
+    const st = await store;
+    const intent = await st.activeIntent();
+    if (!intent) return { ok: false, reason: "no goal" };
+    const ask = (stuckAsk = { id: crypto.randomUUID(), intentId: intent.id, tabId });
+    await onWait?.(ask);
+    const r = await stepFor(intent);
+    if (!(await stuckStillWanted(ask))) return { ok: false, reason: "not wanted", ask: ask.id };
+    return { ok: true, ...r, intentId: intent.id, ask: ask.id };
+  } finally {
+    stuckRunning = false;
+  }
+}
+
+async function stepFor(intent) {
   const last = (await loadEngine()).lastRelevant;
-  const template = { step: stuckTemplate(last?.title, intent.title), minutes: 10, source: "template" };
+  // #91: a last page naming a merged or closed PR is not offered either.
+  const lastTitle = (await closedRefs(await githubFor(), [last?.title ?? ""]).catch(() => new Map())).size
+    ? null
+    : last?.title;
+  const template = { step: stuckTemplate(lastTitle, intent.title), minutes: 10, source: "template" };
   const agent = await agentChat();
-  if (!agent) return { ok: true, ...template };
-  const r = await stuckStep(agent.chat, agentDeps(intent), { title: intent.title, step: intent.steps?.[0] });
+  if (!agent) return template;
+  const r = await stuckStep(agent.chat, await agentDeps(intent), { title: intent.title, step: intent.steps?.[0] });
   await logRun("stuck", r, agent.model, r.value?.step);
-  return r.value ? { ok: true, ...r.value, source: "agent" } : { ok: true, ...template };
+  return r.value ? { ...r.value, source: "agent" } : template;
+}
+
+// present.js stuckWanted, against now: the live ask, the active goal, the tab in front.
+async function stuckStillWanted(ask, s) {
+  s ??= await loadEngine();
+  const intent = await (await store).activeIntent();
+  return stuckWanted(ask, { live: stuckAsk, intentId: intent?.id, tabId: s.current?.tabId });
+}
+
+// "I'm stuck" in Tuck's bubble: Tuck waits on that page while the agent looks, then shows
+// the step there. The person asked for it, so it shows while Tuck is tucked away too. A
+// step no longer wanted is not drawn, and its wait leaves (only the wait: the page may
+// show something newer by then).
+async function stuckOnPage({ again }, sender) {
+  const tabId = sender?.tab?.id;
+  const away = await isAway();
+  const r = await stuck(null, sender, {
+    tabId,
+    onWait: (ask) => showTuck(tabId, stuckView({ away, ask: ask.id })),
+  });
+  if (r.ok) await showTuck(tabId, stuckView({ ...r, again: !!again, away }));
+  else if (r.ask)
+    await chrome.tabs.sendMessage(tabId, { type: away ? "tuck-hide" : "tuck-rest", stuck: r.ask }).catch(() => {});
+  return r;
+}
+
+// The person closed a stuck wait or step on the page: that ask is over.
+function stuckClosed({ ask }) {
+  if (stuckAsk?.id === ask) stuckAsk = null;
 }
 
 // "Open cart.js · acme/shop and do one line of it", at most 12 words.
@@ -1473,7 +1544,8 @@ function stuckTemplate(lastTitle, goal) {
 }
 
 // "Start this": the step becomes the goal's next step, and the person goes back to work.
-async function startStep({ step }) {
+// A step for a goal that has ended or changed does nothing.
+async function startStep({ step, intentId }) {
   const text = String(step ?? "")
     .trim()
     .slice(0, 200);
@@ -1481,11 +1553,16 @@ async function startStep({ step }) {
   const s = await enqueue(async () => {
     const st = await store;
     const intent = await st.activeIntent();
-    if (intent) await st.putIntent({ ...intent, steps: [text, ...(intent.steps ?? []).filter((x) => x !== text)] });
-    await log({ type: "feedback", ts: Date.now(), kind: "stuck_start", payload: { intentId: intent?.id ?? null } });
+    if (!intent || intent.id !== intentId) return null;
+    await st.putIntent({ ...intent, steps: [text, ...(intent.steps ?? []).filter((x) => x !== text)] });
+    await log({ type: "feedback", ts: Date.now(), kind: "stuck_start", payload: { intentId: intent.id } });
     return loadEngine();
   });
-  await restTuck();
+  if (!s) return { ok: false, reason: "goal changed" };
+  stuckAsk = null;
+  // Tucked away, Tuck came for the step alone: it leaves with it.
+  if (await isAway()) await hideTuck();
+  else await restTuck();
   if (s.lastRelevant) await takeMeBack(s.lastRelevant);
   return { ok: true };
 }
@@ -1504,7 +1581,7 @@ function nextAhead(intent) {
 async function writeNext(intent) {
   const agent = await agentChat();
   if (!agent) return;
-  const r = await nextAfter(agent.chat, agentDeps(intent), { title: intent.title });
+  const r = await nextAfter(agent.chat, await agentDeps(intent), { title: intent.title });
   await logRun("next", r, agent.model, r.value?.message);
   if (!r.value) return;
   nextDrafts.set(intent.id, r.value);
@@ -1638,12 +1715,16 @@ const HANDLERS = {
       : showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
   // Every tab lets Tuck go, not just the one in front. From the card, Tuck says how to
   // bring it back and then leaves that page too (the popup's button has its own way back).
+  // The flag is set at once, so a word on its way still checks it; the hide takes its turn
+  // in the queue, after a word already being drawn (#87). The agent loop is not in the queue.
   "tuck-away": async (_msg, sender) => {
     await chrome.storage.local.set({ tuckAway: true });
     const from = sender?.tab?.id;
-    const tabs = (await chrome.tabs.query({})).filter((t) => t.id !== from);
-    await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, { type: "tuck-hide" }).catch(() => {})));
-    if (from != null) await showTuck(from, present({ event: "away" }));
+    await enqueue(async () => {
+      const tabs = (await chrome.tabs.query({})).filter((t) => t.id !== from);
+      await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, { type: "tuck-hide" }).catch(() => {})));
+      if (from != null) await showTuck(from, present({ event: "away" }));
+    });
   },
   park: parkThought,
   "goal-form-closed": () => chrome.storage.session.set({ goalFormClosedAt: Date.now() }),
@@ -1669,13 +1750,11 @@ const HANDLERS = {
   "reminder-answer": reminderAnswer,
   // The agent (#81): "I'm stuck" asks for one step; "Start this" makes it the next step.
   stuck,
+  "stuck-tuck": stuckOnPage,
+  "stuck-closed": stuckClosed,
   "start-step": startStep,
   // What Tuck looked at, for settings: the last agent runs, newest first.
-  "agent-runs": async () =>
-    (await (await store).eventsSince(Date.now() - 24 * 3600 * 1000))
-      .filter((e) => e.type === "agent")
-      .slice(-5)
-      .reverse(),
+  "agent-runs": async () => recentRuns(await (await store).eventsSince(Date.now() - 24 * 3600 * 1000)),
   "agent-status": agentStatus,
   // What Tuck has learned from answers, for settings. Forgetting one has the page in
   // front judged again.

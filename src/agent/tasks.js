@@ -17,12 +17,13 @@ import { mayRead, readingSettings } from "../attention/reading.js";
 // 30-second fetch limit, and real notes are longer than the eval's.
 const BATCH = 10;
 const CONCURRENCY = 3;
-const LATER = 6; // later notes on the same topic shown with each entry
-const KIN = 4; // and notes on the topic whose titles share its words
+const LATER = 6; // later notes on the same topic shown with each entry, newest first
+const KIN = 4; // and notes on any topic whose titles share two of its words
 const TASK_WORDS = 10;
 const MATCH_WORDS = 6;
 const FIELD_CHARS = 300;
 const RESULT_CHARS = 150; // a later note's result line (#76)
+const NOTE_CHARS = 120; // and its context and evidence, where "this was done" is often written (#94)
 // Hidden reasoning counts against max_tokens: 15 invented entries took 6,700 to 10,629
 // reasoning tokens at the default effort (#43). A cap, not a target. Low effort: on the
 // task eval it got the same answers as the default (21 of 22) in a third of the time,
@@ -34,7 +35,9 @@ const EFFORT = "low";
 const PAIRS_PER_CALL = 20;
 const PAIRS_MAX = 60;
 // In every verdict's hash: a change to the rules below asks about every entry again.
-const RULES = 3; // 2: commitments, not a coding agent's steps (#75); 3: later notes' results, steps under way (#76)
+// 2: commitments, not a coding agent's steps (#75); 3: later notes' results, steps under way (#76);
+// 4: newest later notes, kin from any topic, upkeep, passed deadlines, business money (#94)
+const RULES = 4;
 
 const SYSTEM = [
   "You read entries from someone's own notes. Each one names a next action. Say for each",
@@ -53,12 +56,20 @@ const SYSTEM = [
   "  the only trace of a larger commitment still open (a release, a feature someone was",
   "  promised, a submission, a deliverable for a person). Then is_task is true and task",
   '  names that larger thing: "Ship the Linux bridge", not "Merge PR #45".',
+  "- An upkeep step that keeps a tool, pipeline, server or backup running is not a task",
+  "  either (is_task false): rotate a backup key, sync templates, re-check the nightly",
+  "  run's output. Fixing something that broke or leaked can still be one.",
+  "- A deadline the notes say has passed (the call closed, the date went by with nothing",
+  "  sent) is not a task (is_task false), unless a later note commits to doing it anyway:",
+  "  a late entry agreed, a new date set.",
   "- Each entry says how long ago it was written and by whom. A coding agent's step from",
   "  weeks ago that no later note mentions is most likely done: still_open false.",
-  "- still_open: false when the entry or another note on the same topic shows it was",
-  "  done, submitted, merged, sent, cancelled or replaced. True when nothing shows that.",
-  "  The other notes come with their date and result. Notes from the same day carry no",
-  "  time, so one may have been written before or after the entry.",
+  "- still_open: false when the entry or another note shows it was done, submitted,",
+  "  merged, sent, cancelled or replaced. True when nothing shows that. The other notes",
+  "  are the newest ones on the same topic, then notes on any topic with a similar",
+  "  title (their topic is named when it differs). They come with their date, result,",
+  "  context and evidence. Notes from the same day carry no time, so one may have been",
+  "  written before or after the entry.",
   '- A planning, coordination or "decide how to" step is closed (still_open false) when',
   "  later notes or their browsing show the work being carried out or finished.",
   "- Their browsing over the last day, when given, is evidence for still_open only:",
@@ -66,14 +77,15 @@ const SYSTEM = [
   "- task: the action in at most 10 words, as an instruction, in the note's language. No",
   "  dates: the deadline is read separately. Name what the action is for (the",
   "  programme, person, project or document), from the entry's title or context when",
-  '  the next action leaves it out: "Decide whether to submit the grant application',
-  '  late", not "Decide whether to upload video and submit late".',
+  '  the next action leaves it out: "Pick the video for the film fund application", not',
+  '  "Pick the video to upload".',
   "- match: the same action in 2 to 6 plain English words, lowercase, whatever language",
   "  the note is in. It is never shown: it only finds the same task written in another",
   "  language. Steps of the same larger thing get the same match.",
   "- who: the person it is with or for, when the note names one; else null.",
-  "- personal: true for health, body, dating, family, money or home; false for work,",
-  "  study and projects.",
+  "- personal: true for health, body, dating, family, home, or their private money",
+  "  (their own bills, rent, savings); false for work, study and projects, money",
+  "  included: a prize payout, a bank meeting for the company, a client's invoice.",
   "Write nothing you cannot point to in the notes.",
   'Reply with one JSON object only: {"items": [{"n": 1, "is_task": true,',
   '"still_open": true, "task": "...", "match": "...", "who": null, "personal": false}]},',
@@ -82,6 +94,7 @@ const SYSTEM = [
 
 const fold = (s) => s.replace(/[İIı]/g, "i").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 const COMMON = new Set("the and for with from that this into after before when what then than".split(" "));
+const YEAR = /^(19|20)\d\d$/;
 const wordsOf = (s = "", min = 4) =>
   new Set(
     fold(s)
@@ -89,26 +102,48 @@ const wordsOf = (s = "", min = 4) =>
       .filter((w) => w.length >= min && !COMMON.has(w)),
   );
 
-// sample: memory.profileSample({ limit: Infinity }), newest first. The other notes on the
-// same topic that can say whether this entry closed: the ones written after it, oldest
-// first, and the ones whose titles share two of its words. Entries carry a date and no
-// time, and a day's notes sort by title, so every note from the entry's own day may be a
-// later one, and all of them go (#76); `later` and `kin` stay the caps. A sample with no
-// dates falls back to its own order. Returns [{ title, date?, result? }].
+// sample: memory.profileSample({ limit: Infinity }), newest first. The other notes that
+// can say whether this entry closed: the ones on its topic written after it, newest first,
+// since the note that closes a task is the newest more often than the next (#94); then
+// notes whose titles share two of its words, a year not counting as one, newest first:
+// on its topic first, then later ones on any topic (the published post sits under another
+// topic than the task to write it; an older one there is more often an earlier round of
+// the same chore than its proof). Entries carry a date and no time, and a day's notes sort by title, so every note
+// from the entry's own day may be a later one (#76); `later` and `kin` stay the caps. A
+// sample with no dates falls back to its own order.
+// Returns [{ title, topic?, date?, context?, result?, evidence? }], topic when it differs.
 export function laterOnTopic(entry, sample, { later = LATER, kin = KIN } = {}) {
   const at = sample.findIndex((s) => s.topic === entry.topic && s.title === entry.title);
   const same = (s, i) => i !== at && s.topic === entry.topic;
   const day = entry.date?.slice(0, 10);
-  const isLater = (s, i) => same(s, i) && (day && s.date ? s.date.slice(0, 10) >= day : i < at);
-  const after = sample.filter(isLater).reverse().slice(0, later);
-  const own = wordsOf(entry.title);
-  const shared = (s) => [...wordsOf(s.title)].filter((w) => own.has(w)).length >= 2;
-  const near = sample.filter((s, i) => same(s, i) && !after.includes(s) && shared(s)).slice(0, kin);
-  return [...after, ...near].map(({ title, date, result }) => ({
+  const since = (s, i) => (day && s.date ? s.date.slice(0, 10) >= day : i < at);
+  const isLater = (s, i) => same(s, i) && since(s, i);
+  const after = sample.filter(isLater).slice(0, later);
+  const own = titleWords(entry.title);
+  const shared = (s) => titleWords(s).filter((w) => own.includes(w)).length >= 2;
+  const kinOf = (ok) => sample.filter((s, i) => ok(s, i) && !after.includes(s) && shared(s));
+  const elsewhere = (s, i) => s.topic !== entry.topic && since(s, i);
+  const near = [...kinOf(same), ...kinOf(elsewhere)].slice(0, kin);
+  const said = (v) => v && v !== "none";
+  return [...after, ...near].map(({ title, topic, date, context, result, evidence }) => ({
     title,
+    ...(topic && topic !== entry.topic && { topic }),
     ...(date && { date: date.slice(0, 10) }),
-    ...(result && result !== "none" && { result }),
+    ...(said(context) && { context }),
+    ...(said(result) && { result }),
+    ...(said(evidence) && { evidence }),
   }));
+}
+
+// A title's words without years. A note's are kept on the note, since every candidate
+// reads the whole sample.
+const noteWords = new WeakMap();
+function titleWords(note) {
+  const title = typeof note === "string" ? note : note.title;
+  if (typeof note !== "string" && noteWords.has(note)) return noteWords.get(note);
+  const out = [...wordsOf(title)].filter((w) => !YEAR.test(w));
+  if (typeof note !== "string") noteWords.set(note, out);
+  return out;
 }
 
 // FNV-1a: a verdict holds while the entry and its later notes are unchanged, the rules are
@@ -124,6 +159,7 @@ export function taskHash(entry, later, today) {
     entry.title,
     entry.context,
     entry.result,
+    entry.evidence,
     entry.next,
     later,
   ]);
@@ -153,11 +189,19 @@ const cut = (s, n = FIELD_CHARS) =>
     .trim()
     .slice(0, n);
 
-// One later note: `- 2026-11-04 "Title": result`. A plain string is a title alone.
+// One later note: `- 2026-11-04 [topic] "Title": result`, then its context and evidence
+// on a second line when it has them. A plain string is a title alone.
 function laterLine(note, clean) {
-  const { title, date, result } = typeof note === "string" ? { title: note } : note;
+  const { title, topic, date, context, result, evidence } = typeof note === "string" ? { title: note } : note;
   const said = result ? `: ${clean(cut(result, RESULT_CHARS))}` : "";
-  return `   - ${date ? `${date} ` : ""}"${clean(cut(title, 120))}"${said}`;
+  const more = [
+    context && `Context: ${clean(cut(context, NOTE_CHARS))}`,
+    evidence && `Evidence: ${clean(cut(evidence, NOTE_CHARS))}`,
+  ].filter(Boolean);
+  return [
+    `   - ${date ? `${date} ` : ""}${topic ? `[${topic}] ` : ""}"${clean(cut(title, 120))}"${said}`,
+    ...(more.length ? [`     ${more.join(" ")}`] : []),
+  ].join("\n");
 }
 
 // items: [{ entry, later }]. clean: what each text goes through first (redact). today: the
@@ -170,8 +214,9 @@ export function taskMessages(items, { clean = (s) => s, today = localDate(), act
       `   ${written(e, today)}`,
       `   Context: ${clean(cut(e.context))}`,
       `   Result: ${clean(cut(e.result))}`,
+      ...(e.evidence && e.evidence !== "none" ? [`   Evidence: ${clean(cut(e.evidence))}`] : []),
       `   Next action: ${clean(cut(e.next))}`,
-      ...(later.length ? ["   Other notes on this topic:", ...later.map((n) => laterLine(n, clean))] : []),
+      ...(later.length ? ["   Other notes:", ...later.map((n) => laterLine(n, clean))] : []),
     ].join("\n"),
   );
   const browsing = activity ? [`Their browsing over the last day, for still_open only:\n${clean(activity)}`] : [];

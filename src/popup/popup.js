@@ -1,7 +1,7 @@
 import { Memory } from "../memory/index.js";
 import { loadModelSettings } from "../memory/model.js";
 import { activityRows } from "./activity.js";
-import { nudgeText } from "../tuck/present.js";
+import { nudgeText, STUCK_WAIT, minutesLine } from "../tuck/present.js";
 import "../tuck/skins.js";
 
 const $ = (id) => document.getElementById(id);
@@ -22,6 +22,7 @@ const STATE = {
 async function render() {
   const { engine, lastTrigger, intent } = await send("get-status");
   $("intent-view").hidden = !intent;
+  if (stuckStep && stuckStep.intentId !== intent?.id) clearStuck();
   $("intent-form").hidden = !!intent;
   if (intent) {
     $("intent-title").textContent = intent.title;
@@ -104,6 +105,38 @@ $("change").onclick = () => {
   $("intent-view").hidden = true;
   $("intent-form").hidden = false;
   $("title").focus();
+};
+
+// "I'm stuck" (#61): the step shows here, in the card, so it works on any page in front
+// (Tuck cannot draw on chrome:// pages). The agent may take up to 20 s. I'm stuck stays off
+// while a step shows; "Another one" asks once more at most; a new goal clears the card.
+let stuckStep = null; // {step, intentId} on the card
+function clearStuck() {
+  stuckStep = null;
+  $("stuck-view").hidden = true;
+  $("stuck").disabled = false;
+}
+async function askStuck(again) {
+  $("stuck").disabled = true;
+  $("stuck-view").hidden = false;
+  $("stuck-answers").hidden = true;
+  $("stuck-text").textContent = STUCK_WAIT;
+  $("stuck-min").textContent = "";
+  const r = await send("stuck").catch(() => null);
+  if (!r?.ok) return clearStuck();
+  stuckStep = { step: r.step, intentId: r.intentId };
+  $("stuck-text").textContent = r.step;
+  $("stuck-min").textContent = minutesLine(r.minutes);
+  $("stuck-answers").hidden = false;
+  $("another-step").hidden = again;
+}
+$("stuck").onclick = () => askStuck(false);
+$("another-step").onclick = () => askStuck(true);
+$("start-step").onclick = async () => {
+  const { step, intentId } = stuckStep ?? {};
+  clearStuck();
+  await send("start-step", { step, intentId });
+  render();
 };
 
 $("mode").onchange = async () => {

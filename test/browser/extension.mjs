@@ -319,6 +319,15 @@ function agentReply(messages) {
     if (!results.length) return call("recall_notes", { query: goal });
     const notes = results.flatMap((r) => r.notes ?? []);
     if (!notes.length) return call("no_plan", { reason: "nothing in the notes" });
+    // #91: a plan naming a merged PR (41) and an open one (12) of the listed repository.
+    if (notes.some((n) => /Shop release/.test(n.title)))
+      return call("make_plan", {
+        steps: [
+          { step: "Review PR #41 for the shop release", minutes: 15 },
+          { step: "Review PR #12 for the shop release", minutes: 15 },
+          { step: "Write the shop release notes", minutes: 20 },
+        ],
+      });
     const rules = notes.some((n) => /Demo video rules/.test(n.title));
     return call("make_plan", {
       steps: rules
@@ -623,6 +632,8 @@ await worker.evaluate(() => {
   const set = chrome.action.setIcon.bind(chrome.action);
   chrome.action.setIcon = (details) => (globalThis.__icons.push(details), set(details));
 });
+// The skins are listed before their change handler is set (options.js): wait for it.
+await settingsPage.waitForFunction(() => document.getElementById("tuck-skin").onchange);
 await settingsPage.selectOption("#tuck-skin", "paper");
 const backButton = onVideo.locator(".bubble button[data-choice=back]");
 await onVideo.locator("svg.tuck[data-state]").waitFor({ timeout: 5000 });
@@ -1147,16 +1158,74 @@ async function settledDockCount(page, wait = 1500) {
   await page.waitForTimeout(wait);
   return dockCount(page);
 }
+// #87: Tuck away takes its turn with the words being drawn. A word already on its way (its
+// job past the away check, held here at Chrome's executeScript, a fake at the boundary) is
+// drawn and then hidden, not drawn after the hide.
+await worker.evaluate(() => {
+  const run = chrome.scripting.executeScript.bind(chrome.scripting);
+  globalThis.__runScript = run;
+  globalThis.__held = new Promise((r) => (globalThis.__release = r));
+  globalThis.__holding = false;
+  chrome.scripting.executeScript = async (details) => {
+    const tab = await chrome.tabs.get(details.target.tabId).catch(() => null);
+    if (!globalThis.__holding && /\/notes$/.test(tab?.url ?? "")) {
+      globalThis.__holding = true;
+      await globalThis.__held;
+    }
+    return run(details);
+  };
+});
+const raceTab = await ctx.newPage();
+await raceTab.goto(`http://localhost:${port}/notes`);
+await raceTab.bringToFront();
+// Not waited for: its reply comes once the held word is drawn.
+await popup.evaluate(() => void chrome.runtime.sendMessage({ type: "record-active" }));
+const awayRace = { held: false };
+for (let i = 0; i < 50 && !awayRace.held; i++) {
+  if (i) await raceTab.waitForTimeout(100);
+  awayRace.held = await worker.evaluate(() => globalThis.__holding);
+}
+// The popup's Tuck away meanwhile: its reply, or a second without one (it waits its turn).
+await popup.evaluate(() =>
+  Promise.race([chrome.runtime.sendMessage({ type: "tuck-away" }), new Promise((r) => setTimeout(r, 1000))]),
+);
+await worker.evaluate(() => {
+  chrome.scripting.executeScript = globalThis.__runScript;
+  globalThis.__release();
+});
+awayRace.drawn = await settledDockCount(raceTab, 1500);
+awayRace.flag = await tuckAwayNow();
+await raceTab.close();
+await popup.evaluate(() => chrome.storage.local.set({ tuckAway: false }));
 // An older tab with Tuck drawn on it, from before Tuck was tucked away.
 const awayOlder = await ctx.newPage();
 await awayOlder.goto(repo);
 await awayOlder.bringToFront();
 await awayOlder.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
 await awayOlder.evaluate(() => (document.title = "Tuck away: older tab"));
+// #87: a tab in another window, with Tuck drawn on it. Closed after each check, with focus
+// back where it was: headless Chromium keeps the newest window the last focused, whichever
+// tab comes to the front, and opens new pages in it.
+async function otherWindow() {
+  const back = await popup.evaluate(async () => (await chrome.windows.getLastFocused()).id);
+  const [page] = await Promise.all([
+    ctx.waitForEvent("page"),
+    popup.evaluate((url) => chrome.windows.create({ url }), repo),
+  ]);
+  await page.waitForLoadState();
+  await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+  await page.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
+  return { page, back };
+}
+async function closeOtherWindow({ page, back }) {
+  await page.close();
+  await popup.evaluate((id) => chrome.windows.update(id, { focused: true }), back);
+}
 const awayTab = await ctx.newPage();
 await awayTab.goto(repo);
 await awayTab.bringToFront();
 await awayTab.locator("#tuck-companion .dock.in").waitFor({ timeout: 10000 });
+let awayWindow = await otherWindow();
 await awayTab.locator("#tuck-companion .avatar").click();
 const tuckAwayButton = awayTab.locator("#tuck-companion .bubble button", { hasText: "Tuck away" });
 await tuckAwayButton.waitFor({ timeout: 5000 });
@@ -1173,6 +1242,8 @@ await awayTab
   .catch(() => {});
 away.here = await settledDockCount(awayTab, 800);
 away.flag = await tuckAwayNow();
+away.otherWindow = await dockCount(awayWindow.page);
+await closeOtherWindow(awayWindow);
 // Every tab lets Tuck go, not just the one clicked: the older tab shows no Tuck in front.
 await awayOlder.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
@@ -1240,6 +1311,52 @@ await awayAvatarTab.locator("#tuck-companion .avatar").click();
 away.afterAvatarClick = await settledDockCount(awayAvatarTab, 1500);
 away.avatarAnswer = (await lastTrigger())?.choice;
 await awayAvatarTab.close();
+// #87: × on the drift word, a break from it, and "This is for my task": Tuck leaves each
+// time, and stays away through the break and its end.
+async function awayDrift(answer) {
+  const before = await lastTrigger();
+  const tab = await ctx.newPage();
+  await tab.goto(dockedSocial);
+  await tab.bringToFront();
+  await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+  await waitForNewDrift(before?.id ?? null);
+  const button = tab.locator(`#tuck-companion .bubble ${answer}`);
+  await button.waitFor({ timeout: 15000 });
+  await button.click();
+  return tab;
+}
+const awayCloseTab = await awayDrift(".close");
+away.afterClose = await settledDockCount(awayCloseTab, 1500);
+away.closeAnswer = (await lastTrigger())?.choice;
+await awayCloseTab.close();
+await settingsPage.evaluate(async () => {
+  const { attentionConfig } = await chrome.storage.local.get("attentionConfig");
+  await chrome.storage.local.set({ attentionConfig: { ...attentionConfig, breakMin: 0.25 } }); // 15 s
+});
+const awayBreakTab = await awayDrift("button[data-choice=break]");
+away.afterBreakAnswer = await settledDockCount(awayBreakTab, 1500);
+await awayBreakTab.close();
+const awayOnBreak = await ctx.newPage();
+await awayOnBreak.goto(repo);
+await awayOnBreak.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.onBreakPage = await settledDockCount(awayOnBreak);
+const awayBreak = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).engine;
+away.breakState = awayBreak.state;
+await awayOnBreak.waitForTimeout(Math.max(0, awayBreak.breakUntil - Date.now()) + 250);
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.afterBreakEnds = await settledDockCount(awayOnBreak);
+away.breakOver =
+  (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).engine.state !== "break";
+await awayOnBreak.close();
+await settingsPage.evaluate(async () => {
+  const { attentionConfig } = await chrome.storage.local.get("attentionConfig");
+  delete attentionConfig.breakMin;
+  await chrome.storage.local.set({ attentionConfig });
+});
+const awayRelatedTab = await awayDrift("button[data-choice=related]");
+away.afterRelated = await settledDockCount(awayRelatedTab, 1500);
+await awayRelatedTab.close();
 // An agent's word comes, and Got it sends Tuck away again.
 await awayNext.bringToFront();
 await agentSays("working");
@@ -1291,13 +1408,31 @@ away.backInPlace = await awayHeld
   .then(() => 1)
   .catch(() => 0);
 away.popupAfterBack = { card: await popup.isVisible("#away-card"), awayButton: await popup.isVisible("#tuck-away") };
-// The popup's Tuck away hides Tuck on the page in front; Bring Tuck back again for what follows.
+// The popup's Tuck away hides Tuck on the page in front, and in the other window (#87).
+awayWindow = await otherWindow();
 await popup.click("#tuck-away");
 await popup.waitForTimeout(300);
 away.popupAwayFlag = await tuckAwayNow();
 away.afterPopupAway = await settledDockCount(awayHeld, 800);
+away.afterPopupAwayOtherWindow = await dockCount(awayWindow.page);
+await closeOtherWindow(awayWindow);
+// Bring Tuck back again for what follows, from a new tab, where Tuck cannot be drawn: it
+// comes on the next page (#87).
+const awayNewTab = await ctx.newPage();
+await awayNewTab.goto("chrome://newtab");
+await awayNewTab.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 await popup.click("#bring-back");
-await awayHeld.locator("#tuck-companion .dock.in").waitFor({ timeout: 5000 });
+await popup.waitForTimeout(300);
+away.flagBackOnNewTab = await tuckAwayNow();
+await awayHeld.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.backAfterNewTab = await awayHeld
+  .locator("#tuck-companion .dock.in")
+  .waitFor({ timeout: 5000 })
+  .then(() => 1)
+  .catch(() => 0);
+await awayNewTab.close();
 const awayBack = await ctx.newPage();
 await awayBack.goto(repo);
 await awayBack.bringToFront();
@@ -1312,6 +1447,18 @@ await awayBack
   .locator("#tuck-companion .dock.in")
   .waitFor({ state: "detached", timeout: 5000 })
   .catch(() => {});
+// #87: still away after Chrome stops the idle service worker.
+away.stoppedWhileAway = await stopWorker();
+const awayAfterStop = await ctx.newPage();
+await awayAfterStop.goto(repo);
+await awayAfterStop.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
+away.afterStop = await settledDockCount(awayAfterStop);
+away.freshAfterStop = await workerIsFresh();
+away.flagAfterStop = await tuckAwayNow();
+await awayAfterStop.close();
+await awayBack.bringToFront();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 // Done on a goal of its own, so the checkout goal is replaced, not finished (the day
 // summary below says so).
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Try Tuck away" }));
@@ -1369,6 +1516,12 @@ const loopsAfterSaid = await popup.evaluate(async () => (await chrome.storage.lo
 await answer.click();
 await chatTab.waitForTimeout(300);
 const loopsAfterDone = await popup.evaluate(async () => (await chrome.storage.local.get("loops")).loops);
+// No brain folder yet: Done stays in Tuck (#95).
+const doneNotesUnconnected = await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const hits = await (await Memory.open()).recall("marked done in Tuck", { limit: 50 });
+  return hits.filter((h) => /marked done in Tuck/.test(h.title)).length;
+});
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Write the demo script" }));
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
 await chatTab.waitForTimeout(500);
@@ -1592,14 +1745,18 @@ const importTrip = () =>
 await importTrip();
 await reread();
 const groupedText = await settingsPage.locator("#task-list").innerText();
-const groupedRows = await settingsPage.locator("#task-list .row").count();
+// The checkbox is the person's own, so the notes' Rome row sits under the fold (#92).
+const allRows = "#task-list .row, #task-suggested .row";
+const groupedRows = await settingsPage.locator(allRows).count();
+const romeFolded = await settingsPage.locator("#task-suggested .row", { hasText: "Rome" }).count();
 const askedPairs = pairCalls.length;
+await settingsPage.click("#task-suggested summary");
 await settingsPage
-  .locator("#task-list .row", { hasText: "Rome" })
+  .locator("#task-suggested .row", { hasText: "Rome" })
   .getByRole("button", { name: "Not the same" })
   .click();
 await settingsPage.waitForTimeout(300);
-const splitRows = await settingsPage.locator("#task-list .row").count();
+const splitRows = await settingsPage.locator(allRows).count();
 await settingsPage.locator("#task-list .row", { hasText: /Lyon/i }).getByRole("button", { name: "Done" }).click();
 await settingsPage.waitForTimeout(300);
 await importTrip();
@@ -1727,24 +1884,208 @@ const demoCard = demoTab.locator("#tuck-companion .bubble");
 await demoCard.locator(".plan").waitFor({ timeout: 5000 });
 const demoCardText = await demoCard.innerText();
 const beforeDemoDrift = await lastTrigger();
+// #61: the bubble's "I'm stuck" runs while Tuck is tucked away: the drift word still comes,
+// and the step the person asks for shows too.
+await popup.evaluate(() => chrome.storage.local.set({ tuckAway: true }));
 const demoVideo = await ctx.newPage();
 await demoVideo.goto(video);
 await demoVideo.bringToFront();
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
 await waitForNewDrift(beforeDemoDrift?.id);
 const demoWord = nudgeCalls.findLast((m) => /Their task: Record the demo video/.test(m[1].content));
-await demoTab.bringToFront();
-await popup.evaluate(() => chrome.runtime.sendMessage({ type: "record-active" }));
-const stuckReply = await popup.evaluate(() => chrome.runtime.sendMessage({ type: "stuck" }));
-await popup.evaluate((step) => chrome.runtime.sendMessage({ type: "start-step", step }), stuckReply.step);
+// #61: "I'm stuck" in the drift bubble. A double click asks once. Tuck shows one step, and
+// the drift words still due (L2, L3 come 4 s apart here) do not replace it. Start this
+// makes it the next step, brings the work tab to the front, and Tuck, tucked away, leaves.
+const stuckRuns = () =>
+  loopCalls.filter(
+    (c) => /stuck on their goal/.test(c.messages[0].content) && !c.messages.some((m) => m.role === "tool"),
+  ).length;
+const stuckRunsBefore = stuckRuns();
+const stuckBubble = demoVideo.locator("#tuck-companion .bubble");
+await stuckBubble.locator("button[data-choice=stuck]").dblclick();
+await stuckBubble.locator("button[data-choice=start]").waitFor({ timeout: 25000 });
+await demoVideo.waitForTimeout(9000);
+const stuckKept = await stuckBubble.locator("button[data-choice=start]").isVisible();
+const stuckShown = await stuckBubble.innerText();
+const stuckAsked = stuckRuns() - stuckRunsBefore;
+await stuckBubble.locator("button[data-choice=start]").click();
+await popup.waitForTimeout(800);
+const stuckBackTo = await activeUrl();
+const stuckAwayLeft = (await demoVideo.locator("#tuck-companion .dock.in").count()) === 0;
 const afterStart = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).intent;
+await popup.evaluate(() => chrome.storage.local.set({ tuckAway: false }));
+// The popup's card: the step shows inline, I'm stuck stays off while it shows, Another one
+// once, then it is gone.
+await popup.bringToFront();
+await popup.reload();
+await popup.click("#stuck");
+await popup.locator("#stuck-answers:not([hidden])").waitFor({ timeout: 25000 });
+const popupStuckOff = await popup.locator("#stuck").isDisabled();
+await popup.click("#another-step");
+await popup.locator("#stuck-answers:not([hidden])").waitFor({ timeout: 25000 });
+const popupStuck = await popup.evaluate(() => ({
+  text: document.getElementById("stuck-text").textContent,
+  minutes: document.getElementById("stuck-min").textContent,
+  another: !document.getElementById("another-step").hidden,
+  off: document.getElementById("stuck").disabled,
+}));
+await popup.click("#start-step");
+await popup.waitForTimeout(800);
+const popupBackTo = await activeUrl();
+const afterPopupStart = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).intent;
+// A failed ask puts the card back.
+await popup.bringToFront();
+await popup.reload();
+await popup.evaluate(() => {
+  const real = chrome.runtime.sendMessage.bind(chrome.runtime);
+  chrome.runtime.sendMessage = (m) => (m?.type === "stuck" ? Promise.reject(new Error("no worker")) : real(m));
+});
+await popup.click("#stuck");
+await popup.waitForTimeout(300);
+const popupFailed = await popup.evaluate(() => ({
+  on: !document.getElementById("stuck").disabled,
+  card: document.getElementById("stuck-view").hidden,
+}));
 await settingsPage.bringToFront();
 await settingsPage.reload();
 await settingsPage.locator("#agent-runs .agent-run").first().waitFor({ timeout: 5000 });
 const trailText = await settingsPage.locator("#agent-runs").innerText();
+// The goal changes with a step on the card: the card clears, and Start this for the old
+// goal does nothing.
+await popup.bringToFront();
+await popup.reload();
+await popup.click("#stuck");
+await popup.locator("#stuck-answers:not([hidden])").waitFor({ timeout: 25000 });
+const oldGoalId = afterPopupStart.id;
+await popup.click("#done");
+await popup.fill("#title", "Cut the demo video");
+await popup.click("#intent-form button[type=submit]");
+await popup.locator("#intent-view:not([hidden])").waitFor({ timeout: 5000 });
+const popupCleared = await popup.locator("#stuck-view").isHidden();
+const lateStart = await popup.evaluate(
+  (intentId) => chrome.runtime.sendMessage({ type: "start-step", step: "Old goal step", intentId }),
+  oldGoalId,
+);
+const afterLate = (await popup.evaluate(() => chrome.runtime.sendMessage({ type: "get-status" }))).intent;
 await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
 await demoVideo.close();
 await demoTab.close();
+
+// #91: with a repository listed in Settings, a plan step naming a PR merged on GitHub is
+// left out before it lands, and "What Tuck looked at" says so. GitHub is faked here; the
+// worker's fetch reaching it shows the extension's CSP lets it through.
+const githubAsked = [];
+await ctx.route("https://api.github.com/**", (route) => {
+  const url = new URL(route.request().url());
+  githubAsked.push(url.pathname);
+  const n = Number(url.pathname.match(/\/issues\/(\d+)$/)?.[1]);
+  const issue =
+    n === 41
+      ? {
+          number: 41,
+          title: "Fix the checkout total",
+          state: "closed",
+          closed_at: "2026-11-02T10:00:00Z",
+          pull_request: { merged_at: "2026-11-02T10:00:00Z" },
+        }
+      : n === 12
+        ? {
+            number: 12,
+            title: "Add the cart badge",
+            state: "open",
+            created_at: "2026-11-03T10:00:00Z",
+            pull_request: { merged_at: null },
+          }
+        : null;
+  return route.fulfill({
+    status: issue ? 200 : 404,
+    contentType: "application/json",
+    body: JSON.stringify(issue ?? { message: "Not Found" }),
+  });
+});
+await settingsPage.bringToFront();
+await settingsPage.reload();
+// Settings fills its fields as it loads: Page reading's list comes after this one.
+await settingsPage.waitForFunction(() => document.getElementById("never-read").value !== "");
+await settingsPage.fill("#github-repos", "https://github.com/acme-demo/shop\nnot a repo");
+await settingsPage.click("#save-github");
+const githubBad = await settingsPage.locator("#github-status").innerText();
+await settingsPage.fill("#github-repos", "acme-demo/shop");
+await settingsPage.click("#save-github");
+const githubSaved = await settingsPage.locator("#github-status").innerText();
+const githubStored = await settingsPage.evaluate(
+  async () => (await chrome.storage.local.get("githubRepos")).githubRepos,
+);
+if (shots)
+  await settingsPage
+    .locator("#github-repos")
+    .locator("xpath=ancestor::section")
+    .screenshot({ path: path.join(shots, "settings-github.png") });
+await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  await (
+    await Memory.open()
+  ).add({
+    kind: "decision",
+    topic: "shop",
+    title: "Shop release",
+    context: "The shop ships on Friday.",
+    result: "Review PR #41 and PR #12 before the release.",
+    next: "none",
+  });
+  await chrome.runtime.sendMessage({ type: "memory-changed" });
+});
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "set-intent", title: "Ship the shop release" }));
+const shopPlanned = await popup.evaluate(async () => {
+  for (let i = 0; i < 100; i++) {
+    const { intent } = await chrome.runtime.sendMessage({ type: "get-status" });
+    if (intent?.plan) return intent;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+});
+await settingsPage.reload();
+await settingsPage.locator("#agent-runs .agent-run").first().waitFor({ timeout: 5000 });
+const githubTrail = await settingsPage.locator("#agent-runs").innerText();
+await popup.evaluate(() => chrome.runtime.sendMessage({ type: "complete-intent" }));
+await settingsPage.evaluate(() => chrome.storage.local.remove("githubRepos"));
+
+// #95: with a brain folder connected, Done on a row writes one event to its inbox; Not a
+// task writes nothing.
+const doneInbox = await settingsPage.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const memory = await Memory.open();
+  const brain = await (await navigator.storage.getDirectory()).getDirectoryHandle("brain-done", { create: true });
+  await memory.connectBrain(brain);
+  const note = (id, title, topic) =>
+    [
+      "---",
+      `title: "${title}"`,
+      "kind: todo",
+      `topic: ${topic}`,
+      "date: 2026-10-28",
+      "source: test",
+      `id: ${id}`,
+      "---",
+      "",
+      "- **Context:** A form for the grant.",
+      "- **Decision/Result:** Drafted.",
+      "- **Evidence:** none",
+      "- **Next action:** Send it",
+    ].join("\n");
+  await memory.importFiles([
+    { path: "notes/log/2026/grant.md", text: note("grant01", "Send the grant form", "grants") },
+    { path: "notes/log/2026/chore.md", text: note("chore01", "Water the office plant", "office") },
+  ]);
+  await chrome.runtime.sendMessage({ type: "memory-changed" });
+  await chrome.runtime.sendMessage({ type: "reminder-answer", id: "grant01", choice: "done" });
+  await chrome.runtime.sendMessage({ type: "reminder-answer", id: "chore01", choice: "not_task" });
+  await memory.maintain(); // consolidate, then export to the folder
+  const files = [];
+  for await (const [, h] of (await brain.getDirectoryHandle("inbox", { create: true })).entries())
+    if (h.kind === "file") files.push(await (await h.getFile()).text());
+  return files.filter((t) => /marked done in Tuck|Water the office plant/.test(t));
+});
 
 // The exported event log.
 await settingsPage.bringToFront();
@@ -1772,15 +2113,40 @@ assert.equal(planned.steps[0], "Write a 3-minute demo script", "the plan's first
 assert.match(demoCardText, /Record the demo video in one take/, "the plan is on Tuck's card");
 assert.match(demoCardText, /Watch out: Never show the API key on screen/);
 assert.match(demoWord?.[1].content ?? "", /Next step: Write a 3-minute demo script/, "the drift word has the step");
-assert.equal(stuckReply.source, "agent");
-assert.equal(stuckReply.step, "Write the first lines of the demo video");
-assert.equal(afterStart.steps[0], stuckReply.step, "Start this makes it the next step");
+assert.equal(stuckAsked, 1, "a double click on I'm stuck asks once");
+assert.ok(stuckKept, "the drift words still due do not replace the step");
+assert.ok(stuckAwayLeft, "tucked away, Tuck leaves with Start this");
+assert.match(stuckShown, /Write the first lines of the demo video/, "I'm stuck shows the agent's step");
+assert.match(stuckShown, /About 10 min/);
+assert.equal(afterStart.steps[0], "Write the first lines of the demo video", "Start this makes it the next step");
+assert.equal(stuckBackTo, repo, "Start this brings the work tab to the front");
+assert.equal(popupStuck.text, "Write the first lines of the demo video", "the popup shows the step inline");
+assert.equal(popupStuck.minutes, "About 10 min");
+assert.equal(popupStuck.another, false, "Another one asks once more at most");
+assert.equal(afterPopupStart.steps[0], popupStuck.text, "the popup's Start this makes it the next step");
+assert.equal(popupBackTo, repo, "the popup's Start this brings the work tab to the front");
+assert.ok(popupStuckOff && popupStuck.off, "I'm stuck stays off while the popup shows a step");
+assert.deepEqual(popupFailed, { on: true, card: true }, "a failed ask puts the button and the card back");
+assert.ok(popupCleared, "a new goal clears the popup's step");
+assert.equal(lateStart.ok, false, "Start this for a goal that ended does nothing");
+assert.notEqual(afterLate.steps?.[0], "Old goal step");
 assert.match(trailText, /Planned the goal/);
 assert.match(trailText, /recall_notes "record the demo video" → \d+ notes?/);
 assert.match(trailText, /You were stuck/);
 assert.match(trailText, /recent_activity → \d+ pages?/);
 assert.doesNotMatch(trailText, /at most 3 minutes/, "the trail never shows a note's text");
 assert.ok(types.has("agent"), "agent runs are in the event log");
+// #91: the GitHub check.
+assert.match(githubBad, /Not a repository: not a repo/);
+assert.match(githubSaved, /Saved\. 1 repository is checked/);
+assert.deepEqual(githubStored, ["acme-demo/shop"]);
+assert.ok(githubAsked.includes("/repos/acme-demo/shop/issues/41"), JSON.stringify(githubAsked));
+assert.deepEqual(
+  shopPlanned?.plan?.steps.map((x) => x.step),
+  ["Review PR #12 for the shop release", "Write the shop release notes"],
+  "the step naming the merged PR is left out",
+);
+assert.match(githubTrail, /github_check "acme-demo\/shop#41" → merged, left out/);
 fs.rmSync(profile, { recursive: true, force: true });
 
 assert.deepEqual(errors, []);
@@ -2029,10 +2395,17 @@ assert.deepEqual(afterStopWorking, { pose: "work", fresh: true }, "a fresh page 
 assert.equal(afterAgentStops, "rest", "the agent stops: Tuck rests again");
 assert.equal(afterDone.intent, null, "no stale goal after change + done");
 assert.match(reminderText, /Due today\. Still on your list\?/, "the deadline in Tuck's words");
-assert.match(reminderText, /Send the visa papers/);
+assert.match(reminderText, /Send the visa papers[\s\S]*Due today/, "the task named before its deadline (#92)");
 assert.ok(loopsAfterSaid.visa01.saidOn, "said once it is on screen");
 assert.ok(loopsAfterDone.visa01.doneAt, "Done is remembered");
 assert.equal(reminderAgain, 0, "and it does not come back");
+assert.equal(doneNotesUnconnected, 0, "no brain folder: Done writes nothing to memory");
+assert.equal(doneInbox.length, 1, `one inbox file for Done, none for Not a task: ${doneInbox}`);
+assert.match(doneInbox[0], /^kind: event$/m);
+assert.match(doneInbox[0], /^topic: grants$/m);
+assert.match(doneInbox[0], /^title: "Send the grant form — marked done in Tuck"$/m);
+assert.match(doneInbox[0], /^Decision\/Result: Marked done on \d{4}-\d{2}-\d{2}\. Entries: grant01\.$/m);
+assert.match(doneInbox[0], /^Next action: none$/m);
 assert.equal(driftMaybe.evidence.unsure, true, "Tuck asks on a page it is unsure about");
 assert.equal(askedTasks, 2, "eleven open loops, two calls of at most 10");
 assert.equal(taskRows, 7, "the first 7 in sight");
@@ -2043,6 +2416,7 @@ assert.doesNotMatch(taskTextAfter, /Run errand 1\b/, "Not a task holds over a re
 assert.match(taskTextAfter, /Run errand 2/);
 assert.equal(askedAgain, 0, "a re-import with nothing new asks nothing");
 assert.equal(groupedRows, 2, "the Lyon tickets and the Rome trip: one row each");
+assert.equal(romeFolded, 1, "a row only the notes hold is suggested, below the person's own");
 assert.match(groupedText, /Lyon[^\n]*\(brain ×2, Vault\)/i, "the row names its sources");
 assert.equal(askedPairs, 1, "four candidate pairs, one call");
 assert.equal(splitRows, 3, "Not the same: the Rome tasks apart");
@@ -2082,6 +2456,7 @@ assert.deepEqual(
     parting: "Okay. Click the toolbar icon to bring me back.",
     flag: true,
     here: 0,
+    otherWindow: 0,
     olderTab: 0,
     staleDrawn: 1,
     staleOnSwitch: 0,
@@ -2092,6 +2467,14 @@ assert.deepEqual(
     afterDrift: 0,
     afterAvatarClick: 0,
     avatarAnswer: "dismiss",
+    afterClose: 0,
+    closeAnswer: "dismiss",
+    afterBreakAnswer: 0,
+    onBreakPage: 0,
+    breakState: "break",
+    afterBreakEnds: 0,
+    breakOver: true,
+    afterRelated: 0,
     agentPose: "wait",
     afterAgent: 0,
     heldCount: 1,
@@ -2103,14 +2486,22 @@ assert.deepEqual(
     popupAfterBack: { card: false, awayButton: true },
     popupAwayFlag: true,
     afterPopupAway: 0,
+    afterPopupAwayOtherWindow: 0,
+    flagBackOnNewTab: false,
+    backAfterNewTab: 1,
     restingAgain: "rest",
     hiddenAgain: true,
+    stoppedWhileAway: true,
+    afterStop: 0,
+    freshAfterStop: true,
+    flagAfterStop: true,
     afterDoneWhileAway: 0,
     flagAfterGreeting: false,
     goalSetWhileWorking: "work",
   },
   "Tuck away",
 );
+assert.deepEqual(awayRace, { held: true, drawn: 0, flag: true }, "Tuck away waits for a word on its way");
 for (const t of ["context", "relevance", "llm", "state", "trigger", "response", "feedback", "session"])
   assert.ok(types.has(t), `log has ${t}: ${[...types]}`);
 assert.ok(!log.events.some((e) => String(e.url ?? "").startsWith("chrome-extension:")), "no extension URLs in the log");

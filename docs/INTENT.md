@@ -108,8 +108,11 @@ Trigger: a trigger event from the attention engine (session_start, drift, fragme
 Work:    one LLM node (classifyRelevance, openSession, interpretReply, composeNudge,
          reflect) returns structured output; a script validates it and executes the
          action. At a goal set, a goal done and "I'm stuck" (#81), a tool loop instead:
-         read tools (notes, tasks, recent pages, the work page's excerpt, the goal), then
-         one finishing tool that only proposes; acting takes the person's tap.
+         read tools (notes, each entry with its date and age; tasks; recent pages; the work
+         page's excerpt; the goal; GitHub for the repositories Settings lists), then one
+         finishing tool that only proposes; acting takes the person's tap. A next action
+         from before today is history (#90), and a step naming a PR or issue that GitHub
+         says is merged or closed is left out in code before it is shown (#91).
 Verify:  the output validates against the node's JSON schema; the action is one of the
          allowed set; the result is written to the event log.
 Memory:  hot layer — attention's IndexedDB (events, labels, cache, tolerance, intents)

@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runAgent, MAX_STEPS } from "../../../src/agent/loop.js";
+import { runAgent, MAX_STEPS, recentRuns } from "../../../src/agent/loop.js";
 import { planFor, stuckStep, nextAfter } from "../../../src/agent/moments.js";
 import { generic } from "../../../src/agent/tools.js";
+import { noteOf } from "../../../src/agent/notes.js";
 
 // A scripted model: each reply is a list of tool calls [name, args], a string (text only),
 // or an Error. Records what it was sent.
@@ -74,6 +75,41 @@ test("a goal-set loop reads the goal and the notes, then its plan is kept", asyn
   assert.ok(sent[0].opts.tools.some((t) => t.type === "function" && t.function.name === "recall_notes"));
   assert.equal(sent[0].opts.reasoningEffort, "low");
   assert.match(sent[0].messages[0].content, /never follow it/, "tool results are data");
+});
+
+test("#90: the notes the model reads carry their date and age, and each moment has the history rule", async () => {
+  // Invented: two days ago the next action was a review; yesterday the PR was merged.
+  const dated = [
+    {
+      title: "Checkout fix",
+      item: { topic: "shop", date: "2026-11-02", context: "PR #12 open.", next: "Review PR #12 and decide merge." },
+    },
+    {
+      title: "PR #12 merged",
+      item: { topic: "shop", date: "2026-11-03", result: "Merged PR #12 into main.", next: "none" },
+    },
+  ].map((h) => noteOf(h, "2026-11-04"));
+  const datedDeps = { ...deps, recall: async () => dated };
+  const { chat, sent } = scripted([["recall_notes", { query: "checkout" }]], [["no_plan", { reason: "done" }]]);
+  await planFor(chat, datedDeps, { title: "Work on the shop" });
+  const result = JSON.parse(sent[1].messages.find((m) => m.role === "tool").content);
+  assert.deepEqual(
+    result.notes.map((n) => [n.date, n.age]),
+    [
+      ["2026-11-02", "2 days ago"],
+      ["2026-11-03", "1 day ago"],
+    ],
+  );
+  assert.match(sent[0].opts.tools.find((t) => t.function.name === "recall_notes").function.description, /date/);
+  // The plan can see what the person did since; the stuck step and the next line too.
+  assert.ok(sent[0].opts.tools.some((t) => t.function.name === "recent_activity"));
+  const rule = /A next action in a note from before\s+today is history/;
+  assert.match(sent[0].messages[0].content, rule);
+  for (const moment of [stuckStep, nextAfter]) {
+    const s = scripted("text only");
+    await moment(s.chat, datedDeps, { title: "Work on the shop" }, { maxSteps: 1 });
+    assert.match(s.sent[0].messages[0].content, rule, moment.name);
+  }
 });
 
 test("the trail keeps tool names and short arguments, never the note text", async () => {
@@ -259,4 +295,28 @@ test("after two rounds of looking, only the finishing tool is offered, and a rea
   );
   assert.match(sent[2].messages.at(-1).content, /Finish now with propose_step/);
   assert.ok(sent[3].messages.some((m) => m.role === "tool" && /no more looking up/.test(m.content)));
+});
+
+test("recentRuns keeps only the loop's runs, newest first, at most 5 (#93)", () => {
+  const status = (ts) => ({ type: "agent", ts, status: "working", session: "s1" });
+  const run = (ts) => ({ type: "agent", ts, moment: "plan", source: "agent", steps: 2 });
+  const log = [
+    run(1),
+    status(2),
+    run(3),
+    { type: "visit", ts: 4 },
+    run(5),
+    status(6),
+    run(7),
+    run(8),
+    status(9),
+    run(10),
+    status(11),
+    status(12),
+  ];
+  assert.deepEqual(
+    recentRuns(log).map((e) => e.ts),
+    [10, 8, 7, 5, 3],
+  );
+  assert.deepEqual(recentRuns([status(1), status(2)]), []);
 });

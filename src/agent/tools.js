@@ -1,20 +1,23 @@
 // The agent's tools (#81), for agent/loop.js. Read tools look things up through the
 // background's own code (memory's search, the to-do list, the event log, the second look's
-// excerpt) and return data; a finishing tool ends the loop with what Tuck proposes, checked
-// here. None acts by itself: a proposal reaches the page as words and buttons.
+// excerpt), or GitHub for a listed repository (#91), and return data; a finishing tool
+// ends the loop with what Tuck proposes, checked here. None acts by itself: a proposal
+// reaches the page as words and buttons.
 import { followsVoice, MAX_WORDS } from "../tuck/voice.js";
 
 const noArgs = { type: "object", properties: {} };
 
-// deps: {recall(query) -> [{title, topic, text}], tasks() -> [{id, title, when}],
+// deps: {recall(query) -> [{title, topic, date?, age?, text}], tasks() -> [{id, title, when}],
 // activity() -> [{title, host, label, minutesAgo}], page() -> {title, excerpt} | {skipped},
-// goal() -> {title, step, minutesOn}}. Each is wired in the background and already redacted.
+// goal() -> {title, step, minutesOn}, github: agent/github.js' githubLookup, or null when no
+// repository is listed}. Each is wired in the background and already redacted.
 // Whatever a tool returns is also kept in ctx, so a finishing tool can check its words
 // against what was read.
 export function readTools(deps) {
   return {
     recall_notes: {
-      description: "Search the person's own notes. Returns up to 5 notes with their title, topic and text.",
+      description:
+        "Search the person's own notes. Returns up to 5 notes with their title, topic and text. A dated note also has its date and its age, such as 3 days ago; a document has no date.",
       parameters: {
         type: "object",
         properties: { query: { type: "string", description: "A few words: the goal, a project, a person" } },
@@ -67,6 +70,48 @@ export function readTools(deps) {
       },
       summary: ({ goal }) => (goal ? "the goal" : "no goal"),
     },
+    ...(deps.github?.repos?.length && { github_status: githubStatus(deps.github) }),
+  };
+}
+
+// #91: whether the PRs and issues a note names are still open, offered only when Settings
+// lists a repository. Titles only: no code, diffs or comments.
+function githubStatus(github) {
+  const { repos } = github;
+  return {
+    description: `Look up pull requests and issues on GitHub (${repos.join(", ")}). With numbers: whether each is open, merged or closed, and since when. Without: the open PRs, the PRs merged in the last 7 days and the open issues, titles only.`,
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", enum: repos, description: repos.length > 1 ? "Which repository" : "Optional" },
+        numbers: { type: "array", items: { type: "integer" }, description: "Optional: PR or issue numbers" },
+      },
+    },
+    run: async ({ repo, numbers } = {}, ctx) => {
+      const name =
+        repos.find((r) => r.toLowerCase() === String(repo ?? "").toLowerCase()) ??
+        (repos.length === 1 ? repos[0] : null);
+      if (!name) throw new Error(`name the repository: one of ${repos.join(", ")}`);
+      const ns = [...new Set((Array.isArray(numbers) ? numbers : []).map(Number).filter((n) => n > 0))].slice(0, 5);
+      const result = ns.length
+        ? { repo: name, items: await Promise.all(ns.map((n) => github.state(name, n))) }
+        : await github.overview(name);
+      (ctx.github ??= []).push(
+        ...(result.items ?? [
+          ...(result.open_prs ?? []),
+          ...(result.merged_last_7_days ?? []),
+          ...(result.open_issues ?? []),
+        ]),
+      );
+      return result;
+    },
+    summary: (r) => {
+      if (r.error) return r.error;
+      if (r.items)
+        return r.items.map((i) => `#${i.number} ${i.state === "unknown" ? "could not check" : i.state}`).join(", ");
+      const n = (k, one) => `${k} ${one}${k === 1 ? "" : "s"}`;
+      return `${n(r.open_prs.length, "open PR")}, ${r.merged_last_7_days.length} merged, ${n(r.open_issues.length, "open issue")}`;
+    },
   };
 }
 
@@ -103,6 +148,7 @@ function grounds(ctx, extra = []) {
     ...(ctx.pages ?? []).map((p) => p.title),
     ctx.page?.title,
     ctx.page?.excerpt,
+    ...(ctx.github ?? []).map((i) => i.title),
   ];
   return new Set(texts.flatMap((t) => words(t)).map((w) => w.slice(0, 5)));
 }

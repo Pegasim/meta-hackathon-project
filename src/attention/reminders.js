@@ -56,8 +56,10 @@ function sourcesOf(members) {
 // splits: { [pairKey]: ts }, the person's "Not the same". Entries the node called the same
 // become one row, unless any two of them were called different or split: a wrong merge
 // hides a task, which is worse than a row shown twice. The row stands where its first
-// member stood, so the order stays memory's; it takes the newest member's words, the
-// deadline the queue put first, and names its sources. Entries stay as they are.
+// member stood, so the order stays memory's; it takes the newest member's words and its
+// deadline, or the latest deadline among the members when that one has none (#94: not
+// the newest note's words with the oldest note's date); and it names its sources. Entries
+// stay as they are.
 export function groupTasks(list, { pairs = {}, splits = {} } = {}) {
   const keys = list.map(taskKey);
   const at = new Map(keys.map((k, i) => [k, i]));
@@ -82,7 +84,7 @@ export function groupTasks(list, { pairs = {}, splits = {} } = {}) {
     if (Math.min(...members) !== i) return;
     const ordered = [...members].sort((x, y) => x - y).map((x) => list[x]);
     const newest = [...ordered].sort((x, y) => (y.date ?? "").localeCompare(x.date ?? ""))[0];
-    const dated = ordered.find((m) => m.due);
+    const dated = newest.due ? newest : [...ordered].filter((m) => m.due).sort((x, y) => y.due.localeCompare(x.due))[0];
     out.push({
       ...newest,
       due: dated?.due ?? null,
@@ -105,21 +107,30 @@ export function pickReminder(queue, { goalTitle, loops = {}, today }) {
   return sayable(queue, loops, today).find((e) => e.id && e.title !== goalTitle) ?? null;
 }
 
-// Settings' views of the one list (#77). Today: the row the current goal came from, then
-// what is close (missed within a week, due today or tomorrow), at most 5. Coming up: dated
-// after tomorrow, within 60 days, soonest first. The rest keeps the list's order: undated,
-// further off, missed longer ago, and what did not fit in Today. goalFrom is the goal's
-// fromLoopId, which may name a row or one of its members.
+// Settings' views of the one list (#77, #92). Today: the row the current goal came from,
+// then what is due today or tomorrow, at most 5. Missed: a deadline that passed within the
+// last week, in the list's order. Coming up: dated after tomorrow, within 60 days, soonest
+// first. The rest (Long run) keeps the list's order: undated, further off, missed longer
+// ago, and what did not fit in Today. Once the person has rows of their own (a notes
+// folder, pasted to-dos: writer "own"), rows a coding agent or the distill wrote go to
+// suggested instead, in the list's order; with none, suggested is empty. A row grouped
+// from several entries is the person's if any of them is: ownKeys holds those entries'
+// taskKeys. goalFrom is the goal's fromLoopId, which may name a row or one of its members.
 const TODAY_MAX = 5;
 const AHEAD_DAYS = 60;
-export function splitTasks(list, { goalFrom = null } = {}) {
+export function splitTasks(list, { goalFrom = null, ownKeys = new Set() } = {}) {
   const isGoal = (e) => goalFrom != null && (e.id === goalFrom || !!e.members?.includes(goalFrom));
-  const today = [...list.filter(isGoal), ...list.filter((e) => !isGoal(e) && isClose(e))].slice(0, TODAY_MAX);
-  const comingUp = list
+  const isOwn = (e) => e.writer === "own" || !!e.members?.some((k) => ownKeys.has(k));
+  const suggested = list.some(isOwn) ? list.filter((e) => !isOwn(e) && !isGoal(e)) : [];
+  const shown = list.filter((e) => !suggested.includes(e));
+  const close = (e) => !isGoal(e) && isClose(e);
+  const today = [...shown.filter(isGoal), ...shown.filter((e) => close(e) && e.daysLeft >= 0)].slice(0, TODAY_MAX);
+  const missed = shown.filter((e) => close(e) && e.daysLeft < 0);
+  const comingUp = shown
     .filter((e) => !today.includes(e) && e.daysLeft > 1 && e.daysLeft <= AHEAD_DAYS)
     .sort((a, b) => a.daysLeft - b.daysLeft);
-  const rest = list.filter((e) => !today.includes(e) && !comingUp.includes(e));
-  return { today, comingUp, rest };
+  const rest = shown.filter((e) => !today.includes(e) && !missed.includes(e) && !comingUp.includes(e));
+  return { today, missed, comingUp, rest, suggested };
 }
 
 export const markSaid = (loops, id, today) => ({ ...loops, [id]: { ...loops[id], saidOn: today } });
@@ -133,6 +144,28 @@ export function splitRow(splits, row, ts) {
   const out = { ...splits };
   ids.forEach((a, i) => ids.slice(i + 1).forEach((b) => (out[pairKey(a, b)] = ts)));
   return out;
+}
+
+// What Done on a row says in memory (#95): one event for the row, however many entries it
+// groups, so the task node's next run reads it as a later note on the topic, and so do other
+// tools reading the brain.
+const DONE_SUFFIX = " — marked done in Tuck";
+export const doneEntry = (row, today) => ({
+  kind: "event",
+  topic: row.topic,
+  title: row.title.slice(0, 120 - DONE_SUFFIX.length) + DONE_SUFFIX,
+  date: today,
+  context: "The person answered Done on this task in Tuck.",
+  result: `Marked done on ${today}. Entries: ${(row.members ?? [row.id]).join(", ")}.`,
+  next: "none",
+});
+
+// memory: the Memory API. Only Done writes, and only with a brain folder connected; Not a
+// task is a judgement about Tuck's list, not about the world. Returns the stored entry or null.
+export async function noteAnswer(memory, row, choice, today) {
+  if (choice !== "done" || !row?.title) return null;
+  if (!(await memory.brainState()).connected) return null;
+  return memory.add(doneEntry(row, today));
 }
 
 // Parked thoughts (#59): what the person noted with Tuck's shortcut, to look at later.
