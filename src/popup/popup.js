@@ -28,7 +28,11 @@ async function render() {
     $("intent-title").textContent = intent.title;
     $("intent-next").textContent = intent.steps?.length ? `Next: ${intent.steps[0]}` : "";
   }
-  $("mode").value = engine.mode;
+  // One switch: Focus or Do not disturb. Gentle reads as Focus; Off is Settings' Pause Tuck.
+  const paused = engine.mode === "off";
+  $("focus-switch").checked = ["focus", "gentle"].includes(engine.mode);
+  $("focus-switch").disabled = paused;
+  $("focus-label").textContent = paused ? "Paused in Settings" : $("focus-switch").checked ? "Focus" : "Do not disturb";
   $("state-pill").textContent = STATE[engine.state] ?? engine.state;
   $("state-pill").className = `pill ${engine.state}`;
   const show =
@@ -139,8 +143,8 @@ $("start-step").onclick = async () => {
   render();
 };
 
-$("mode").onchange = async () => {
-  await send("set-mode", { mode: $("mode").value });
+$("focus-switch").onchange = async () => {
+  await send("set-mode", { mode: $("focus-switch").checked ? "focus" : "dnd" });
   render();
 };
 
