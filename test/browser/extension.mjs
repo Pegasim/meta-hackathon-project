@@ -324,6 +324,7 @@ const bubbleLook = await tuck.locator(".bubble").evaluate((b) => {
     styleText: b.getRootNode().querySelector("style").textContent,
   };
 });
+bubbleLook.hostAt = bubbleLook.styleText.indexOf(":host { all: initial; }");
 if (shots) await repoTab.screenshot({ path: path.join(shots, "tuck-greeting.png") });
 // Drag Tuck to the left: the bubble then opens rightwards.
 await repoTab.waitForTimeout(600); // the slide-in
@@ -444,6 +445,33 @@ const nudgeState = await onVideo.locator("svg.tuck").getAttribute("data-pose");
 const videoAvatar = await onVideo.locator(".avatar").boundingBox();
 const cardText = await onVideo.locator(".bubble .text").textContent();
 if (shots) await videoTab.screenshot({ path: path.join(shots, "tuck-nudge.png") });
+// Choosing another look in settings changes Tuck on the page in place: the open word and its
+// buttons stay; the toolbar icon follows the skin.
+await settingsPage.bringToFront();
+await settingsPage.reload();
+await worker.evaluate(() => {
+  globalThis.__icons = [];
+  const set = chrome.action.setIcon.bind(chrome.action);
+  chrome.action.setIcon = (details) => (globalThis.__icons.push(details), set(details));
+});
+await settingsPage.selectOption("#tuck-skin", "paper");
+const backButton = onVideo.locator(".bubble button[data-choice=back]");
+await onVideo.locator("svg.tuck[data-state]").waitFor({ timeout: 5000 });
+const paperKeepsBubble = await backButton.isVisible();
+const paperIcon = await worker.evaluate(() => globalThis.__icons.at(-1)?.path?.[16]);
+await settingsPage.selectOption("#tuck-skin", "v1");
+await onVideo.locator("svg.tuck:not([data-state])").waitFor({ timeout: 5000 });
+await settingsPage.selectOption("#tuck-item", "frisbee");
+await onVideo.locator("svg.tuck[data-item=frisbee]").waitFor({ timeout: 5000 });
+const frisbeeKeepsBubble = await backButton.isVisible();
+await settingsPage.selectOption("#tuck-item", "bandana");
+await onVideo.locator("svg.tuck[data-item=bandana]").waitFor({ timeout: 5000 });
+// A skin the popup does not know falls back to the default, as the background does.
+await settingsPage.evaluate(() => chrome.storage.local.set({ tuckSkin: "gone" }));
+await popup.reload();
+const popupFallback = await popup.locator("#tuck-mark svg.tuck").count();
+await settingsPage.evaluate(() => chrome.storage.local.set({ tuckSkin: "v1" }));
+await videoTab.bringToFront();
 await onVideo.locator(".bubble button[data-choice=back]").click();
 await popup.waitForTimeout(800);
 if (shots) await popup.screenshot({ path: path.join(shots, "popup-trigger.png"), fullPage: true });
@@ -1219,8 +1247,9 @@ assert.equal(greeting, "Hi. What are we working on today?");
 assert.equal(greetState, "hello");
 assert.equal(bubbleLook.bg, "rgb(251, 248, 242)", "the bubble is the skin's surface");
 assert.equal(bubbleLook.primaryBg, "rgb(148, 191, 174)", "the primary button is the skin's accent");
+assert.ok(bubbleLook.hostAt >= 0, "the overlay's own CSS marker was found, so the colour check is not vacuous");
 assert.doesNotMatch(
-  bubbleLook.styleText.slice(bubbleLook.styleText.indexOf(":host { all: initial; }")),
+  bubbleLook.styleText.slice(bubbleLook.hostAt),
   /#[0-9a-f]{3,6}\b/i,
   "the bubble CSS has no literal colours",
 );
@@ -1244,6 +1273,10 @@ assert.match(nudgeCalls[0][1].content, /Site now: localhost/);
 assert.match(nudgeCalls[0][1].content, /Next step: Write the failing test/);
 assert.ok(secondWord, "the L2 word was drawn");
 assert.equal(nudgeState, "drift");
+assert.equal(paperIcon, "tuck/skins/paper/icons/16.png", "the toolbar icon follows the skin");
+assert.ok(paperKeepsBubble, "a new skin keeps the word on screen, buttons and all");
+assert.ok(frisbeeKeepsBubble, "a new item keeps the word on screen");
+assert.equal(popupFallback, 1, "the popup draws the default skin when the stored one is unknown");
 assert.match(calls[0].at(-1).content, /Goal: Fix the checkout bug/);
 const looks = calls.filter((m) => /excerpt/.test(m[0].content));
 const judged = calls.filter((m) => !/excerpt/.test(m[0].content));

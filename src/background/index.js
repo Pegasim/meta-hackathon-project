@@ -739,6 +739,21 @@ async function assets() {
   return { ...skin, item: tuckItem };
 }
 
+// The person picked another look in settings: Tuck on the page changes in place (a word on
+// screen stays; a Tuck tucked away stays away), and the toolbar icon is the skin's.
+async function lookChanged() {
+  const a = await assets();
+  const { tuckTab } = await chrome.storage.session.get("tuckTab");
+  if (tuckTab != null) await chrome.tabs.sendMessage(tuckTab, { type: "tuck-look", assets: a }).catch(() => {});
+  const path = Object.fromEntries([16, 32, 48, 128].map((n) => [n, `tuck/skins/${a.manifest.id}/icons/${n}.png`]));
+  await chrome.action.setIcon({ path }).catch(() => {});
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && (changes.tuckSkin || changes.tuckItem)) lookChanged();
+});
+chrome.runtime.onStartup.addListener(lookChanged);
+chrome.runtime.onInstalled.addListener(lookChanged);
+
 // Draw a view (present.js) in a tab. False when Chrome does not allow it there
 // (chrome:// pages, the Web Store, this extension's own pages).
 async function showTuck(tabId, view) {

@@ -129,7 +129,11 @@ setInterval(renderActivity, 15000);
 // Tuck in the header; sleeping while you are on a break or not to be disturbed.
 async function renderMark() {
   // The skin the background draws on pages (background assets()).
-  const { tuckSkin, tuckItem } = await chrome.storage.local.get({ tuckSkin: "v1", tuckItem: "bandana" });
+  const stored = await chrome.storage.local.get({ tuckSkin: "v1", tuckItem: "bandana" });
+  const { tuckItem } = stored;
+  // An unknown skin falls back to v1, as the background does.
+  const ids = await (await fetch(chrome.runtime.getURL("tuck/skins/index.json"))).json();
+  const tuckSkin = ids.includes(stored.tuckSkin) ? stored.tuckSkin : "v1";
   $("skin-css").href = `../tuck/skins/${tuckSkin}/tuck.css`;
   const read = async (file) => (await fetch(chrome.runtime.getURL(`tuck/skins/${tuckSkin}/${file}`))).text();
   const [svg, manifest] = await Promise.all([read("tuck.svg"), read("skin.json").then(JSON.parse)]);

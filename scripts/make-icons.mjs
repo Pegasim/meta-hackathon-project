@@ -1,4 +1,4 @@
-// Renders the toolbar icons from src/tuck/skins/paper/tuck.svg (resting pose, cropped to
+// Renders the paper skin's toolbar icons (src/tuck/skins/paper/icons/) from src/tuck/skins/paper/tuck.svg (resting pose, cropped to
 // the character). Run after changing the artwork: node scripts/make-icons.mjs
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -17,7 +17,7 @@ for (const size of [16, 32, 48, 128]) {
   await page.setContent(
     `<style>html,body{margin:0;background:transparent}svg{width:${size}px;height:${size}px;display:block}.tuck__effects{display:none}</style>${svg}`,
   );
-  await page.screenshot({ path: path.join(root, `src/shared/icons/icon-${size}.png`), omitBackground: true });
+  await page.screenshot({ path: path.join(root, `src/tuck/skins/paper/icons/${size}.png`), omitBackground: true });
 }
 await browser.close();
 console.log("icons written");

@@ -361,6 +361,7 @@
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "tuck-show") show(msg.view, msg.assets);
+    else if (msg?.type === "tuck-look" && root?.isConnected) (ensureRoot(msg.assets), setPose(pose));
     else if (msg?.type === "tuck-hide" && root) leave();
     else if (msg?.type === "tuck-rest" && root && current)
       (drawBubble(null), setPose(resting), (current.bubble = null));

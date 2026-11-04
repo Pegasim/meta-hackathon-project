@@ -17,14 +17,14 @@ src/                 the extension — "Load unpacked" points here
   tuck/              Tuck on the page: overlay, bubble layout, what to show, voice
     assets/          Tuck's artwork and motion (SVG + CSS, five states)
   popup/  options/   the toolbar popup and the settings page
-  shared/            ui.css and the toolbar icons
+  shared/            ui.css and the default skin's toolbar icons (every skin has its own)
 test/
   unit/              node tests, mirroring src/ (unit/attention, unit/agent, unit/memory, …)
   browser/           the real extension in Chromium (Playwright)
   live/              real-model checks
   fixtures/          recorded sessions for the replay criteria
 evals/               npm run eval: relevance accuracy against the real model
-scripts/             make-icons.mjs renders the toolbar icons from src/tuck/skins/paper/tuck.svg
+scripts/             make-icons.mjs renders the paper skin's icons from its tuck.svg
 checks/              pre-commit checks
 docs/                INTENT.md, DECISIONS.md, DESIGN.md, guides/, design specs and plans
 ```
