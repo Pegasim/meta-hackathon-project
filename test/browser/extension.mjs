@@ -1242,6 +1242,11 @@ await awayTab
   .catch(() => {});
 away.here = await settledDockCount(awayTab, 800);
 away.flag = await tuckAwayNow();
+// The toolbar icon says so (#87): "zz" and a tooltip.
+away.mark = await popup.evaluate(async () => ({
+  badge: await chrome.action.getBadgeText({}),
+  title: (await chrome.action.getTitle({})).includes("tucked away"),
+}));
 away.otherWindow = await dockCount(awayWindow.page);
 await closeOtherWindow(awayWindow);
 // Every tab lets Tuck go, not just the one clicked: the older tab shows no Tuck in front.
@@ -1401,6 +1406,10 @@ away.popupWhileAway = {
 await popup.click("#bring-back");
 await popup.waitForTimeout(300);
 away.flagAfterSwitch = await tuckAwayNow();
+away.markAfterBack = await popup.evaluate(async () => ({
+  badge: await chrome.action.getBadgeText({}),
+  title: (await chrome.action.getTitle({})).includes("tucked away"),
+}));
 // Tuck is back at once on the page in front, without a page change.
 away.backInPlace = await awayHeld
   .locator("#tuck-companion .dock.in")
@@ -2455,6 +2464,7 @@ assert.deepEqual(
   {
     parting: "Okay. Click the toolbar icon to bring me back.",
     flag: true,
+    mark: { badge: "zz", title: true },
     here: 0,
     otherWindow: 0,
     olderTab: 0,
@@ -2482,6 +2492,7 @@ assert.deepEqual(
     later: 0,
     popupWhileAway: { card: true, text: "Tuck is tucked away.", awayButton: false },
     flagAfterSwitch: false,
+    markAfterBack: { badge: "", title: false },
     backInPlace: 1,
     popupAfterBack: { card: false, awayButton: true },
     popupAwayFlag: true,
