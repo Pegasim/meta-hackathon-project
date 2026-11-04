@@ -1661,12 +1661,16 @@ const HANDLERS = {
       : showTuck(sender?.tab?.id, present({ event: "card", intent: await (await store).activeIntent() })),
   // Every tab lets Tuck go, not just the one in front. From the card, Tuck says how to
   // bring it back and then leaves that page too (the popup's button has its own way back).
+  // The flag is set at once, so a word on its way still checks it; the hide takes its turn
+  // in the queue, after a word already being drawn (#87). The agent loop is not in the queue.
   "tuck-away": async (_msg, sender) => {
     await chrome.storage.local.set({ tuckAway: true });
     const from = sender?.tab?.id;
-    const tabs = (await chrome.tabs.query({})).filter((t) => t.id !== from);
-    await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, { type: "tuck-hide" }).catch(() => {})));
-    if (from != null) await showTuck(from, present({ event: "away" }));
+    await enqueue(async () => {
+      const tabs = (await chrome.tabs.query({})).filter((t) => t.id !== from);
+      await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, { type: "tuck-hide" }).catch(() => {})));
+      if (from != null) await showTuck(from, present({ event: "away" }));
+    });
   },
   "goal-form-closed": () => chrome.storage.session.set({ goalFormClosedAt: Date.now() }),
   "tuck-change": async (_msg, sender) => showTuck(sender?.tab?.id, present({ event: "card", intent: null })),
