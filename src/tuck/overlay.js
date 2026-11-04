@@ -61,6 +61,7 @@
     .dock[data-vertical="above"] .bubble { bottom: 80px; }
     .text { margin: 0 18px 10px 0; font-weight: 600; }
     .next { margin: -6px 0 10px; color: #65616d; font-size: 13px; }
+    .plan { margin: -4px 0 10px; padding-left: 18px; color: #65616d; font-size: 13px; }
     .row { display: flex; flex-wrap: wrap; gap: 6px; }
     button.b { all: unset; cursor: pointer; border: 1px solid #cfd5dc; border-radius: 999px; padding: 5px 12px;
                font-size: 13px; color: #24262d; background: #fff; }
@@ -78,7 +79,7 @@
       .dock { color: #eceef1; }
       button.b, input { background: #2d3038; border-color: #464a54; color: #eceef1; }
       button.b.primary { color: #1f2a26; }
-      .next { color: #a9adb6; }
+      .next, .plan { color: #a9adb6; }
     }`;
 
   function el(tag, props = {}, ...children) {
@@ -254,6 +255,11 @@
     }
     if (b.kind === "card") {
       if (b.next) box.append(el("p", { className: "next", textContent: `Next: ${b.next}` }));
+      // The plan from the person's notes (#78), the next step left out since it is above.
+      const rest = (b.plan ?? []).filter((step) => step !== b.next);
+      if (rest.length)
+        box.append(el("ol", { className: "plan" }, ...rest.map((step) => el("li", { textContent: step }))));
+      if (b.watchOut) box.append(el("p", { className: "next watch", textContent: `Watch out: ${b.watchOut}` }));
       box.append(
         el(
           "div",

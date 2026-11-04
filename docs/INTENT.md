@@ -1,7 +1,7 @@
 # Intent — Focus Companion
 
 Status: active
-Last revised: 2026-11-01
+Last revised: 2026-11-04
 
 ## Problem
 
@@ -91,7 +91,9 @@ medical or therapeutic help.
 The model decides what code cannot: whether a page serves *this* goal ("React tutorial"
 vs "F1 crashes" on the same site), turning a free-text plan into a structured goal,
 understanding a free-text reply, wording a nudge for this person, and finding patterns
-in the event log. Each is a single structured-output call; the model never calls tools.
+in the event log. Each of these is a single structured-output call. At a goal set, a goal
+done and "I'm stuck", the model also decides what to look up: a tool loop (below) reads the
+person's notes, tasks and recent pages, then proposes a plan, a step or a line.
 
 Deterministic and never through the model: sensors, dwell time, drift budget, tab-switch
 rate, state machine, triggers, cooldowns, modes, labels and cache, switching back to a
@@ -105,12 +107,15 @@ Trigger: a trigger event from the attention engine (session_start, drift, fragme
          in the side panel.
 Work:    one LLM node (classifyRelevance, openSession, interpretReply, composeNudge,
          reflect) returns structured output; a script validates it and executes the
-         action. No tool calls.
+         action. At a goal set, a goal done and "I'm stuck" (#81), a tool loop instead:
+         read tools (notes, tasks, recent pages, the work page's excerpt, the goal), then
+         one finishing tool that only proposes; acting takes the person's tap.
 Verify:  the output validates against the node's JSON schema; the action is one of the
          allowed set; the result is written to the event log.
 Memory:  hot layer — attention's IndexedDB (events, labels, cache, tolerance, intents)
          and chrome.storage.session for engine state; cold layer — Memory API / brain.
 Stop:    one model call per node, one retry with the schema error, then the
-         deterministic fallback (neutral, template message, skip). The user can always
+         deterministic fallback (neutral, template message, skip). The tool loop: 5 model
+         calls and 20 s at most, outside the input queue; then the template, or no plan. The user can always
          dismiss, switch mode, or turn it off.
 ```

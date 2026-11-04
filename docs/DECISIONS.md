@@ -6,6 +6,9 @@
 
 ## Decided
 
+**At the moments the engine or the person picks, a tool loop decides what Tuck says and offers (2026-11-04, issues #81, #78).**
+Each model call was a fixed step chosen in code, so nothing in Tuck looked anything up. At a goal set, a goal done and "I'm stuck", the model now calls read tools (memory's search, the to-do list, the last 30 minutes of pages, the last work page's excerpt, the goal) and ends with one finishing tool whose arguments are checked in code: in Tuck's voice, not generic, and built from the goal or what was read. When Tuck speaks stays deterministic: the loop runs only at those moments, never per page, since a per-page loop would be slow and Chrome may stop a worker's fetch at 30 s. It has 5 model calls and 20 s at most, and runs outside the input queue, which #67 showed holds every other input back. So no moment waits for it: a plan lands on the goal when it comes, the goal-done line is written while the goal runs and used only if ready, and nothing is redrawn later, since that would wipe a goal being typed. Finishing tools only propose; acting takes the person's tap. #78 asked for a single call with no tools. The plan is that loop's first moment instead, so #61 and #78 share one node. A plan needs notes the loop actually read: with none, there is no plan rather than a generic one.
+
 **Tuck's words about Muse come from the model, and the bridge adds the folder's name and an approval's tool (2026-11-04, issue #67).**
 The fixed lines said the same thing every time and carried nothing. The bridge now also passes the last part of the hook's `cwd`, minutes since the turn's prompt by its own clock, and, for an approval only, the name of the tool last about to run (`PreToolUse`, newly subscribed; the hook keeps the name and drops the input). These say where and how long, never what: no prompt, tool input, message or output leaves, as before. Measured live at low effort (Muse Spark 1.3, 8 calls), a line takes 5.9 to 14.6 s. The issue proposed waiting up to 3 s for it, but the wait ran in the worker's input queue: the e2e failed 3 of 3 runs, because drift words queued behind the agent word replaced it as soon as it was drawn, and 3 s would almost never be enough anyway. So no word waits: it is the model's when its line was written ahead, otherwise the template is said at once, now with the same facts. Lines are written ahead where the moment is known: a turn's end when the bridge starts holding it (3.5 to 15 s), and the ask again when the first wait is said. A first wait, with nothing ahead of it, is always the template.
 
@@ -60,6 +63,7 @@ A note restated on a later day, or the same task in the brain, a notes folder an
 
 ## Superseded
 
+- ~~Every model call is one structured-output node with no tool calls (INTENT, design §6)~~ — 2026-11-04, replaced by the tool loop at goal set, goal done and "I'm stuck" (#81): a fixed step per call could not look anything up. Per-page judging stays one call.
 - ~~Relevance from URL + title only (v1, under test)~~ — 2026-11-01, replaced by the second look: the hypothesis failed on mixed sites (issue #5).
 - ~~{{old decision}}~~ — {{YYYY-MM-DD}}, replaced by {{new}}: {{why it changed}}
 
