@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { present, nudgeText } from "../../../src/tuck/present.js";
+import { followsVoice } from "../../../src/tuck/voice.js";
 
 const evidence = {
   url: "https://www.youtube.com/watch?v=a",
@@ -151,6 +152,34 @@ test("the agent stopping is one short line, with answers that fit it", () => {
       ["dismiss", "break"],
     );
   }
+});
+
+// #67: the template says where and how long when the bridge knows, and what an approval is for.
+test("the agent's template line carries the folder, the minutes and the kind of approval", () => {
+  const said = (agent, facts) =>
+    present({ trigger: { id: "a", kind: "agent", level: 2, evidence: { agent, ...facts } } }).bubble.text;
+  assert.equal(said("completed", { agentFolder: "bilun", agentMin: 4 }), "Muse is done in bilun, after 4 minutes.");
+  assert.equal(
+    said("completed", { agentFolder: "bilun", agentMin: 1 }),
+    "Muse is done in bilun.",
+    "never a minute or two",
+  );
+  assert.equal(said("failed", { agentFolder: "bilun" }), "Muse stopped on an error in bilun.");
+  assert.equal(
+    said("waiting_for_user", { agentFolder: "bilun", agentTool: "Bash" }),
+    "Muse wants your OK to run a command in bilun.",
+  );
+  assert.equal(said("waiting_for_user", { agentTool: "Edit" }), "Muse wants your OK to edit a file.");
+  assert.equal(
+    said("waiting_for_user", { agentFolder: "bilun", agentTool: "mcp__x__y" }),
+    "Muse is waiting on you in bilun.",
+    "a tool it cannot name plainly is left out",
+  );
+  for (const line of [
+    said("completed", { agentFolder: "bilun", agentMin: 45 }),
+    said("waiting_for_user", { agentFolder: "bilun", agentTool: "WebFetch" }),
+  ])
+    assert.ok(followsVoice(line), line);
 });
 
 test("asking again about the agent is a question: it may be running what was approved", () => {

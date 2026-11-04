@@ -649,6 +649,20 @@ test("an answer about one person's chat does not mark another person's", () => {
 const agent = (ts, status) => ({ type: "agent", ts, status, session: "s1" });
 const words = (out) => out.filter((o) => o.type === "trigger" && o.kind === "agent");
 
+test("the bridge's facts reach the agent word's evidence (#67)", () => {
+  const cfg = withOverrides({ secondLook: false, agentQuietSec: 600, decide: stubDecide });
+  const done = { ...agent(t0 + S, "completed"), folder: "bilun", minutes: 4 };
+  const { out, state } = run([setIntent(t0), agent(t0, "working"), ctx(t0, REPO, "related"), done], {
+    until: t0 + 2 * S,
+    cfg,
+  });
+  const [word] = words(out);
+  assert.equal(word.evidence.agentFolder, "bilun");
+  assert.equal(word.evidence.agentMin, 4);
+  assert.equal(word.evidence.agentTool, null);
+  assert.deepEqual(state.agent, { status: "completed", ts: t0 + S, session: "s1", folder: "bilun", minutes: 4 });
+});
+
 test("while the agent works, an unrelated page is a wait, not a drift", () => {
   const { state, out } = run([setIntent(t0), agent(t0, "working"), ctx(t0, VIDEO, "unrelated")], {
     until: t0 + 300 * S,

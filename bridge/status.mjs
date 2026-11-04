@@ -1,26 +1,45 @@
-// What a Muse Code hook event means for Tuck. Pure. Only status leaves here: never a
-// prompt, a tool's input or a message. Events and fields were checked on Muse Code
-// 1.4.14; see docs/plans/2026-11-01-muse-bridge.md.
+// What a Muse Code hook event means for Tuck. Pure. Only status leaves here, with the
+// project folder's name and, for an approval, the tool's name (#67): never a prompt, a
+// tool's input or a message. Events and fields were checked on Muse Code 1.4.14; see
+// docs/plans/2026-11-01-muse-bridge.md. `cwd` and `tool_name` were not: without them
+// the words just say less.
 
 // Notification types that wait on the person: an approval, and a question (named in Muse's
 // binary, not yet seen in a run).
 const WAITS = ["permission_prompt", "question_prompt"];
 
+// The last part of the working folder: "/home/a/code/bilun" → "bilun". Never the path.
+export function folderName(cwd) {
+  if (typeof cwd !== "string") return null;
+  const name = cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
+  return /^[^\p{C}]{1,64}$/u.test(name) ? name : null;
+}
+
+// A tool's name ("Bash", "Edit", "mcp__github__create_issue"), never its input.
+export const toolName = (name) => (typeof name === "string" && /^[A-Za-z][\w.:-]{0,63}$/.test(name) ? name : null);
+
 // One line for ~/.tuck/agent.jsonl, or null when the event says nothing about whose turn it is.
 export function lineFor(event, ts) {
   const session = event?.session_id;
   if (!session) return null;
-  const line = (status, extra = {}) => ({ ts, session, status, ...extra });
+  const folder = folderName(event.cwd);
+  const line = (status, extra = {}) => ({ ts, session, status, ...(folder && { folder }), ...extra });
   switch (event.hook_event_name) {
     case "UserPromptSubmit":
       return line("working", { prompt: true });
+    case "PreToolUse": {
+      // No status: which tool an approval that may follow is for. The host keeps it.
+      const tool = toolName(event.tool_name);
+      return tool ? { ts, session, tool } : null;
+    }
     case "PostToolUse":
       return line("working");
     case "Notification":
       // Muse's approval judge decides most approvals itself, in 2 to 10 s, and
       // PermissionRequest fires for those too. This comes about 6 s on, and only while the
       // person still has to answer.
-      return WAITS.includes(event.notification_type) ? line("waiting_for_user") : null;
+      if (!WAITS.includes(event.notification_type)) return null;
+      return line("waiting_for_user", event.notification_type === "permission_prompt" ? { permission: true } : {});
     case "Stop":
       // A question in plain text also ends a turn. Only this yes or no leaves the script.
       return line(/\?\s*$/.test(event.last_assistant_message ?? "") ? "waiting_for_user" : "completed", {
@@ -72,4 +91,33 @@ export function latestPromptSession(text) {
   return null;
 }
 
-export const HOOK_EVENTS = ["UserPromptSubmit", "PostToolUse", "Notification", "Stop", "StopFailure", "SessionEnd"];
+// The turn the host follows: when its prompt came, and the tool last about to run in it.
+// turn: { session, startedAt, tool } or null. Lines with no status only name a tool.
+export function track(turn, line, session) {
+  if (line.prompt) return { session: line.session, startedAt: line.ts, tool: null };
+  if (line.tool && turn && line.session === session) return { ...turn, tool: line.tool };
+  return turn;
+}
+
+// What the host sends Chrome for a line. Nothing else in a line leaves.
+export function outgoing(line, turn) {
+  const same = turn?.session === line.session;
+  return {
+    status: line.status,
+    session: line.session,
+    ts: line.ts,
+    ...(line.folder && { folder: line.folder }),
+    ...(same && turn.startedAt != null && { startedAt: turn.startedAt }),
+    ...(same && line.permission && turn.tool && { tool: turn.tool }),
+  };
+}
+
+export const HOOK_EVENTS = [
+  "UserPromptSubmit",
+  "PreToolUse",
+  "PostToolUse",
+  "Notification",
+  "Stop",
+  "StopFailure",
+  "SessionEnd",
+];

@@ -1,10 +1,11 @@
-// Live check against a real model provider: one ping, then one distill on
-// synthetic activity. Reads the key from the environment, never from a file:
+// Live check against a real model provider: one ping, one distill on synthetic
+// activity, then Tuck's words about Muse (#67) at the effort they are written with. Reads the key from the environment, never from a file:
 //   MODEL_API_KEY   required
 //   MODEL_PROVIDER  meta-contributor (default) | meta | openrouter | ollama | together | fireworks | baseten | groq | nebius
 //   MODEL_BASE_URL, MODEL_ID  optional overrides
 import { modelClient } from "../../src/memory/model.js";
 import { distillMessages, parseEntries } from "../../src/memory/distill.js";
+import { composeNudge } from "../../src/agent/nudge.js";
 
 const complete = modelClient({
   provider: process.env.MODEL_PROVIDER ?? "meta-contributor",
@@ -33,3 +34,15 @@ const reply = await complete(messages, { maxTokens: 2048 });
 const { entries, rejected } = parseEntries(reply, { date });
 console.log(JSON.stringify({ entries, rejected }, null, 2));
 if (!entries.length && !rejected.length) console.log("(model returned [] — nothing worth keeping)");
+
+// An agent word is the model's only when its line is written before it is due (background/index.js).
+const task = { title: "Fix the checkout bug", step: "Write the failing test" };
+for (const agent of [
+  { status: "completed", folder: "shop-repo", minutes: 4 },
+  { status: "waiting_for_user", folder: "shop-repo", minutes: 2, tool: "run a command" },
+  { status: "waiting_for_user", folder: "shop-repo", again: true },
+  { status: "failed", folder: "shop-repo", minutes: 11 },
+]) {
+  const r = await composeNudge(complete, { kind: "agent", agent, task, onWork: false, hour: 15 }, { effort: "low" });
+  console.log(`agent word (${agent.status}${agent.again ? ", again" : ""}):`, JSON.stringify(r));
+}

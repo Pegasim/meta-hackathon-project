@@ -55,7 +55,8 @@ medical or therapeutic help.
 - **Constraint:** deadline Nov 4 2026, 9:00 PM ET; judged on the demo video and the repo.
 - **Constraint:** Chromium MV3 extension, all JavaScript, no separate backend. One optional
   local exception (`bridge/`): Muse Code's hooks tell Tuck whether the agent is working or
-  waiting. Status only, never a prompt, a message or terminal output.
+  waiting. Status only, with the project folder's name and an approval's tool name; never a
+  prompt, a tool's input, a message or terminal output.
 - **Constraint:** Meta models, and `muse-spark-1.3` rather than `-contributor`: Meta may train on what
   Contributor is sent, and Tuck sends people's notes.
 - **Constraint:** `src/memory/` belongs to Safa and is used only through its `Memory` API.
