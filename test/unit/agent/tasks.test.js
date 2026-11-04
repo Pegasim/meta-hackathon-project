@@ -42,7 +42,8 @@ function fakeModel(verdict = () => ({ is_task: true, still_open: true, task: "Do
 
 const titles = (notes) => notes.map((n) => n.title);
 
-test("later notes on the same topic come oldest first, nearest the entry", () => {
+// #94: newest first, not oldest (was "oldest first, nearest the entry").
+test("later notes on the same topic come newest first", () => {
   const sample = [
     { topic: "shop", title: "Newest" },
     { topic: "other", title: "Elsewhere" },
@@ -50,10 +51,10 @@ test("later notes on the same topic come oldest first, nearest the entry", () =>
     { topic: "shop", title: "Task a" },
     { topic: "shop", title: "Older" },
   ];
-  assert.deepEqual(titles(laterOnTopic({ topic: "shop", title: "Task a" }, sample)), ["Next one", "Newest"]);
+  assert.deepEqual(titles(laterOnTopic({ topic: "shop", title: "Task a" }, sample)), ["Newest", "Next one"]);
   assert.deepEqual(laterOnTopic({ topic: "shop", title: "Newest" }, sample), []);
   assert.deepEqual(laterOnTopic({ topic: "shop", title: "Not in the sample" }, sample), []);
-  assert.deepEqual(titles(laterOnTopic({ topic: "shop", title: "Task a" }, sample, { later: 1 })), ["Next one"]);
+  assert.deepEqual(titles(laterOnTopic({ topic: "shop", title: "Task a" }, sample, { later: 1 })), ["Newest"]);
 });
 
 test("a note from the same day is found by its words, wherever the sample put it", () => {
@@ -89,7 +90,7 @@ test("each entry goes in with its fields and later notes, through clean", () => 
   assert.match(user.content, /^1\. \[shop\] todo, 2026-10-20: Task a$/m);
   assert.match(user.content, /Context: key \[REDACTED\]/);
   assert.doesNotMatch(user.content, /sk-abc/);
-  assert.match(user.content, /Other notes on this topic:\n {3}- "Task a merged"$/m);
+  assert.match(user.content, /Other notes:\n {3}- "Task a merged"$/m);
   assert.match(user.content, /^2\. \[shop\]/m);
   assert.doesNotMatch(user.content.split("2. [shop]")[1], /Other notes/, "no later notes, no line");
 });
@@ -569,11 +570,11 @@ test("every note from the entry's day goes as possibly later, with its result; c
   const got = laterOnTopic(entry, sample);
   assert.deepEqual(
     titles(got),
-    ["Zulu same day", "Alpha same day", "Next week's note"],
-    "the day's notes on both sides",
+    ["Next week's note", "Alpha same day", "Zulu same day"],
+    "the day's notes on both sides, newest first (#94)",
   );
   assert.deepEqual(got[1], { title: "Alpha same day", date: "2026-11-04", result: "Merged the task-node fix." });
-  assert.equal(got[0].result, undefined, "a result of none is left out");
+  assert.equal(got[2].result, undefined, "a result of none is left out");
   assert.equal(laterOnTopic(entry, sample, { later: 2 }).length, 2, "LATER stays the cap across days");
   assert.ok(!titles(got).includes("Yesterday"), "an older note is not a later one");
 });
@@ -611,9 +612,11 @@ test("the day's browsing goes once, cleaned, ahead of the entries; none, no bloc
 test("a title names what the action is for", () => {
   const [system] = taskMessages([{ entry: entry("a"), later: [] }]);
   assert.match(system.content, /Name what the action is for \(the\s+programme, person, project or document\)/);
-  assert.match(
+  assert.match(system.content, /"Pick the video for the film fund application", not\s+"Pick the video to upload"/);
+  assert.doesNotMatch(
     system.content,
-    /"Decide whether to submit the grant application\s+late", not "Decide whether to upload video and submit late"/,
+    /submit the grant application\s+late/,
+    "#94: no example keeps a missed submission",
   );
 });
 
@@ -708,4 +711,120 @@ test("the browsing block leaves out every site the person keeps from being read"
     neverRead: ["github.com", "docs.example.dev", "paypal.com", "clinic.example"],
   });
   assert.doesNotMatch(none, /browsing/, "nothing left: no block");
+});
+
+// #94: the node judges with the newest evidence, from any topic, and leaves out upkeep
+// chores and missed submissions.
+test("on a busy topic the newest later notes are kept, so the one that closes the task is seen", () => {
+  const day = (d, t, result) => ({ topic: "launch", title: t, date: `2026-11-${d}`, result });
+  const sample = [
+    day("06", "Launch post published", "Live on the blog."),
+    day("05", "Fixed the footer", "Done."),
+    day("05", "Fixed the header", "Done."),
+    day("04", "Alpha", "x"),
+    day("04", "Beta", "x"),
+    day("04", "Gamma", "x"),
+    day("04", "Delta", "x"),
+    day("04", "Write the launch post", "Outline only."),
+    day("03", "Older", "x"),
+  ];
+  const got = titles(laterOnTopic({ topic: "launch", title: "Write the launch post", date: "2026-11-04" }, sample));
+  assert.equal(got[0], "Launch post published", "the newest comes first");
+  assert.ok(!got.includes("Delta"), "the oldest of the later notes is what the cap drops");
+  assert.ok(!got.includes("Older"));
+});
+
+test("kin: on the topic first, then later notes on any topic, on two shared title words; a year is not one", () => {
+  const sample = [
+    { topic: "personal", title: "Posted about the startup competition win", date: "2026-11-03", result: "Live." },
+    { topic: "school", title: "Spring 2026 exam timetable", date: "2026-11-02" },
+    { topic: "personal", title: "Competition dinner photos", date: "2026-11-02" },
+    { topic: "competition", title: "Won the startup competition 2026", date: "2026-11-01" },
+    { topic: "money", title: "Startup competition prize arrived", date: "2026-10-20" },
+  ];
+  const got = laterOnTopic(
+    { topic: "competition", title: "Won the startup competition 2026", date: "2026-11-01" },
+    sample,
+  );
+  assert.deepEqual(titles(got), ["Posted about the startup competition win"]);
+  assert.equal(got[0].topic, "personal", "a note from another topic names it");
+  assert.ok(!titles(got).includes("Startup competition prize arrived"), "an older note on another topic is not kin");
+  assert.ok(!titles(got).includes("Spring 2026 exam timetable"), "a shared year and nothing else is not kin");
+  assert.ok(!titles(got).includes("Competition dinner photos"), "one shared word is not enough");
+  const same = laterOnTopic({ topic: "competition", title: "Won the startup competition 2026" }, [
+    { topic: "competition", title: "Pitch night", date: "2026-11-02" },
+    { topic: "competition", title: "Won the startup competition 2026" },
+  ]);
+  assert.equal(same[0].topic, undefined, "a note on the entry's own topic carries none");
+  const grant = { topic: "a", title: "Grant 2026 report", date: "2026-11-01" };
+  const later = (title) => ({ topic: "b", title, date: "2026-11-02" });
+  assert.deepEqual(
+    titles(laterOnTopic(grant, [later("Grant 2026 budget"), later("Grant report draft")])),
+    ["Grant report draft"],
+    "one word and a year are not two words",
+  );
+  const kinFirst = laterOnTopic(
+    grant,
+    [
+      later("Grant report sent"),
+      later("Grant report filed"),
+      { topic: "a", title: "Old grant report", date: "2026-09-01" },
+    ],
+    { kin: 2 },
+  );
+  assert.deepEqual(titles(kinFirst), ["Old grant report", "Grant report sent"], "kin on the topic come first");
+});
+
+test("a later note carries its context and evidence, cut and cleaned; none is left out", () => {
+  const sample = [
+    {
+      topic: "lease",
+      title: "Weekly review",
+      date: "2026-11-05",
+      context: "Sent the signed lease back to the landlord.",
+      result: "Calm week.",
+      evidence: "none",
+    },
+    { topic: "lease", title: "Sign the lease", date: "2026-11-01" },
+  ];
+  const [got] = laterOnTopic({ topic: "lease", title: "Sign the lease", date: "2026-11-01" }, sample);
+  assert.deepEqual(got, {
+    title: "Weekly review",
+    date: "2026-11-05",
+    context: "Sent the signed lease back to the landlord.",
+    result: "Calm week.",
+  });
+  const long = (s) => `${s} key sk-abc ${"y".repeat(300)}`;
+  const note = { title: "Form", topic: "other", date: "2026-11-04", context: long("Ctx"), evidence: long("Ev") };
+  const [, user] = taskMessages([{ entry: entry("a", { evidence: "Receipt in the inbox" }), later: [note] }], {
+    clean: (s) => s.replace(/sk-\w+/, "[REDACTED]"),
+  });
+  const lines = user.content.split("\n");
+  const at = lines.findIndex((l) => l.includes('"Form"'));
+  assert.equal(lines[at], '   - 2026-11-04 [other] "Form"');
+  assert.match(lines[at + 1], /^ {5}Context: Ctx key \[REDACTED\] y+ Evidence: Ev key \[REDACTED\] y+$/);
+  assert.ok(lines[at + 1].length < 280, "context and evidence are cut to about 120 characters each");
+  assert.doesNotMatch(user.content, /sk-abc/);
+  assert.match(user.content, /^ {3}Result: Result\.\n {3}Evidence: Receipt in the inbox\n {3}Next action:/m);
+  const [, plain] = taskMessages([{ entry: entry("b", { evidence: "none" }), later: [] }]);
+  assert.doesNotMatch(plain.content, /Evidence:/, "an entry with no evidence has no line");
+});
+
+test("the evidence is in a verdict's hash", () => {
+  const e = entry("a");
+  assert.notEqual(taskHash(e, []), taskHash({ ...e, evidence: "Sent on Monday" }, []));
+});
+
+test("the rules: upkeep is not a task, a passed deadline is not one unless recommitted, business money is work", () => {
+  const [system] = taskMessages([{ entry: entry("a"), later: [] }]);
+  assert.match(system.content, /upkeep step that keeps a tool, pipeline, server or backup running is not a task/);
+  assert.match(system.content, /rotate a backup key, sync templates, re-check the nightly\s+run's output/);
+  assert.match(system.content, /Fixing something that broke or leaked can still be one/);
+  assert.match(
+    system.content,
+    /deadline the notes say has passed .* is not a task \(is_task false\), unless a later note commits/s,
+  );
+  assert.match(system.content, /their private money/);
+  assert.match(system.content, /a prize payout, a bank meeting for the company/);
+  assert.match(system.content, /their topic is named when it differs/);
 });

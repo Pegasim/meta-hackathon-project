@@ -14,7 +14,8 @@
 // they can take out with Not a task. A case marked `lift` is a coding agent's step that is
 // the only trace of a larger commitment (#75): it should be listed under the larger thing,
 // so a title that still names the step (a PR, a merge, a branch) counts against it. A case
-// with `expect.titleHas` (a regex) checks that the title names what the action is for. A
+// with `expect.titleHas` (a regex) checks that the title names what the action is for, and
+// one with `expect.personal` that a listed task is marked personal or not (#94). A
 // case with `activity` is sent in a batch of its own with that day's browsing, as one run
 // of the extension sends it (#76); the others go in batches of 10 with none.
 import fs from "node:fs";
@@ -79,6 +80,8 @@ const results = cases.map((c) => {
     titles: got.filter(listed).map((v) => v.task),
     lift: !!c.expect.lift,
     titleHas: c.expect.titleHas ?? null,
+    personal: c.expect.personal ?? null,
+    personalGot: got.filter(listed).filter((v) => v.personal).length * 2 > got.filter(listed).length,
     unread: got.filter((v) => !v).length,
   };
 });
@@ -103,6 +106,9 @@ const report = {
   ).length,
   namedCases: results.filter((r) => r.titleHas).length,
   namedTitles: results.filter((r) => r.titleHas).map(({ id, titles }) => ({ id, titles })),
+  // Listed cases marked personal (or not) as expected, by the majority of runs.
+  personalRight: results.filter((r) => r.personal != null && r.got && r.personalGot === r.personal).length,
+  personalCases: results.filter((r) => r.personal != null).length,
   batchMs: {
     calls: times.length,
     min: Math.min(...times),
@@ -122,6 +128,7 @@ accuracy  ${(report.accuracy * 100).toFixed(1)}%   (min ${ACCURACY_MIN * 100}%)
 dropped   ${(report.dropped * 100).toFixed(1)}%   real open tasks left out (max ${DROPPED_MAX * 100}%)
 lifted    ${report.lifted}/${report.liftCases}   agent steps listed under the larger thing
 named     ${report.named}/${report.namedCases}   titles that name what the action is for
+personal  ${report.personalRight}/${report.personalCases}   listed and marked personal as expected
 batch     ${(report.batchMs.mean / 1000).toFixed(1)} s mean, ${(report.batchMs.min / 1000).toFixed(1)}-${(report.batchMs.max / 1000).toFixed(1)} s, ${report.batchMs.calls} calls of ${BATCH}
 unread    ${report.unread}/${results.length * reps}`);
 

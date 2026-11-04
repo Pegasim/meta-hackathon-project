@@ -56,8 +56,10 @@ function sourcesOf(members) {
 // splits: { [pairKey]: ts }, the person's "Not the same". Entries the node called the same
 // become one row, unless any two of them were called different or split: a wrong merge
 // hides a task, which is worse than a row shown twice. The row stands where its first
-// member stood, so the order stays memory's; it takes the newest member's words, the
-// deadline the queue put first, and names its sources. Entries stay as they are.
+// member stood, so the order stays memory's; it takes the newest member's words and its
+// deadline, or the latest deadline among the members when that one has none (#94: not
+// the newest note's words with the oldest note's date); and it names its sources. Entries
+// stay as they are.
 export function groupTasks(list, { pairs = {}, splits = {} } = {}) {
   const keys = list.map(taskKey);
   const at = new Map(keys.map((k, i) => [k, i]));
@@ -82,7 +84,7 @@ export function groupTasks(list, { pairs = {}, splits = {} } = {}) {
     if (Math.min(...members) !== i) return;
     const ordered = [...members].sort((x, y) => x - y).map((x) => list[x]);
     const newest = [...ordered].sort((x, y) => (y.date ?? "").localeCompare(x.date ?? ""))[0];
-    const dated = ordered.find((m) => m.due);
+    const dated = newest.due ? newest : [...ordered].filter((m) => m.due).sort((x, y) => y.due.localeCompare(x.due))[0];
     out.push({
       ...newest,
       due: dated?.due ?? null,
