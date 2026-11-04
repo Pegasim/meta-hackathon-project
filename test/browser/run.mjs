@@ -186,6 +186,48 @@ const sideBySide = await page.evaluate(async () => {
   return { first: titles(a), second: titles(b) };
 });
 
+// #82: what came from Other memory reaches What Tuck knows. A large brain of recent notes,
+// then a notes folder last edited weeks ago and a paste, each with a topic of its own: the
+// profile's sample holds all three, and the folder's checkbox leads the undated tasks.
+const otherMemory = await page.evaluate(async () => {
+  const { Memory } = await import("/memory/index.js");
+  const { fromMarkdownFolder } = await import("/memory/markdown.js");
+  const note = (i) =>
+    `---\nkind: decision\ntopic: work\ntitle: "Work note ${i}"\ndate: 2026-11-0${1 + (i % 3)}\nsource: manual\nhost: x\n---\nContext: c\nDecision/Result: r\nEvidence: none\nNext action: follow up ${i}\n`;
+  const memory = await Memory.open("browser-test-82");
+  await memory.importFiles(
+    Array.from({ length: 80 }, (_, i) => ({
+      path: `inbox/20261101T000000Z-x-y-${String(i).padStart(6, "0")}.md`,
+      text: note(i),
+    })),
+  );
+  const folder = fromMarkdownFolder(
+    [{ path: "beekeeping/hives.md", text: "# Hives\n- [ ] Order a new queen\n", lastModified: Date.UTC(2026, 8, 12) }],
+    { folderName: "Garden" },
+  );
+  await memory.importEntries({ origin: "md:Garden", name: "Garden", ...folder });
+  await memory.importEntries({
+    origin: "paste:p82",
+    name: "Pasted",
+    entries: [
+      {
+        kind: "fact",
+        topic: "pottery",
+        title: "Glaze class on Tuesdays",
+        date: "2026-08-01",
+        source: "paste",
+        context: "c",
+        result: "r",
+        evidence: "pasted assistant memory",
+        next: "none",
+      },
+    ],
+  });
+  const sample = await memory.profileSample();
+  const queue = await memory.taskQueue({ today: "2026-11-04", limit: Infinity });
+  return { topics: [...new Set(sample.map((e) => e.topic))].sort(), size: sample.length, first: queue[0]?.title };
+});
+
 // Taking an entry back (issue #25), as Forget on a label does: the other instance's recall
 // misses it at once; one not exported yet never is; one exported and still in the brain's
 // inbox/ is deleted there; one whose id changed in redaction goes by the id add() returned;
@@ -787,4 +829,11 @@ assert.deepEqual(
   ],
   "the goal's row, then what is close; dated within 60 days; the rest in the queue's order (long missed last)",
 );
+assert.deepEqual(
+  otherMemory.topics,
+  ["beekeeping", "pottery", "work"],
+  "every source reaches the profile's sample (#82)",
+);
+assert.equal(otherMemory.size, 60);
+assert.equal(otherMemory.first, "Order a new queen", "the folder's checkbox leads the undated tasks (#82)");
 console.log("browser test: ok");

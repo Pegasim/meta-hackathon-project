@@ -16,6 +16,26 @@ export const OWN = "extension";
 // without one they are the extension's own.
 export const originOf = (item) => item.origin ?? (item.path ? BRAIN : OWN);
 
+// A sample of the entries, newest first, in which every source gets a share (#82). Taken
+// newest first across all of them, a large brain filled it, and a notes folder or a paste
+// a little older never reached the profile. Sources take turns, each its newest first,
+// so what one leaves unused goes to the others.
+const newest = (a, b) => (b.date ?? "").localeCompare(a.date ?? "");
+export function sampleAcross(entries, limit = Infinity) {
+  if (entries.length <= limit) return [...entries].sort(newest);
+  const bySource = new Map();
+  for (const e of [...entries].sort(newest)) {
+    const o = originOf(e);
+    if (!bySource.has(o)) bySource.set(o, []);
+    bySource.get(o).push(e);
+  }
+  const queues = [...bySource.values()];
+  const out = [];
+  for (let i = 0; out.length < limit && queues.some((q) => i < q.length); i++)
+    for (const q of queues) if (i < q.length && out.length < limit) out.push(q[i]);
+  return out.sort(newest);
+}
+
 // "md:Notes" -> "md"
 export const kindOf = (origin) => origin.split(":")[0];
 

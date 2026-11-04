@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BRAIN, OWN, READERS, originOf, kindOf } from "../../../src/memory/sources.js";
+import { BRAIN, OWN, READERS, originOf, kindOf, sampleAcross } from "../../../src/memory/sources.js";
 import { readTextFiles } from "../../../src/memory/connector.js";
 
 // Synthetic fixtures only. No real brain content in this repo.
@@ -62,4 +62,29 @@ test("any folder: every Markdown file with its date, hidden folders skipped", as
   );
   assert.equal(files[0].text, "- [ ] Call the bank");
   assert.equal(files[0].lastModified, 1700000000000);
+});
+
+// #82: the profile reads a sample of the notes. Newest first across everything, a large
+// brain filled it, and a notes folder or a paste dated a little older never made it in.
+test("the profile sample gives every source a share, newest first within it", () => {
+  const brain = Array.from({ length: 80 }, (_, i) => ({
+    origin: BRAIN,
+    topic: "work",
+    title: `Brain note ${i}`,
+    date: `2026-11-${String(4 - (i % 3)).padStart(2, "0")}`,
+  }));
+  const folderNotes = [
+    { origin: "md:Garden", topic: "beekeeping", title: "Order a new queen", date: "2026-09-12" },
+    { origin: "md:Garden", topic: "beekeeping", title: "Check the hive", date: "2026-09-10" },
+  ];
+  const pasted = [{ origin: "paste:p1", topic: "pottery", title: "Glaze class on Tuesdays", date: "2026-08-01" }];
+  const sample = sampleAcross([...brain, ...folderNotes, ...pasted], 60);
+  assert.equal(sample.length, 60);
+  const titles = sample.map((e) => e.title);
+  assert.ok(titles.includes("Order a new queen") && titles.includes("Check the hive"), "the notes folder is in");
+  assert.ok(titles.includes("Glaze class on Tuesdays"), "the paste is in");
+  assert.equal(sample.filter((e) => e.origin === BRAIN).length, 57, "the brain fills what the others leave");
+  const dates = sample.map((e) => e.date);
+  assert.deepEqual(dates, [...dates].sort().reverse(), "still newest first, as the task node expects");
+  assert.equal(sampleAcross(brain, Infinity).length, 80, "no limit keeps everything");
 });

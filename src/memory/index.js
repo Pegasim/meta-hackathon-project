@@ -8,7 +8,7 @@ import { IDLE_GAP, toSpans, clipSpans, summarize, renderSummary } from "./activi
 import { distillMessages, parseEntries } from "./distill.js";
 import * as db from "./db.js";
 import { readBrainFolder, writeInboxEntry, removeInboxEntry, permission } from "./connector.js";
-import { BRAIN, OWN, READERS, originOf, kindOf } from "./sources.js";
+import { BRAIN, OWN, READERS, originOf, kindOf, sampleAcross } from "./sources.js";
 
 // Secret-shaped strings (keys, tokens, "password: …") replaced by [REDACTED]: for any
 // text that leaves the device, such as a page excerpt. Returns { text, count }. entryKey:
@@ -394,10 +394,13 @@ export class Memory {
   // note closed a task (#76).
   async profileSample({ limit = 60 } = {}) {
     await this.#load();
-    return [...this.#entries]
-      .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
-      .slice(0, limit)
-      .map(({ topic, title, next, date, result }) => ({ topic, title, next, date, result }));
+    return sampleAcross(this.#entries, limit).map(({ topic, title, next, date, result }) => ({
+      topic,
+      title,
+      next,
+      date,
+      result,
+    }));
   }
 
   // { summary, topics, workHosts } as the node returned it, or null before an import.
