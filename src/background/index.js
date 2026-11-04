@@ -57,7 +57,7 @@ const memory = Memory.open();
 const store = openStore();
 const enqueue = createSerialQueue();
 const OWN_PAGES = chrome.runtime.getURL("");
-const BADGE = { loud: ["!", "#dc2626"], look: ["·", "#64748b"] };
+const BADGE = { loud: ["!", "#dc2626"], look: ["·", "#64748b"], away: ["zz", "#94a3b8"] };
 
 const todayLabel = (d = new Date()) => `${d.toLocaleDateString("en-US", { weekday: "long" })} ${localDate(d)}`;
 
@@ -648,7 +648,9 @@ async function judgeExcerpt(need, from) {
 
 // ---- Interventions -------------------------------------------------------
 
+// With no word to mark, a Tuck tucked away shows "zz" (#87).
 async function setBadge(kind) {
+  kind ??= (await isAway()) ? "away" : null;
   const [text, color] = kind ? BADGE[kind] : ["", "#64748b"];
   await chrome.action.setBadgeText({ text });
   await chrome.action.setBadgeBackgroundColor({ color });
@@ -1003,6 +1005,21 @@ async function noGoalView(s) {
 }
 
 const pageChanged = (prev, s) => prev.current?.tabId !== s.current?.tabId || prev.current?.url !== s.current?.url;
+
+// The toolbar icon says Tuck is tucked away: "zz" and its tooltip (#87). A word's badge
+// ("!" or "·") stays until the word is answered; setBadge puts "zz" back then.
+async function awayMarked() {
+  const away = await isAway();
+  const name = chrome.runtime.getManifest().name;
+  await chrome.action.setTitle({ title: away ? `${name}: tucked away. Click to bring Tuck back.` : name });
+  const text = await chrome.action.getBadgeText({});
+  if (text === "" || text === BADGE.away[0]) await setBadge(null);
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.tuckAway) awayMarked();
+});
+chrome.runtime.onStartup.addListener(awayMarked);
+chrome.runtime.onInstalled.addListener(awayMarked);
 
 // Back from tucked away (Bring Tuck back in the popup): Tuck is on the page in front at
 // once, as presence would draw it there.
