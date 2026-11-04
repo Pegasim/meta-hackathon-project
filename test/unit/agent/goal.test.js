@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { goalTools, stuckTools } from "../../../src/agent/tools.js";
+import { goalTools, stuckTools, chatTools } from "../../../src/agent/tools.js";
 import { goalFrom, chatStep } from "../../../src/agent/moments.js";
 
 function scripted(...replies) {
@@ -165,7 +165,7 @@ test("with no notes, what the person writes gets a step from their words alone",
   const { tools, r } = await offeredBy((chat) =>
     chatStep(chat, deps([]), { title: "Build the chat", said: "the bubbles look off" }, { notes: false }),
   );
-  assert.deepEqual(tools, ["propose_step"]);
+  assert.deepEqual(tools.sort(), ["ask_back", "keep_step", "propose_step"]);
   assert.equal(r.value.step, "Write the bubble styles for the chat");
 });
 
@@ -175,4 +175,42 @@ test("a step may be built from what the person wrote", () => {
     { goal: { title: "Ship it" }, said: "the bubble padding is wrong" },
   );
   assert.equal(v.step, "Fix the bubble padding");
+});
+
+test("a ready plan is kept as the person wrote it: keep_step", () => {
+  const ctx = { goal: { title: "Prepare the hackathon demo" }, said: "  testing out tuck's functionalities " };
+  assert.deepEqual(chatTools.keep_step.finish({ reply: "Good. Go test it." }, ctx), {
+    step: "testing out tuck's functionalities",
+    kept: true,
+    reply: "Good. Go test it.",
+  });
+});
+
+test("unclear words get one short question back, not a step: ask_back", () => {
+  const ctx = { goal: { title: "Prepare the hackathon demo" }, said: "hmm not sure" };
+  assert.deepEqual(chatTools.ask_back.finish({ question: "What part of the demo feels unclear?" }, ctx), {
+    question: "What part of the demo feels unclear?",
+  });
+  assert.throws(() => chatTools.ask_back.finish({}, ctx), /question/);
+});
+
+test("what the person writes offers keep, propose and ask, and never their page", async () => {
+  let offered;
+  const chat = async (messages, opts) => {
+    offered ??= opts.tools.map((t) => t.function.name);
+    return {
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "c1", type: "function", function: { name: "keep_step", arguments: "{}" } }],
+    };
+  };
+  const r = await chatStep(
+    chat,
+    deps([]),
+    { title: "Build the chat", said: "fix the bubble padding" },
+    { notes: false },
+  );
+  assert.deepEqual(offered.sort(), ["ask_back", "keep_step", "propose_step"]);
+  assert.equal(r.value.step, "fix the bubble padding");
+  assert.equal(r.value.kept, true);
 });

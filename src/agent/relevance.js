@@ -57,6 +57,16 @@ export function privateSettings(settings = {}) {
   return { ...settings, provider: "meta", model };
 }
 
+// The chat and the agent loop (goal chat, chat step, I'm stuck, plan, what's next) talk
+// through Muse Wonder on Meta: it holds a conversation's context better than Spark, which
+// still judges pages and writes the drift words. Built on privateSettings, so never
+// Contributor. Another provider keeps the model the person chose.
+export const AGENT_MODEL = "muse-wonder-1.0";
+export function agentSettings(settings = {}) {
+  const used = privateSettings(settings);
+  return used.provider === "meta" ? { ...used, model: AGENT_MODEL } : used;
+}
+
 // The person's own notes the memory search found for this page, when it found any.
 const NOTES_RULE = [
   "Their own notes, when given, say what they work on and with whom. A conversation with",

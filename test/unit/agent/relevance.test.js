@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { relevanceMessages, parseRelevance, classifyRelevance, privateSettings } from "../../../src/agent/relevance.js";
+import {
+  relevanceMessages,
+  parseRelevance,
+  classifyRelevance,
+  privateSettings,
+  agentSettings,
+} from "../../../src/agent/relevance.js";
 
 const input = {
   intent: { title: "Fix the checkout bug in the shop repo", steps: ["Write the failing test"] },
@@ -215,4 +221,19 @@ test("the node asks at low reasoning effort by default", async () => {
   const { complete, calls } = fakeModel(reply({ label: "unrelated", confidence: 0.9, reason: "x" }));
   await classifyRelevance(complete, input);
   assert.equal(calls[0].opts.reasoningEffort, "low");
+});
+
+test("the chat and the agent loop talk through Muse Wonder on Meta, still never Contributor", () => {
+  assert.deepEqual(agentSettings({ provider: "meta", apiKey: "k" }), {
+    provider: "meta",
+    apiKey: "k",
+    model: "muse-wonder-1.0",
+  });
+  assert.equal(
+    agentSettings({ provider: "meta-contributor", model: "muse-spark-1.3-contributor", apiKey: "k" }).model,
+    "muse-wonder-1.0",
+  );
+  assert.equal(agentSettings({ apiKey: "k" }).model, "muse-wonder-1.0", "an unset provider is plain Meta");
+  const other = { provider: "ollama", model: "llama3" };
+  assert.deepEqual(agentSettings(other), other, "another provider keeps its own model");
 });

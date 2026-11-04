@@ -351,10 +351,8 @@ function agentReply(messages) {
     if (!results.length) return call("recall_notes", { query: goal });
     return call("propose_goal", { title: "Fix the checkout bug", step: "Write the failing checkout test" });
   }
-  if (/just wrote\s+to you/.test(system)) {
-    const wrote = messages[1].content.match(/They wrote: (.*)$/m)?.[1] ?? "";
-    return call("propose_step", { step: wrote, minutes: 10 });
-  }
+  // The chat step: a plan already made is kept as written.
+  if (/just wrote\s+to you/.test(system)) return call("keep_step", { reply: "Good. Starting there." });
   if (/stuck on their goal/.test(system)) {
     if (!results.length) return call("goal");
     if (results.length === 1) return call("recent_activity");
@@ -453,7 +451,9 @@ await greetingShown(tuck);
 const greeting = await tuck.locator(".bubble .text").textContent();
 const greetState = await tuck.locator("svg.tuck").getAttribute("data-pose");
 // The default skin is the pastel kitten, a sprite skin: its greeting plays the waving strip.
-const greetStrip = await tuck.locator("svg.tuck image.tuck__strip").getAttribute("href");
+// The strip drawn, and from where: a blob: URL of the page, not chrome-extension:// (YouTube refuses that).
+const greetStrip = await tuck.locator("svg.tuck").getAttribute("data-strip");
+const greetHref = await tuck.locator("svg.tuck image.tuck__strip").getAttribute("href");
 // The bubble wears the skin's light palette (kitten), from the theme variables alone.
 const bubbleLook = await tuck.locator(".bubble").evaluate((b) => {
   const css = getComputedStyle;
@@ -532,12 +532,14 @@ await tuck.locator("input[name=goal]").fill("Fix the checkout bug");
 await tuck.locator("button.start").click();
 // The goal chat with no notes yet: the person's words are the goal, nothing is looked up,
 // and Tuck's own reply asks what comes first. The first step answered in the chat becomes
-// a step (chatStep, from their words), and Start this makes it the goal's.
+// the goal's step, as typed, when the model keeps it.
 await tuck.locator(".bubble .text", { hasText: "What will you do first?" }).waitFor({ timeout: 8000 });
 const goalChatTrails = await tuck.locator(".bubble .c-trail").count();
 await tuck.locator("input[name=say]").fill("Write the failing checkout test");
 await tuck.locator("button.start").click();
-await tuck.locator(".bubble button", { hasText: "Start this" }).click({ timeout: 8000 });
+// A plan already made: the model keeps it as the step, as written (keep_step).
+await tuck.locator(".bubble .text", { hasText: "Good. Starting there." }).waitFor({ timeout: 8000 });
+await tuck.locator(".bubble .close").click();
 // Tuck stays, resting; a click is a hello with the goal card.
 await repoTab.waitForTimeout(2500);
 const restState = await tuck.locator("svg.tuck").getAttribute("data-pose");
@@ -2273,11 +2275,8 @@ assert.doesNotMatch(partialRows, /Rent went up/, "with some entries judged, an u
 assert.match(partialStatus, /1 note with a next action/);
 assert.equal(greeting, "Hi. What are we working on today?");
 assert.equal(greetState, "hello");
-assert.match(
-  greetStrip ?? "",
-  /tuck\/skins\/kitten\/frames\/hello\.png$/,
-  "the greeting plays the kitten's waving strip",
-);
+assert.equal(greetStrip, "hello", "the greeting plays the kitten's waving strip");
+assert.match(greetHref ?? "", /^blob:/, "the frame is drawn from a blob: URL of the page");
 assert.equal(bubbleLook.bg, "rgb(255, 248, 252)", "the bubble is the skin's surface");
 assert.ok(motion.always > 1, `"Always animate" plays the strip under reduce motion: ${motion.always} frames`);
 assert.equal(motion.follow, 1, "following the computer's reduce motion holds one frame");
