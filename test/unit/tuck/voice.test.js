@@ -6,6 +6,7 @@ import {
   templateNudge,
   followsVoice,
   reminderLine,
+  PARKED_LINE,
   templateGreeting,
   whenSaid,
 } from "../../../src/tuck/voice.js";
@@ -105,4 +106,8 @@ test("when the last goal was, said from today's date", () => {
   assert.equal(whenSaid("2026-11-03", "2026-11-03"), "Earlier today");
   assert.equal(whenSaid("2026-10-31", "2026-11-01"), "Yesterday");
   assert.equal(whenSaid("2026-10-29", "2026-11-03"), "Last time");
+});
+
+test("the parked line is in Tuck's voice (#59)", () => {
+  assert.ok(followsVoice(PARKED_LINE));
 });
