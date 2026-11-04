@@ -126,6 +126,27 @@ test("a distilled loop older than 14 days is not offered; the person's own of th
   );
 });
 
+// #82: a notes folder's checkbox is dated by its file, so among the undated it sank below
+// every newer note with a next action, out of sight behind Show all.
+test("among the person's own undated loops, a notes-folder checkbox comes first", () => {
+  const notes = Array.from({ length: 12 }, (_, i) =>
+    brainEntry({ id: `n${i}`, date: "2026-10-31", source: "manual", title: `Note ${i}`, kind: "decision" }),
+  );
+  const box = entry({
+    id: "box",
+    kind: "todo",
+    source: "markdown",
+    path: "garden.md",
+    origin: "md:Garden",
+    title: "Order a new queen",
+    date: "2026-09-12",
+  });
+  const agent = brainEntry({ id: "ag", date: "2026-10-31", source: "claude-code", title: "Run npm test" });
+  const q = taskQueue([...notes, agent, box], { today: TODAY, limit: Infinity });
+  assert.equal(q[0].id, "box");
+  assert.equal(q.at(-1).id, "ag", "an agent's step still comes after the person's own");
+});
+
 test("the person's own loops come before an agent's and distilled ones, deadline by deadline", () => {
   const q = taskQueue(
     [

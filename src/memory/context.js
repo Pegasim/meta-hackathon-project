@@ -53,7 +53,12 @@ export function taskQueue(entries, { today = localDate(), limit = 5, staleAfter 
   const live = loops
     .filter((e) => e.due && e.daysLeft >= -staleAfter)
     .sort((a, b) => a.due.localeCompare(b.due) || rank(a, b));
-  const undated = loops.filter((e) => !e.due).sort((a, b) => rank(a, b) || (b.date ?? "").localeCompare(a.date ?? ""));
+  // A notes folder's checkbox is a task the person wrote as one, dated only by its file:
+  // among their own undated loops it comes first, not below every newer note (#82).
+  const box = (e) => (e.source === "markdown" && e.kind === "todo" ? 0 : 1);
+  const undated = loops
+    .filter((e) => !e.due)
+    .sort((a, b) => rank(a, b) || box(a) - box(b) || (b.date ?? "").localeCompare(a.date ?? ""));
   const stale = loops
     .filter((e) => e.due && e.daysLeft < -staleAfter)
     .sort((a, b) => b.due.localeCompare(a.due) || rank(a, b));
